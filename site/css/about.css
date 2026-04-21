@@ -40,16 +40,18 @@
 
 /* ========== HERO SECTION ========== */
 .about-hero {
-  max-width: 800px;
+  max-width: var(--max-width);
   margin: 0 auto;
-  padding: 60px 40px 40px;
-  text-align: center;
+  padding: 40px 40px 60px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
 }
 .keywords {
   display: flex;
-  justify-content: center;
-  gap: 30px;
-  margin-bottom: 56px;
+  gap: 12px;
+  margin-bottom: 40px;
 }
 .keywords img {
   width: 90px;
@@ -57,10 +59,10 @@
   object-fit: contain;
 }
 .hero-title-kr {
-  font-size: 38px;
+  font-size: 32px;
   font-weight: 300;
   color: var(--color-text-heading);
-  line-height: 1.4;
+  line-height: 1.45;
   letter-spacing: -0.5px;
   margin: 0;
 }
@@ -68,7 +70,12 @@
   width: 48px;
   height: 1px;
   background: #bfb8a7;
-  margin: 40px auto 0;
+  margin: 36px 0 0;
+}
+.hero-right img {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 /* ========== PHILOSOPHY SECTION ========== */
@@ -296,6 +303,10 @@
 
 /* ========== RESPONSIVE ========== */
 @media (max-width: 991px) {
+  .about-hero {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
   .brand-logos {
     grid-template-columns: 1fr 1fr;
   }
@@ -305,13 +316,13 @@
 }
 @media (max-width: 767px) {
   .about-hero {
-    padding: 40px 20px 30px;
+    padding: 30px 20px 40px;
   }
   .hero-title-kr {
-    font-size: 26px;
+    font-size: 24px;
   }
   .hero-divider {
-    margin-top: 32px;
+    margin-top: 28px;
   }
   .philosophy-section {
     padding: 20px 20px 80px;
