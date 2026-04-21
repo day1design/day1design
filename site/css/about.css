@@ -40,49 +40,68 @@
 
 /* ========== HERO SECTION ========== */
 .about-hero {
-  max-width: var(--max-width);
+  max-width: 800px;
   margin: 0 auto;
-  padding: 20px 40px 80px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 60px;
-  align-items: start;
+  padding: 60px 40px 40px;
+  text-align: center;
 }
 .keywords {
   display: flex;
-  gap: 12px;
-  margin-bottom: 40px;
+  justify-content: center;
+  gap: 30px;
+  margin-bottom: 56px;
 }
 .keywords img {
   width: 90px;
   height: 90px;
   object-fit: contain;
 }
-.hero-title-en {
-  font-size: 16px;
-  letter-spacing: 1px;
-  margin-bottom: 8px;
-  color: var(--color-text-heading);
-}
-.hero-title-en strong {
-  font-weight: 700;
-}
 .hero-title-kr {
-  font-size: 20px;
+  font-size: 38px;
+  font-weight: 300;
+  color: var(--color-text-heading);
+  line-height: 1.4;
+  letter-spacing: -0.5px;
+  margin: 0;
+}
+.hero-divider {
+  width: 48px;
+  height: 1px;
+  background: #bfb8a7;
+  margin: 40px auto 0;
+}
+
+/* ========== PHILOSOPHY SECTION ========== */
+.philosophy-section {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 40px 120px;
+}
+.philosophy-pillar {
+  padding: 56px 0;
+  border-top: 1px solid #e5e1d6;
+}
+.philosophy-pillar:last-child {
+  border-bottom: 1px solid #e5e1d6;
+}
+.pillar-label {
+  font-size: 11px;
+  letter-spacing: 4px;
+  color: #9a9488;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+}
+.pillar-title {
+  font-size: 30px;
   font-weight: 500;
   color: var(--color-text-heading);
-  margin-bottom: 28px;
-  line-height: 1.5;
+  letter-spacing: -0.3px;
+  margin: 0 0 24px;
 }
-.hero-desc {
-  font-size: 13px;
-  color: #666;
-  line-height: 2;
-}
-.hero-right img {
-  width: 100%;
-  height: auto;
-  display: block;
+.pillar-desc {
+  font-size: 15px;
+  line-height: 1.9;
+  color: #555;
 }
 
 /* ========== SIGNATURE (BRAND IDENTITY) ========== */
@@ -277,10 +296,6 @@
 
 /* ========== RESPONSIVE ========== */
 @media (max-width: 991px) {
-  .about-hero {
-    grid-template-columns: 1fr;
-    gap: 40px;
-  }
   .brand-logos {
     grid-template-columns: 1fr 1fr;
   }
@@ -290,7 +305,25 @@
 }
 @media (max-width: 767px) {
   .about-hero {
-    padding: 20px 20px 60px;
+    padding: 40px 20px 30px;
+  }
+  .hero-title-kr {
+    font-size: 26px;
+  }
+  .hero-divider {
+    margin-top: 32px;
+  }
+  .philosophy-section {
+    padding: 20px 20px 80px;
+  }
+  .philosophy-pillar {
+    padding: 40px 0;
+  }
+  .pillar-title {
+    font-size: 22px;
+  }
+  .pillar-desc {
+    font-size: 14px;
   }
   .brand-section,
   .color-section,
@@ -307,7 +340,7 @@
     gap: 32px;
   }
   .keywords {
-    justify-content: center;
+    gap: 20px;
   }
   .keywords img {
     width: 70px;

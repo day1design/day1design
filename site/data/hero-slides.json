@@ -2,13 +2,58 @@
   "config": {
     "maxSlides": 10,
     "autoPlayMs": 6000,
-    "note": "관리자: 이미지를 R2(images/hero/slides/)에 업로드 후 slides 배열에 항목 추가. 최대 10장. href는 선택(링크 불필요 시 빈 문자열). alt는 접근성/SEO용."
+    "note": "관리자 대시보드가 이 JSON을 PUT으로 갱신하면 자동 반영. 초기값은 시공사례 랜덤 10장 시드."
   },
   "slides": [
     {
-      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/hero/hero-main-bg.webp",
-      "href": "",
-      "alt": "데이원디자인 메인 히어로"
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/도곡렉슬-43py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "도곡렉슬 43py"
+    },
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/목동-우성2차-42py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "목동 우성2차 42py"
+    },
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/용인-대지마을-중앙하이츠빌-68py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "용인 대지마을 중앙하이츠빌 68py"
+    },
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/판교-봇들마을-4단지-29py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "판교 봇들마을 4단지 29py"
+    },
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/잠실리센츠-33py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "잠실리센츠 33py"
+    },
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/서울숲-푸르지오-41py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "서울숲 푸르지오 41py"
+    },
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/신반포-2차-34py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "신반포 2차 34py"
+    },
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/성남-센트럴타운-33py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "성남 센트럴타운 33py"
+    },
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/용산-효창베네스아파트-47py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "용산 효창베네스아파트 47py"
+    },
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/판교-푸르지오그랑블-38py/001.webp",
+      "href": "pages/portfolio.html",
+      "alt": "판교 푸르지오그랑블 38py"
     }
   ]
 }

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>히어로 슬라이드 관리 · DAYONE DESIGN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="stylesheet" href="../css/fonts.css" />
+    <link rel="stylesheet" href="../css/variables.css" />
+    <link rel="stylesheet" href="../css/reset.css" />
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body class="admin-body">
+    <header class="admin-header">
+      <div class="admin-header-inner">
+        <div class="admin-logo">DAYONE ADMIN</div>
+        <nav class="admin-nav">
+          <a href="hero-slides.html" class="active">Hero Slides</a>
+          <a href="../index.html" class="admin-nav-secondary">← 사이트로</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="admin-main">
+      <section class="admin-section">
+        <div class="admin-section-head">
+          <div>
+            <h1>히어로 슬라이드 관리</h1>
+            <p class="admin-sub">
+              메인 페이지 상단 슬라이드를 등록·정렬·삭제합니다. 최대
+              <strong id="maxSlidesLabel">10</strong>장.
+            </p>
+          </div>
+          <div class="admin-status" id="apiStatus" data-state="unknown">
+            <span class="dot"></span>
+            <span class="txt">API 상태 확인 중</span>
+          </div>
+        </div>
+
+        <!-- 슬라이드 리스트 -->
+        <div class="slides-list" id="slidesList">
+          <!-- JS 렌더 -->
+        </div>
+
+        <!-- 새 슬라이드 추가 폼 -->
+        <div class="slide-add" id="slideAddWrap">
+          <button type="button" class="btn-add" id="btnAdd">
+            + 슬라이드 추가
+          </button>
+
+          <form class="add-form hidden" id="addForm">
+            <div class="field">
+              <label>이미지</label>
+              <div class="field-row">
+                <input
+                  type="file"
+                  id="uploadInput"
+                  accept="image/webp,image/jpeg,image/png"
+                />
+                <span class="or">또는</span>
+                <input
+                  type="url"
+                  id="imageUrlInput"
+                  placeholder="이미지 URL (R2 public URL 등)"
+                />
+              </div>
+              <p class="hint">
+                업로드 시 API가
+                <code>POST /api/hero/upload</code>로 전송, 응답의
+                <code>url</code>이 이미지 필드에 자동 입력됩니다.
+              </p>
+            </div>
+
+            <div class="field">
+              <label>링크 (선택)</label>
+              <input
+                type="text"
+                id="hrefInput"
+                placeholder="예: pages/portfolio.html (비우면 클릭 불가)"
+              />
+            </div>
+
+            <div class="field">
+              <label>Alt 텍스트</label>
+              <input
+                type="text"
+                id="altInput"
+                placeholder="접근성/SEO용 설명"
+              />
+            </div>
+
+            <div class="field-preview hidden" id="previewWrap">
+              <div
+                class="preview"
+                id="preview"
+                style="background-image: none"
+              ></div>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" class="btn btn-ghost" id="btnCancelAdd">
+                취소
+              </button>
+              <button type="submit" class="btn btn-primary" id="btnConfirmAdd">
+                목록에 추가
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- 저장/취소 -->
+        <div class="save-bar">
+          <div class="save-info">
+            <span id="dirtyLabel" class="dirty-label hidden">
+              변경사항 있음
+            </span>
+            <span class="count-label">
+              등록된 슬라이드: <strong id="slideCount">0</strong> / 10
+            </span>
+          </div>
+          <div class="save-actions">
+            <button type="button" class="btn btn-ghost" id="btnRevert">
+              되돌리기
+            </button>
+            <button type="button" class="btn btn-primary" id="btnSave">
+              저장
+            </button>
+          </div>
+        </div>
+
+        <!-- 토스트 -->
+        <div class="toast" id="toast"></div>
+      </section>
+
+      <!-- 가이드 -->
+      <details class="admin-guide">
+        <summary>API 연동 가이드</summary>
+        <div class="guide-body">
+          <p>
+            관리자 UI는 아래 API 엔드포인트를 호출합니다. 서버 구현 시 이 스펙에
+            맞춰 응답해주세요. 엔드포인트가 없으면 자동으로 JSON 파일 fallback
+            모드로 동작합니다.
+          </p>
+          <table class="spec-table">
+            <thead>
+              <tr>
+                <th>메서드</th>
+                <th>경로</th>
+                <th>역할</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET</code></td>
+                <td><code>/api/hero/slides</code></td>
+                <td>현재 슬라이드 목록 조회 (hero-slides.json 구조와 동일)</td>
+              </tr>
+              <tr>
+                <td><code>PUT</code></td>
+                <td><code>/api/hero/slides</code></td>
+                <td>전체 슬라이드 배열 저장 (body = hero-slides.json 구조)</td>
+              </tr>
+              <tr>
+                <td><code>POST</code></td>
+                <td><code>/api/hero/upload</code></td>
+                <td>
+                  multipart/form-data, field <code>file</code>. 응답
+                  <code>{ url }</code> 에 R2 public URL
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="hint">
+            인증은 서버에서 쿠키/Bearer 등 자체 결정. 클라이언트는
+            <code>credentials: "include"</code> 로 호출합니다.
+          </p>
+        </div>
+      </details>
+    </main>
+
+    <script src="../js/common.js"></script>
+    <script src="hero-slides.js"></script>
+  </body>
+</html>

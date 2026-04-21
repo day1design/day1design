@@ -295,8 +295,31 @@ sizeBtns.forEach((btn) => {
   });
 });
 
-// Initial render
-if (grid) renderHouse();
+// Initial render (URL 파라미터 cat=office / size=20-30 등 지원)
+if (grid) {
+  const params = new URLSearchParams(location.search);
+  const urlCat = params.get("cat");
+  const urlSize = params.get("size");
+
+  if (urlCat === "office") {
+    filterBtns.forEach((b) =>
+      b.classList.toggle("active", b.dataset.filter === "office"),
+    );
+    if (sizeSubFilter) sizeSubFilter.classList.add("hidden");
+    renderOffice();
+  } else if (urlSize) {
+    filterBtns.forEach((b) =>
+      b.classList.toggle("active", b.dataset.filter === "house"),
+    );
+    if (sizeSubFilter) sizeSubFilter.classList.remove("hidden");
+    sizeBtns.forEach((b) =>
+      b.classList.toggle("active", b.dataset.size === urlSize),
+    );
+    renderHouse(urlSize);
+  } else {
+    renderHouse();
+  }
+}
 
 // Modal
 function openProjectModal(proj) {
