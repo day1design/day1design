@@ -151,10 +151,9 @@ function sizeMatch(py, size) {
 
 let currentSize = "all";
 
-// Paging (portfolio page only): 2x10 initial, 2x5 per "…" click
+// Paging (portfolio + home): 2x10 initial, 2x5 per "…" click
 const HOUSE_INITIAL = 20;
 const HOUSE_INCREMENT = 10;
-const isPortfolioPage = !!document.querySelector(".filter-tabs");
 let houseVisible = HOUSE_INITIAL;
 
 function buildHouseCards() {
@@ -188,7 +187,7 @@ function removeHouseMoreBtn() {
 
 function renderHouseMoreBtn(total) {
   removeHouseMoreBtn();
-  if (!grid || !isPortfolioPage) return;
+  if (!grid) return;
   if (houseVisible >= total) return;
   const btn = document.createElement("button");
   btn.id = "projectMoreBtn";
@@ -213,9 +212,7 @@ function renderHouse(size) {
   grid.innerHTML = "";
   grid.className = "project-grid";
   const cards = buildHouseCards();
-  const limit = isPortfolioPage
-    ? Math.min(houseVisible, cards.length)
-    : cards.length;
+  const limit = Math.min(houseVisible, cards.length);
   for (let k = 0; k < limit; k++) {
     const { thumb, modalProj, displayName } = cards[k];
     const card = document.createElement("div");

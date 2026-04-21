@@ -268,6 +268,30 @@
   display: none;
 }
 
+/* "…" pagination button (home + portfolio): 2x10 initial, +2x5 per click */
+.project-more-btn {
+  display: block;
+  margin: 48px auto 96px;
+  padding: 14px 56px;
+  background: transparent;
+  border: 1px solid #d9d4c7;
+  border-radius: 999px;
+  color: var(--color-text-heading);
+  font-size: 26px;
+  letter-spacing: 6px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
+}
+.project-more-btn:hover {
+  background: var(--color-brand-grey);
+  color: #fff;
+  border-color: var(--color-brand-grey);
+}
+
 /* ========== PROJECT MODAL (Grid Gallery) ========== */
 .project-modal-overlay {
   display: none;
