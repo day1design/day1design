@@ -24,24 +24,21 @@
       <main class="admin-content" id="adminContent">
         <section class="admin-section">
           <p class="admin-sub" style="margin-bottom: 16px">
-            드래그해서 순서를 바꾸고, 카드에 이미지를
-            <strong>드롭하면 썸네일이 교체</strong>됩니다. 변경 후
-            <strong>저장</strong> 버튼을 눌러 Airtable에 반영하세요.
+            시공 프로젝트를 등록·편집합니다. 이미지는 업로드 시
+            <strong>WebP 자동 압축</strong>되며, 삭제 시 R2 파일도 함께
+            정리됩니다. 카드 드래그로 순서 변경, 카드에 이미지 드롭으로 대표
+            썸네일 교체 가능.
           </p>
 
           <div class="admin-toolbar">
             <div class="filter-row">
-              <label>카테고리</label>
+              <label>공간 유형</label>
               <select id="filterCategory">
                 <option value="">전체</option>
                 <option value="HOUSE">HOUSE</option>
                 <option value="OFFICE">OFFICE</option>
               </select>
-              <input
-                type="search"
-                id="filterSearch"
-                placeholder="이름 또는 folder 검색"
-              />
+              <input type="search" id="filterSearch" placeholder="이름 검색" />
             </div>
             <button type="button" class="btn btn-primary" id="btnNew">
               + 새 프로젝트
@@ -61,10 +58,10 @@
             </div>
             <div class="save-actions">
               <button type="button" class="btn btn-ghost" id="btnRevert">
-                되돌리기
+                순서 되돌리기
               </button>
               <button type="button" class="btn btn-primary" id="btnSave">
-                저장
+                순서 저장
               </button>
             </div>
           </div>
@@ -72,70 +69,151 @@
       </main>
     </div>
 
+    <!-- 프로젝트 편집 모달 -->
     <div class="modal" id="pfModal" hidden>
       <div class="modal-backdrop" data-close></div>
-      <div class="modal-panel">
+      <div class="modal-panel" style="max-width: 720px">
         <div class="modal-head">
-          <h2 id="modalTitle">새 프로젝트</h2>
-          <button class="icon-btn" data-close>✕</button>
+          <h2 id="modalTitle">프로젝트 편집</h2>
+          <button class="icon-btn" data-close type="button">✕</button>
         </div>
         <form id="pfForm" class="modal-body">
           <div class="field">
-            <label>이름 <span class="req">*</span></label>
+            <label>프로젝트 제목 <span class="req">*</span></label>
             <input
               type="text"
               name="name"
               required
-              placeholder="예: 판교 TH212 47py"
+              placeholder="예: 판교 TH212 47평 아파트"
             />
           </div>
+
           <div class="field">
-            <label>Folder (R2 slug) <span class="req">*</span></label>
-            <input
-              type="text"
-              name="folder"
-              required
-              placeholder="예: 판교-th212-47py"
-            />
-            <p class="hint">
-              공백/특수문자 대신 대시(-) 사용. 경로:
-              <code>/portfolio/{folder}/001.webp</code>
+            <label>공간 유형 <span class="req">*</span></label>
+            <select name="category" required>
+              <option value="HOUSE">HOUSE (아파트 · 빌라 · 주택)</option>
+              <option value="OFFICE">OFFICE (사무실 · 상가)</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>대표 이미지 (After)</label>
+            <div class="thumb-upload">
+              <div class="thumb-preview empty" id="thumbAfterPreview"></div>
+              <div class="thumb-actions">
+                <input
+                  type="file"
+                  id="thumbAfterFile"
+                  accept="image/*"
+                  hidden
+                />
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  id="btnPickThumbAfter"
+                >
+                  📤 이미지 업로드
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  id="btnClearThumbAfter"
+                  hidden
+                >
+                  제거
+                </button>
+                <p class="hint">
+                  WebP 자동 변환 후 업로드됩니다. 그리드 썸네일로 사용됩니다.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>리모델링 전 (Before, 선택)</label>
+            <div class="thumb-upload">
+              <div class="thumb-preview empty" id="thumbBeforePreview"></div>
+              <div class="thumb-actions">
+                <input
+                  type="file"
+                  id="thumbBeforeFile"
+                  accept="image/*"
+                  hidden
+                />
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  id="btnPickThumbBefore"
+                >
+                  📤 이미지 업로드
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  id="btnClearThumbBefore"
+                  hidden
+                >
+                  제거
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>상세 갤러리 이미지</label>
+            <p class="hint" style="margin-top: 0; margin-bottom: 8px">
+              프로젝트 상세 화면에 표시될 이미지들. 여러 장 한번에 선택 가능,
+              드래그로 순서 변경.
             </p>
+            <div class="gallery-grid" id="galleryGrid"></div>
+            <input
+              type="file"
+              id="galleryFiles"
+              accept="image/*"
+              multiple
+              hidden
+            />
+            <button
+              type="button"
+              class="btn btn-ghost"
+              id="btnAddGallery"
+              style="margin-top: 6px"
+            >
+              + 이미지 추가 (여러 장 선택 가능)
+            </button>
           </div>
-          <div class="field-inline">
-            <div class="field">
-              <label>Count (이미지 수)</label>
-              <input type="number" name="count" min="0" value="0" />
-            </div>
-            <div class="field">
-              <label>Category</label>
-              <select name="category">
-                <option value="HOUSE">HOUSE</option>
-                <option value="OFFICE">OFFICE</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Order</label>
-              <input type="number" name="order" min="0" value="0" />
-            </div>
-          </div>
+
           <details class="pair-fold">
-            <summary>페어링 (카드 우측에 다른 프로젝트 묶기)</summary>
+            <summary>고급 옵션 (URL 경로, 페어링)</summary>
             <div class="field">
-              <label>Right Name</label>
-              <input type="text" name="rightName" />
+              <label>URL 경로 (Folder)</label>
+              <input
+                type="text"
+                name="folder"
+                placeholder="프로젝트 이름에서 자동 생성됨"
+              />
+              <p class="hint">수동 수정 가능. 공백은 대시(-)로 변환됩니다.</p>
+            </div>
+            <div class="field">
+              <label>페어링 - 우측 프로젝트 이름</label>
+              <input
+                type="text"
+                name="rightName"
+                placeholder="카드에 함께 표시할 프로젝트"
+              />
             </div>
             <div class="field-inline">
               <div class="field">
-                <label>Right Folder</label>
+                <label>페어링 Folder</label>
                 <input type="text" name="rightFolder" />
               </div>
               <div class="field">
-                <label>Right Count</label>
+                <label>페어링 Count</label>
                 <input type="number" name="rightCount" min="0" value="0" />
               </div>
             </div>
           </details>
+
           <div class="form-actions">
             <button type="button" class="btn btn-ghost" data-close>취소</button>
             <button type="submit" class="btn btn-primary" id="btnSubmit">

@@ -7,6 +7,7 @@ import {
   atUpdate,
   atDelete,
 } from "../lib/airtable.js";
+import { r2DeleteMany } from "../lib/r2.js";
 
 const TABLE = "Portfolio";
 
@@ -26,10 +27,19 @@ export async function handlePortfolio(request, env, ctx) {
     if (request.method === "GET") return getProject(env, id);
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    if (request.method === "PATCH") return patchProject(request, env, id);
-    if (request.method === "DELETE") return deleteProject(env, id);
+    if (request.method === "PATCH") return patchProject(request, env, id, ctx);
+    if (request.method === "DELETE") return deleteProject(env, id, ctx);
   }
   return jsonError(404, "Not Found");
+}
+
+function collectUrls(record) {
+  if (!record) return [];
+  const out = [];
+  if (record.thumbAfter) out.push(record.thumbAfter);
+  if (record.thumbBefore) out.push(record.thumbBefore);
+  if (Array.isArray(record.images)) out.push(...record.images.filter(Boolean));
+  return out;
 }
 
 function toClient(r) {
@@ -46,7 +56,18 @@ function toClient(r) {
     rightName: f.RightName || undefined,
     thumbAfter: f.ThumbAfter || undefined,
     thumbBefore: f.ThumbBefore || undefined,
+    images: safeJsonParse(f.Images),
   };
+}
+
+function safeJsonParse(s, fallback = []) {
+  if (!s) return fallback;
+  try {
+    const v = JSON.parse(s);
+    return Array.isArray(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 async function listPortfolio(env) {
@@ -76,7 +97,7 @@ async function createProject(request, env) {
   return jsonOk({ record: toClient(r) });
 }
 
-async function patchProject(request, env, id) {
+async function patchProject(request, env, id, ctx) {
   let body;
   try {
     body = await request.json();
@@ -85,13 +106,32 @@ async function patchProject(request, env, id) {
   }
   const fields = mapFields(body);
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
+
+  // 기존 상태 → 변경 후 diff에서 사라진 이미지 URL 수집
+  const before = toClient(await atGet(env, TABLE, id));
   const r = await atUpdate(env, TABLE, id, fields);
-  return jsonOk({ record: toClient(r) });
+  const after = toClient(r);
+  const orphan = collectUrls(before).filter(
+    (u) => !collectUrls(after).includes(u),
+  );
+  if (orphan.length > 0) {
+    const task = r2DeleteMany(env.IMAGES, orphan, env.R2_PUBLIC_BASE);
+    if (ctx && ctx.waitUntil) ctx.waitUntil(task);
+    else await task;
+  }
+  return jsonOk({ record: after, cleaned: orphan.length });
 }
 
-async function deleteProject(env, id) {
+async function deleteProject(env, id, ctx) {
+  const before = toClient(await atGet(env, TABLE, id));
   await atDelete(env, TABLE, id);
-  return jsonOk({ deleted: id });
+  const urls = collectUrls(before);
+  if (urls.length > 0) {
+    const task = r2DeleteMany(env.IMAGES, urls, env.R2_PUBLIC_BASE);
+    if (ctx && ctx.waitUntil) ctx.waitUntil(task);
+    else await task;
+  }
+  return jsonOk({ deleted: id, cleaned: urls.length });
 }
 
 function mapFields(body) {
@@ -106,5 +146,12 @@ function mapFields(body) {
   if ("rightName" in body) out.RightName = body.rightName || "";
   if ("thumbAfter" in body) out.ThumbAfter = body.thumbAfter || "";
   if ("thumbBefore" in body) out.ThumbBefore = body.thumbBefore || "";
+  if ("images" in body) {
+    const arr = Array.isArray(body.images)
+      ? body.images.filter((x) => typeof x === "string")
+      : [];
+    out.Images = JSON.stringify(arr);
+    out.Count = arr.length; // 자동 동기화
+  }
   return out;
 }

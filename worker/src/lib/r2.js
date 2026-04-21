@@ -37,3 +37,38 @@ export function randomId(len = 8) {
     s += chars[Math.floor(Math.random() * chars.length)];
   return s;
 }
+
+/**
+ * R2 public URL → bucket key 추출.
+ * publicBase prefix가 맞지 않으면 null (외부 URL로 간주, 삭제 안 함).
+ */
+export function urlToKey(url, publicBase) {
+  if (!url || typeof url !== "string") return null;
+  const base = String(
+    publicBase || "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev",
+  ).replace(/\/$/, "");
+  if (!url.startsWith(base + "/")) return null;
+  return decodeURIComponent(url.slice(base.length + 1));
+}
+
+/**
+ * R2에서 URL 기준으로 단일 파일 삭제. 외부 URL/무효 URL은 무음 skip.
+ */
+export async function r2DeleteByUrl(bucket, url, publicBase) {
+  const key = urlToKey(url, publicBase);
+  if (!key || !bucket) return false;
+  try {
+    await bucket.delete(key);
+    return true;
+  } catch (e) {
+    console.warn("[r2] delete failed:", key, e?.message);
+    return false;
+  }
+}
+
+/** 여러 URL을 병렬로 삭제. 실패는 무음 skip. */
+export async function r2DeleteMany(bucket, urls, publicBase) {
+  const list = (urls || []).filter((u) => typeof u === "string" && u);
+  if (!list.length) return;
+  await Promise.all(list.map((u) => r2DeleteByUrl(bucket, u, publicBase)));
+}

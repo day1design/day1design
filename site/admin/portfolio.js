@@ -1,8 +1,14 @@
-// ========== 포트폴리오 (그리드 + DnD + Dirty-tracking 저장) ==========
+// ========== 포트폴리오 (그리드 + DnD + 업로드 전용 모달) ==========
 let records = [];
 let original = [];
 let editingId = null;
 let dirty = false;
+
+// 모달 상태
+let modalThumbAfter = "";
+let modalThumbBefore = "";
+let modalImages = [];
+let folderManuallyEdited = false;
 
 const grid = document.getElementById("pfGrid");
 const modal = document.getElementById("pfModal");
@@ -14,12 +20,14 @@ const filterSearch = document.getElementById("filterSearch");
 const countEl = document.getElementById("pfCount");
 const dirtyEl = document.getElementById("dirtyLabel");
 
+const galleryGrid = document.getElementById("galleryGrid");
+
 function setDirty(v) {
   dirty = v;
   dirtyEl.classList.toggle("hidden", !v);
 }
 
-// 파일명 규칙 기반 fallback 썸네일 (마이그레이션된 01~35_after.webp)
+// ========== 그리드 카드 렌더 ==========
 const R2_BASE = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev";
 function fallbackThumb(order) {
   const n = String(Math.max(1, (order ?? 0) + 1)).padStart(2, "0");
@@ -54,7 +62,6 @@ function render() {
     return;
   }
   list.forEach((r) => {
-    // filtered된 목록에서 전체 records 기준 index를 dataset에 저장 → DnD용
     const fullIdx = records.findIndex((x) => x.id === r.id);
     const card = document.createElement("div");
     card.className = "drag-card";
@@ -73,11 +80,9 @@ function render() {
         <p class="drag-card-title">${adminUtil.escapeHtml(r.name || "(이름 없음)")}</p>
         <div class="drag-card-tags">
           <span class="badge">${adminUtil.escapeHtml(r.category || "HOUSE")}</span>
+          ${Array.isArray(r.images) && r.images.length ? `<span class="badge">사진 ${r.images.length}장</span>` : ""}
           ${r.rightName ? `<span class="badge">+ ${adminUtil.escapeHtml(r.rightName)}</span>` : ""}
         </div>
-        <p class="drag-card-sub" title="${adminUtil.escapeHtml(r.folder || "")}" style="margin-top:6px">
-          <code style="font-size:10px">${adminUtil.escapeHtml(r.folder || "")}</code>
-        </p>
       </div>
     `;
     card.querySelector('[data-act="edit"]').addEventListener("click", (e) => {
@@ -92,26 +97,22 @@ function render() {
   });
 }
 
-// DnD: 순서 교체 + 이미지 drop으로 thumbAfter 교체
+// ========== DnD (그리드 순서 + 이미지 drop으로 thumbAfter 교체) ==========
 adminUtil.initDragSort({
   container: grid,
   onReorder: (src, dest) => {
     const moved = records.splice(src, 1)[0];
     records.splice(dest, 0, moved);
-    // order 필드를 인덱스와 동기화
-    records.forEach((r, i) => {
-      r.order = i;
-    });
+    records.forEach((r, i) => (r.order = i));
     setDirty(true);
     render();
   },
   onFileDrop: async (idx, file) => {
     try {
       adminUtil.toast("썸네일 업로드 중...");
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("folder", "portfolio-thumbs");
-      const res = await adminUtil.apiUpload("/api/upload/image", fd);
+      const res = await adminUtil.uploadImage(file, {
+        folder: "portfolio-thumbs",
+      });
       records[idx].thumbAfter = res.url;
       setDirty(true);
       render();
@@ -125,7 +126,7 @@ adminUtil.initDragSort({
 filterCat.addEventListener("change", render);
 filterSearch.addEventListener("input", render);
 
-// ========== 편집 모달 ==========
+// ========== 모달 공통 ==========
 function openModal(title) {
   modalTitle.textContent = title;
   modal.hidden = false;
@@ -136,16 +137,171 @@ function closeModal() {
   document.body.style.overflow = "";
   editingId = null;
   form.reset();
+  modalThumbAfter = "";
+  modalThumbBefore = "";
+  modalImages = [];
+  folderManuallyEdited = false;
 }
 modal
   .querySelectorAll("[data-close]")
   .forEach((el) => el.addEventListener("click", closeModal));
 
+// ========== 썸네일 프리뷰 ==========
+function renderThumbPreview(previewId, clearBtnId, url) {
+  const el = document.getElementById(previewId);
+  const clr = document.getElementById(clearBtnId);
+  if (url) {
+    el.style.backgroundImage = `url('${url}')`;
+    el.classList.remove("empty");
+    el.classList.add("has-image");
+    clr.hidden = false;
+  } else {
+    el.style.backgroundImage = "none";
+    el.classList.remove("has-image");
+    el.classList.add("empty");
+    clr.hidden = true;
+  }
+}
+
+function bindThumbSlot({
+  previewId,
+  clearBtnId,
+  pickBtnId,
+  fileInputId,
+  folder,
+  onChange,
+}) {
+  document.getElementById(pickBtnId).addEventListener("click", () => {
+    document.getElementById(fileInputId).click();
+  });
+  document.getElementById(fileInputId).addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      adminUtil.toast("업로드 중...");
+      const res = await adminUtil.uploadImage(file, { folder });
+      onChange(res.url);
+      renderThumbPreview(previewId, clearBtnId, res.url);
+      adminUtil.toast("업로드 완료");
+    } catch (err) {
+      adminUtil.toast("실패: " + err.message, "error");
+    } finally {
+      e.target.value = "";
+    }
+  });
+  document.getElementById(clearBtnId).addEventListener("click", () => {
+    onChange("");
+    renderThumbPreview(previewId, clearBtnId, "");
+  });
+}
+
+bindThumbSlot({
+  previewId: "thumbAfterPreview",
+  clearBtnId: "btnClearThumbAfter",
+  pickBtnId: "btnPickThumbAfter",
+  fileInputId: "thumbAfterFile",
+  folder: "portfolio-thumbs",
+  onChange: (u) => {
+    modalThumbAfter = u;
+  },
+});
+bindThumbSlot({
+  previewId: "thumbBeforePreview",
+  clearBtnId: "btnClearThumbBefore",
+  pickBtnId: "btnPickThumbBefore",
+  fileInputId: "thumbBeforeFile",
+  folder: "portfolio-thumbs",
+  onChange: (u) => {
+    modalThumbBefore = u;
+  },
+});
+
+// ========== 갤러리 ==========
+function renderGallery() {
+  galleryGrid.innerHTML = "";
+  if (!modalImages.length) {
+    galleryGrid.innerHTML =
+      '<div class="gallery-empty">아직 추가된 이미지가 없습니다. 아래 버튼으로 업로드하세요.</div>';
+    return;
+  }
+  modalImages.forEach((url, i) => {
+    const item = document.createElement("div");
+    item.className = "gallery-item";
+    item.draggable = true;
+    item.dataset.index = String(i);
+    item.style.backgroundImage = `url('${url}')`;
+    item.innerHTML = `
+      <span class="gallery-item-order">${i + 1}</span>
+      <button type="button" class="gallery-item-remove" data-act="del" title="제거">✕</button>
+    `;
+    item.querySelector('[data-act="del"]').addEventListener("click", (e) => {
+      e.stopPropagation();
+      modalImages.splice(i, 1);
+      renderGallery();
+    });
+    galleryGrid.appendChild(item);
+  });
+}
+
+adminUtil.initDragSort({
+  container: galleryGrid,
+  itemSelector: ".gallery-item",
+  onReorder: (src, dest) => {
+    const moved = modalImages.splice(src, 1)[0];
+    modalImages.splice(dest, 0, moved);
+    renderGallery();
+  },
+});
+
+document.getElementById("btnAddGallery").addEventListener("click", () => {
+  document.getElementById("galleryFiles").click();
+});
+document
+  .getElementById("galleryFiles")
+  .addEventListener("change", async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    adminUtil.toast(`${files.length}개 업로드 중...`);
+    let ok = 0,
+      fail = 0;
+    for (const file of files) {
+      try {
+        const res = await adminUtil.uploadImage(file, { folder: "portfolio" });
+        modalImages.push(res.url);
+        renderGallery();
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    adminUtil.toast(
+      `업로드 완료 (${ok}성공 ${fail ? "/ " + fail + "실패" : ""})`,
+    );
+    e.target.value = "";
+  });
+
+// ========== folder 자동 생성 ==========
+form.elements.folder.addEventListener("input", () => {
+  folderManuallyEdited = true;
+});
+form.elements.name.addEventListener("input", () => {
+  if (!folderManuallyEdited) {
+    form.elements.folder.value = adminUtil.slugify(form.elements.name.value);
+  }
+});
+
+// ========== 새로 / 편집 ==========
 document.getElementById("btnNew").addEventListener("click", () => {
   editingId = null;
   form.reset();
   form.elements.category.value = "HOUSE";
-  form.elements.order.value = records.length;
+  modalThumbAfter = "";
+  modalThumbBefore = "";
+  modalImages = [];
+  folderManuallyEdited = false;
+  renderThumbPreview("thumbAfterPreview", "btnClearThumbAfter", "");
+  renderThumbPreview("thumbBeforePreview", "btnClearThumbBefore", "");
+  renderGallery();
   openModal("새 프로젝트");
 });
 
@@ -156,25 +312,43 @@ function openEdit(id) {
   form.reset();
   form.elements.name.value = r.name || "";
   form.elements.folder.value = r.folder || "";
-  form.elements.count.value = r.count || 0;
   form.elements.category.value = r.category || "HOUSE";
-  form.elements.order.value = r.order ?? 0;
   form.elements.rightName.value = r.rightName || "";
   form.elements.rightFolder.value = r.rightFolder || "";
   form.elements.rightCount.value = r.rightCount || 0;
-  openModal("프로젝트 편집");
+  modalThumbAfter = r.thumbAfter || "";
+  modalThumbBefore = r.thumbBefore || "";
+  modalImages = Array.isArray(r.images) ? r.images.slice() : [];
+  folderManuallyEdited = true; // 기존 folder 유지
+  renderThumbPreview(
+    "thumbAfterPreview",
+    "btnClearThumbAfter",
+    modalThumbAfter,
+  );
+  renderThumbPreview(
+    "thumbBeforePreview",
+    "btnClearThumbBefore",
+    modalThumbBefore,
+  );
+  renderGallery();
+  openModal(`편집 · ${r.name}`);
 }
 
 async function doDelete(id) {
   const r = records.find((x) => x.id === id);
   if (!r) return;
-  if (!confirm(`"${r.name}" 을(를) 삭제할까요?`)) return;
+  if (
+    !confirm(
+      `"${r.name}" 을(를) 삭제할까요?\n썸네일 + 갤러리 이미지 ${(r.images || []).length}장이 R2에서 함께 삭제됩니다.`,
+    )
+  )
+    return;
   try {
     await adminUtil.api(`/api/portfolio/${id}`, { method: "DELETE" });
     records = records.filter((x) => x.id !== id);
     original = original.filter((x) => x.id !== id);
     render();
-    adminUtil.toast("삭제 완료");
+    adminUtil.toast("삭제 완료 (R2 이미지 정리됨)");
   } catch (e) {
     adminUtil.toast("삭제 실패: " + e.message, "error");
   }
@@ -183,12 +357,24 @@ async function doDelete(id) {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   btnSubmit.disabled = true;
+  const name = form.elements.name.value.trim();
+  if (!name) {
+    adminUtil.toast("이름은 필수입니다", "error");
+    btnSubmit.disabled = false;
+    return;
+  }
+  const folder =
+    form.elements.folder.value.trim() ||
+    adminUtil.slugify(name) ||
+    "project-" + Date.now();
   const payload = {
-    name: form.elements.name.value.trim(),
-    folder: form.elements.folder.value.trim(),
-    count: Number(form.elements.count.value) || 0,
+    name,
+    folder,
     category: form.elements.category.value,
-    order: Number(form.elements.order.value) || 0,
+    thumbAfter: modalThumbAfter,
+    thumbBefore: modalThumbBefore,
+    images: modalImages,
+    // Count는 Worker가 images.length로 자동 설정
     rightName: form.elements.rightName.value.trim(),
     rightFolder: form.elements.rightFolder.value.trim(),
     rightCount: Number(form.elements.rightCount.value) || 0,
@@ -204,6 +390,7 @@ form.addEventListener("submit", async (e) => {
       const oidx = original.findIndex((x) => x.id === editingId);
       if (oidx >= 0) Object.assign(original[oidx], r.record);
     } else {
+      payload.order = records.length;
       const r = await adminUtil.api("/api/portfolio", {
         method: "POST",
         json: payload,
@@ -222,8 +409,8 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-// ========== Dirty Save / Revert ==========
-function diffedPatches() {
+// ========== 순서 저장 (그리드 DnD 일괄 PATCH) ==========
+function diffedOrderPatches() {
   const origMap = new Map(original.map((r) => [r.id, r]));
   const patches = [];
   records.forEach((r) => {
@@ -233,8 +420,6 @@ function diffedPatches() {
     if ((r.order ?? 0) !== (o.order ?? 0)) d.order = r.order;
     if ((r.thumbAfter || "") !== (o.thumbAfter || ""))
       d.thumbAfter = r.thumbAfter || "";
-    if ((r.thumbBefore || "") !== (o.thumbBefore || ""))
-      d.thumbBefore = r.thumbBefore || "";
     if (Object.keys(d).length > 0) patches.push({ id: r.id, patch: d });
   });
   return patches;
@@ -242,7 +427,7 @@ function diffedPatches() {
 
 document.getElementById("btnRevert").addEventListener("click", () => {
   if (!dirty) return;
-  if (!confirm("변경사항을 버리고 저장된 상태로 되돌릴까요?")) return;
+  if (!confirm("변경된 순서/썸네일을 저장된 상태로 되돌릴까요?")) return;
   records = JSON.parse(JSON.stringify(original));
   records.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   setDirty(false);
@@ -250,7 +435,7 @@ document.getElementById("btnRevert").addEventListener("click", () => {
 });
 
 document.getElementById("btnSave").addEventListener("click", async () => {
-  const patches = diffedPatches();
+  const patches = diffedOrderPatches();
   if (!patches.length) {
     adminUtil.toast("변경된 내용이 없습니다");
     return;
@@ -269,12 +454,12 @@ document.getElementById("btnSave").addEventListener("click", async () => {
       const o = original.find((x) => x.id === id);
       if (o) Object.assign(o, patch);
       done++;
-    } catch (e) {
+    } catch {
       failed++;
     }
     btn.textContent = `저장 중 (${done + failed}/${patches.length})`;
   }
-  btn.textContent = "저장";
+  btn.textContent = "순서 저장";
   btn.disabled = false;
   if (failed === 0) {
     setDirty(false);

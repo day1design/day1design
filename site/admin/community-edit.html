@@ -79,18 +79,26 @@
             </div>
           </div>
           <div class="field">
-            <label>썸네일 URL</label>
-            <div class="field-row">
-              <input
-                type="url"
-                name="thumb"
-                placeholder="https://.../thumb.webp"
-              />
-              <input type="file" id="thumbFile" accept="image/*" />
+            <label>썸네일</label>
+            <div class="thumb-upload">
+              <div class="thumb-preview empty" id="thumbPreview"></div>
+              <div class="thumb-actions">
+                <input type="file" id="thumbFile" accept="image/*" hidden />
+                <button type="button" class="btn btn-ghost" id="btnPickThumb">
+                  📤 이미지 업로드
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  id="btnClearThumb"
+                  hidden
+                >
+                  제거
+                </button>
+                <p class="hint">WebP 자동 변환 후 업로드됩니다.</p>
+              </div>
             </div>
-            <p class="hint">
-              파일 선택 시 R2로 업로드되어 URL이 자동 입력됩니다.
-            </p>
+            <input type="hidden" name="thumb" />
           </div>
           <div class="field">
             <label>Excerpt (목록 카드 요약)</label>
@@ -107,6 +115,7 @@
           <h3 class="be-title">본문 블록</h3>
           <p class="admin-sub" style="margin-bottom: 16px">
             블록 순서가 곧 본문 순서입니다. 텍스트/이미지를 섞어서 작성하세요.
+            이미지는 업로드 방식입니다.
           </p>
           <div class="blocks-list" id="blocksList"></div>
           <div class="blocks-add">

@@ -25,7 +25,9 @@
         <section class="admin-section">
           <p class="admin-sub" style="margin-bottom: 20px">
             메인 페이지 상단 슬라이드를 등록·정렬·삭제합니다. 최대
-            <strong id="maxSlidesLabel">10</strong>장.
+            <strong>10</strong>장. 이미지는 업로드 시
+            <strong>WebP 자동 압축</strong>됩니다. 카드 드래그로 순서 교체,
+            카드에 이미지 드롭으로 교체 가능.
           </p>
 
           <div class="slides-list" id="slidesList"></div>
@@ -36,23 +38,18 @@
             </button>
             <form class="add-form hidden" id="addForm">
               <div class="field">
-                <label>이미지</label>
-                <div class="field-row">
-                  <input
-                    type="file"
-                    id="uploadInput"
-                    accept="image/webp,image/jpeg,image/png"
-                  />
-                  <span class="or">또는</span>
-                  <input
-                    type="url"
-                    id="imageUrlInput"
-                    placeholder="이미지 URL (R2 public URL)"
-                  />
-                </div>
+                <label>이미지 <span class="req">*</span></label>
+                <input type="file" id="uploadInput" accept="image/*" />
                 <p class="hint">
-                  업로드 시 R2로 전송되며, 응답 URL이 자동 입력됩니다.
+                  파일 선택 시 WebP로 자동 변환 후 R2 업로드됩니다.
                 </p>
+              </div>
+              <div class="field-preview hidden" id="previewWrap">
+                <div
+                  class="preview"
+                  id="preview"
+                  style="background-image: none"
+                ></div>
               </div>
               <div class="field">
                 <label>링크 (선택)</label>
@@ -63,19 +60,12 @@
                 />
               </div>
               <div class="field">
-                <label>Alt 텍스트</label>
+                <label>제목 / Alt 텍스트</label>
                 <input
                   type="text"
                   id="altInput"
                   placeholder="접근성/SEO용 설명"
                 />
-              </div>
-              <div class="field-preview hidden" id="previewWrap">
-                <div
-                  class="preview"
-                  id="preview"
-                  style="background-image: none"
-                ></div>
               </div>
               <div class="form-actions">
                 <button type="button" class="btn btn-ghost" id="btnCancelAdd">

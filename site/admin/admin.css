@@ -1460,3 +1460,121 @@
   border-radius: var(--radius-sm);
   background: var(--c-surface);
 }
+
+/* ========== THUMB UPLOAD (single) ========== */
+.thumb-upload {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.thumb-preview {
+  width: 160px;
+  height: 100px;
+  background: #f3f4f6 no-repeat center/cover;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-muted);
+  font-size: 11px;
+}
+.thumb-preview.has-image::before {
+  content: "";
+}
+.thumb-preview.empty::before {
+  content: "미등록";
+}
+.thumb-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.thumb-actions .btn {
+  justify-content: flex-start;
+}
+
+/* ========== GALLERY (multi-image upload) ========== */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 10px 0;
+}
+@media (max-width: 640px) {
+  .gallery-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.gallery-item {
+  position: relative;
+  aspect-ratio: 1;
+  background: #f3f4f6 no-repeat center/cover;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  transition:
+    border-color 140ms,
+    box-shadow 140ms;
+}
+.gallery-item.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+.gallery-item.drag-over {
+  border-color: var(--c-brand);
+  box-shadow: 0 0 0 2px var(--c-brand-soft);
+}
+.gallery-item-order {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: rgba(17, 24, 39, 0.85);
+  color: #fff;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.gallery-item-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(17, 24, 39, 0.85);
+  color: #fff;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 140ms;
+}
+.gallery-item:hover .gallery-item-remove {
+  opacity: 1;
+}
+.gallery-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 28px 16px;
+  color: var(--c-text-muted);
+  font-size: 12px;
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius-sm);
+}

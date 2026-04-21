@@ -375,9 +375,105 @@ function escapeHtml(s) {
     .replace(/'/g, "&#39;");
 }
 
+// ========== WEBP 압축 + 업로드 ==========
+/**
+ * File → Canvas → WebP Blob 변환. 이미지가 아니면 원본 그대로 통과.
+ * @param {File} file
+ * @param {number} maxWidth  기본 1920
+ * @param {number} quality   0.0~1.0, 기본 0.82
+ * @returns {Promise<{blob, name, size, type}>}
+ */
+function compressToWebP(file, maxWidth = 1920, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      resolve({
+        blob: file,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+      });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("파일 읽기 실패"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("이미지 디코딩 실패"));
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let w = img.width;
+        let h = img.height;
+        if (w > maxWidth) {
+          h = Math.round((maxWidth / w) * h);
+          w = maxWidth;
+        }
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) return reject(new Error("WebP 변환 실패"));
+            const base = file.name.replace(/\.[^.]+$/, "") || "image";
+            resolve({
+              blob,
+              name: `${base}.webp`,
+              size: blob.size,
+              type: "image/webp",
+            });
+          },
+          "image/webp",
+          quality,
+        );
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * 이미지 파일을 WebP로 자동 변환 후 R2 업로드.
+ * @param {File} file
+ * @param {object} opts - { folder, maxWidth, quality }
+ * @returns {Promise<{url, key}>}
+ */
+async function uploadImage(file, opts = {}) {
+  const folder = opts.folder || "uploads";
+  const maxWidth = opts.maxWidth || 1920;
+  const quality = opts.quality || 0.82;
+  const c = await compressToWebP(file, maxWidth, quality);
+  const fd = new FormData();
+  fd.append("file", c.blob, c.name);
+  fd.append("folder", folder);
+  fd.append("name", c.name);
+  return apiUpload("/api/upload/image", fd);
+}
+
+function slugify(s) {
+  return String(s || "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[/\\_]+/g, "-")
+    .toLowerCase()
+    .replace(/[^\w가-힣\-.]+/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function formatBytes(n) {
+  if (!n || n < 0) return "0B";
+  if (n < 1024) return n + "B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + "KB";
+  return (n / 1024 / 1024).toFixed(1) + "MB";
+}
+
 window.adminUtil = {
   api,
   apiUpload,
+  uploadImage,
+  compressToWebP,
+  slugify,
+  formatBytes,
   getToken,
   setToken,
   clearToken,

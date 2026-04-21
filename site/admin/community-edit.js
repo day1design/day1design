@@ -1,22 +1,14 @@
-// ========== 커뮤니티 블록 에디터 ==========
+// ========== 커뮤니티 블록 에디터 (업로드만) ==========
 const params = new URLSearchParams(location.search);
 const IS_NEW = params.has("new");
 const IDX_PARAM = params.get("idx") || "";
 
 const metaForm = document.getElementById("metaForm");
 const blocksList = document.getElementById("blocksList");
-const pageTitle = document.getElementById("pageTitle");
 
 let blocks = []; // [{id, type, content?, src?}]
 let blockSeq = 0;
-
-function escapeHtml(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+let thumbUrl = "";
 
 function newId() {
   return "b" + ++blockSeq;
@@ -66,10 +58,13 @@ function renderBlocks() {
               <button class="icon-btn danger" data-act="del">✕</button>
             </div>
           </div>
-          <textarea class="block-text" rows="5" placeholder="텍스트를 입력하세요...">${escapeHtml(b.content)}</textarea>
+          <textarea class="block-text" rows="5" placeholder="텍스트를 입력하세요...">${adminUtil.escapeHtml(b.content)}</textarea>
         </div>`;
       } else if (b.type === "image") {
-        const preview = b.src ? `<img src="${escapeHtml(b.src)}" alt="">` : "";
+        const hasImg = !!b.src;
+        const preview = hasImg
+          ? `<img src="${adminUtil.escapeHtml(b.src)}" alt="">`
+          : '<span style="color:var(--c-text-muted);font-size:11px">미업로드</span>';
         return `
         <div class="block-item" data-id="${b.id}">
           <div class="block-head">
@@ -83,9 +78,11 @@ function renderBlocks() {
           <div class="block-image-body">
             <div class="block-image-preview" data-preview>${preview}</div>
             <div class="block-image-fields">
-              <input type="url" class="block-src" placeholder="이미지 URL" value="${escapeHtml(b.src)}" />
-              <input type="file" class="block-file" accept="image/*" />
-              <p class="hint">파일 선택 시 R2로 업로드 → URL 자동 입력</p>
+              <input type="file" class="block-file" accept="image/*" hidden />
+              <button type="button" class="btn btn-ghost block-upload-btn">
+                ${hasImg ? "🔄 이미지 교체" : "📤 이미지 업로드"}
+              </button>
+              <p class="hint">WebP 자동 변환 후 업로드됩니다.</p>
             </div>
           </div>
         </div>`;
@@ -112,30 +109,26 @@ function renderBlocks() {
         b.content = e.target.value;
       });
     } else if (b.type === "image") {
-      const srcInput = el.querySelector(".block-src");
+      const uploadBtn = el.querySelector(".block-upload-btn");
       const fileInput = el.querySelector(".block-file");
       const preview = el.querySelector("[data-preview]");
-      srcInput.addEventListener("input", () => {
-        b.src = srcInput.value.trim();
-        preview.innerHTML = b.src
-          ? `<img src="${escapeHtml(b.src)}" alt="">`
-          : "";
-      });
+      uploadBtn.addEventListener("click", () => fileInput.click());
       fileInput.addEventListener("change", async () => {
         const f = fileInput.files?.[0];
         if (!f) return;
         try {
           adminUtil.toast("업로드 중...");
-          const fd = new FormData();
-          fd.append("file", f);
-          fd.append("folder", "community/posts");
-          const res = await adminUtil.apiUpload("/api/upload/image", fd);
+          const res = await adminUtil.uploadImage(f, {
+            folder: "community/posts",
+          });
           b.src = res.url;
-          srcInput.value = res.url;
-          preview.innerHTML = `<img src="${escapeHtml(res.url)}" alt="">`;
+          preview.innerHTML = `<img src="${adminUtil.escapeHtml(res.url)}" alt="">`;
+          uploadBtn.textContent = "🔄 이미지 교체";
           adminUtil.toast("업로드 완료");
         } catch (e) {
           adminUtil.toast("업로드 실패: " + e.message, "error");
+        } finally {
+          fileInput.value = "";
         }
       });
     }
@@ -149,26 +142,51 @@ document
   .getElementById("btnAddImage")
   .addEventListener("click", () => addBlock("image"));
 
-// 썸네일 파일 업로드
+// ========== 썸네일 업로드 ==========
+function renderThumbPreview(url) {
+  const el = document.getElementById("thumbPreview");
+  const clr = document.getElementById("btnClearThumb");
+  if (url) {
+    el.style.backgroundImage = `url('${url}')`;
+    el.classList.remove("empty");
+    el.classList.add("has-image");
+    clr.hidden = false;
+  } else {
+    el.style.backgroundImage = "none";
+    el.classList.remove("has-image");
+    el.classList.add("empty");
+    clr.hidden = true;
+  }
+  metaForm.elements.thumb.value = url || "";
+}
+
+document.getElementById("btnPickThumb").addEventListener("click", () => {
+  document.getElementById("thumbFile").click();
+});
 document.getElementById("thumbFile").addEventListener("change", async (e) => {
   const f = e.target.files?.[0];
   if (!f) return;
   try {
     adminUtil.toast("썸네일 업로드 중...");
-    const fd = new FormData();
-    fd.append("file", f);
-    fd.append("folder", "community/thumbs");
-    const res = await adminUtil.apiUpload("/api/upload/image", fd);
-    metaForm.elements.thumb.value = res.url;
+    const res = await adminUtil.uploadImage(f, { folder: "community/thumbs" });
+    thumbUrl = res.url;
+    renderThumbPreview(thumbUrl);
     adminUtil.toast("업로드 완료");
   } catch (err) {
     adminUtil.toast("업로드 실패: " + err.message, "error");
+  } finally {
+    e.target.value = "";
   }
 });
+document.getElementById("btnClearThumb").addEventListener("click", () => {
+  thumbUrl = "";
+  renderThumbPreview("");
+});
 
+// ========== 취소 / 저장 ==========
 document.getElementById("btnCancel").addEventListener("click", () => {
   if (confirm("변경사항을 버리고 목록으로 돌아갈까요?"))
-    location.href = "community.html";
+    location.href = "community";
 });
 
 document.getElementById("btnSave").addEventListener("click", async () => {
@@ -211,7 +229,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
     category: f.category.value.trim(),
     date: f.date.value,
     board: f.board.value,
-    thumb: f.thumb.value.trim(),
+    thumb: thumbUrl,
     views: Number(f.views.value) || 0,
     excerpt,
     body_text: bodyText,
@@ -225,14 +243,11 @@ document.getElementById("btnSave").addEventListener("click", async () => {
     } else {
       await adminUtil.api(
         `/api/community/${encodeURIComponent(IDX_PARAM || idx)}`,
-        {
-          method: "PATCH",
-          json: payload,
-        },
+        { method: "PATCH", json: payload },
       );
     }
     adminUtil.toast("저장 완료");
-    setTimeout(() => (location.href = "community.html"), 600);
+    setTimeout(() => (location.href = "community"), 600);
   } catch (e) {
     adminUtil.toast("저장 실패: " + e.message, "error");
   } finally {
@@ -240,23 +255,12 @@ document.getElementById("btnSave").addEventListener("click", async () => {
   }
 });
 
-// 초기 로드
+// ========== 초기 로드 ==========
 (async () => {
-  await adminUtil.ensureAuth();
-  adminUtil.pingApi();
-  document.getElementById("btnLogout").addEventListener("click", async (e) => {
-    e.preventDefault();
-    try {
-      await adminUtil.api("/api/auth/logout", { method: "POST" });
-    } catch {}
-    adminUtil.clearToken();
-    location.href = "login.html";
-  });
-
   if (IS_NEW) {
-    pageTitle.textContent = "새 게시글";
     metaForm.elements.board.value = "Residential";
     metaForm.elements.idx.value = String(Date.now()).slice(-9);
+    renderThumbPreview("");
     renderBlocks();
     return;
   }
@@ -269,15 +273,15 @@ document.getElementById("btnSave").addEventListener("click", async () => {
       `/api/community/${encodeURIComponent(IDX_PARAM)}`,
     );
     const p = d.post || {};
-    pageTitle.textContent = `게시글 편집 · ${p.title || IDX_PARAM}`;
     metaForm.elements.idx.value = p.idx || "";
     metaForm.elements.title.value = p.title || "";
     metaForm.elements.category.value = p.category || "";
     metaForm.elements.date.value = (p.date || "").slice(0, 10);
     metaForm.elements.board.value = p.board || "Residential";
-    metaForm.elements.thumb.value = p.thumb || "";
     metaForm.elements.views.value = p.views || 0;
     metaForm.elements.excerpt.value = p.excerpt || "";
+    thumbUrl = p.thumb || "";
+    renderThumbPreview(thumbUrl);
     blocks = (p.content_blocks || []).map((b) => ({
       id: newId(),
       type: b.type,

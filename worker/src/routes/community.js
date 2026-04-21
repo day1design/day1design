@@ -8,8 +8,20 @@ import {
   atDelete,
   atList,
 } from "../lib/airtable.js";
+import { r2DeleteMany } from "../lib/r2.js";
 
 const TABLE = "Community";
+
+function collectPostUrls(post) {
+  if (!post) return [];
+  const out = new Set();
+  if (post.thumb) out.add(post.thumb);
+  (post.images || []).forEach((u) => u && out.add(u));
+  (post.content_blocks || []).forEach((b) => {
+    if (b && b.type === "image" && b.src) out.add(b.src);
+  });
+  return [...out];
+}
 
 export async function handleCommunity(request, env, ctx) {
   const url = new URL(request.url);
@@ -29,8 +41,8 @@ export async function handleCommunity(request, env, ctx) {
     if (request.method === "GET") return getPost(env, idx);
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    if (request.method === "PATCH") return patchPost(request, env, idx);
-    if (request.method === "DELETE") return deletePost(env, idx);
+    if (request.method === "PATCH") return patchPost(request, env, idx, ctx);
+    if (request.method === "DELETE") return deletePost(env, idx, ctx);
   }
   return jsonError(404, "Not Found");
 }
@@ -106,7 +118,7 @@ async function createPost(request, env) {
   return jsonOk({ post: toDetailClient(r) });
 }
 
-async function patchPost(request, env, idx) {
+async function patchPost(request, env, idx, ctx) {
   let body;
   try {
     body = await request.json();
@@ -119,21 +131,39 @@ async function patchPost(request, env, idx) {
   });
   const r = (data.records || [])[0];
   if (!r) return jsonError(404, "Post not found");
+  const before = toDetailClient(r);
   const fields = mapFields(body);
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
   const updated = await atUpdate(env, TABLE, r.id, fields);
-  return jsonOk({ post: toDetailClient(updated) });
+  const after = toDetailClient(updated);
+
+  // 이전에 있었으나 새 상태에는 없는 URL만 정리
+  const afterSet = new Set(collectPostUrls(after));
+  const orphan = collectPostUrls(before).filter((u) => !afterSet.has(u));
+  if (orphan.length > 0) {
+    const task = r2DeleteMany(env.IMAGES, orphan, env.R2_PUBLIC_BASE);
+    if (ctx && ctx.waitUntil) ctx.waitUntil(task);
+    else await task;
+  }
+  return jsonOk({ post: after, cleaned: orphan.length });
 }
 
-async function deletePost(env, idx) {
+async function deletePost(env, idx, ctx) {
   const data = await atList(env, TABLE, {
     filter: `{Idx}='${idx.replace(/'/g, "\\'")}'`,
     pageSize: 1,
   });
   const r = (data.records || [])[0];
   if (!r) return jsonError(404, "Post not found");
+  const before = toDetailClient(r);
   await atDelete(env, TABLE, r.id);
-  return jsonOk({ deleted: idx });
+  const urls = collectPostUrls(before);
+  if (urls.length > 0) {
+    const task = r2DeleteMany(env.IMAGES, urls, env.R2_PUBLIC_BASE);
+    if (ctx && ctx.waitUntil) ctx.waitUntil(task);
+    else await task;
+  }
+  return jsonOk({ deleted: idx, cleaned: urls.length });
 }
 
 function mapFields(body) {

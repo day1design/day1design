@@ -1,7 +1,13 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { atListAll, atCreate, atUpdate, atDelete } from "../lib/airtable.js";
-import { r2Upload, safeFileName, datePrefix, randomId } from "../lib/r2.js";
+import {
+  r2Upload,
+  r2DeleteMany,
+  safeFileName,
+  datePrefix,
+  randomId,
+} from "../lib/r2.js";
 
 const TABLE = "HeroSlides";
 const MAX_IMG_BYTES = 10 * 1024 * 1024;
@@ -16,7 +22,7 @@ export async function handleHero(request, env, ctx) {
   if (path === "/slides" && request.method === "PUT") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    return putSlides(request, env);
+    return putSlides(request, env, ctx);
   }
   if (path === "/upload" && request.method === "POST") {
     if (!(await verifyAdmin(request, env)))
@@ -46,7 +52,7 @@ async function getSlides(env) {
 }
 
 /** 전체 배열 교체: 기존 삭제 → 새로 생성. Airtable에는 bulk replace가 없으니 diff보다 이게 단순함 */
-async function putSlides(request, env) {
+async function putSlides(request, env, ctx) {
   let body;
   try {
     body = await request.json();
@@ -58,6 +64,10 @@ async function putSlides(request, env) {
   if (slides.length > 10) return jsonError(400, "Max 10 slides");
 
   const existing = await atListAll(env, TABLE);
+  const oldUrls = existing.map((r) => r.fields.Image).filter(Boolean);
+  const newUrls = new Set(slides.map((s) => s.image).filter(Boolean));
+  const orphanUrls = oldUrls.filter((u) => !newUrls.has(u));
+
   for (const r of existing) {
     await atDelete(env, TABLE, r.id);
   }
@@ -74,7 +84,15 @@ async function putSlides(request, env) {
     });
     created.push(rec);
   }
-  return jsonOk({ saved: created.length });
+
+  // 고아 이미지 R2 삭제 (응답 지연 방지: waitUntil)
+  if (orphanUrls.length > 0) {
+    const task = r2DeleteMany(env.IMAGES, orphanUrls, env.R2_PUBLIC_BASE);
+    if (ctx && ctx.waitUntil) ctx.waitUntil(task);
+    else await task;
+  }
+
+  return jsonOk({ saved: created.length, cleaned: orphanUrls.length });
 }
 
 async function uploadImage(request, env) {

@@ -1,15 +1,15 @@
-// ========== 히어로 슬라이드 (그리드 + DnD) ==========
+// ========== 히어로 슬라이드 (그리드 + DnD + 업로드만) ==========
 const MAX_SLIDES = 10;
 let slides = [];
 let original = [];
 let dirty = false;
+let pendingAddUrl = "";
 
 const listEl = document.getElementById("slidesList");
 const addFormEl = document.getElementById("addForm");
 const previewWrap = document.getElementById("previewWrap");
 const previewEl = document.getElementById("preview");
 const uploadInput = document.getElementById("uploadInput");
-const urlInput = document.getElementById("imageUrlInput");
 const hrefInput = document.getElementById("hrefInput");
 const altInput = document.getElementById("altInput");
 const countEl = document.getElementById("slideCount");
@@ -21,7 +21,6 @@ function setDirty(v) {
 }
 
 function render() {
-  // 바둑판 그리드로 리스트 변환
   listEl.className = "card-grid";
   listEl.innerHTML = "";
 
@@ -29,7 +28,7 @@ function render() {
     const empty = document.createElement("div");
     empty.className = "card-grid-empty";
     empty.textContent =
-      "등록된 슬라이드가 없습니다. 아래 '+ 슬라이드 추가'로 등록하거나, 이미지를 이 영역에 드래그해 넣으세요.";
+      "등록된 슬라이드가 없습니다. 아래 '+ 슬라이드 추가'로 등록하세요.";
     listEl.appendChild(empty);
   } else {
     slides.forEach((s, i) => {
@@ -41,12 +40,13 @@ function render() {
         <div class="drag-card-thumb" style="background-image:url('${adminUtil.escapeHtml(s.image)}')">
           <span class="drag-card-badge">${i + 1}</span>
           <div class="drag-card-actions">
+            <button type="button" class="drag-card-action" data-act="edit" title="편집">✎</button>
             <button type="button" class="drag-card-action" data-act="replace" title="이미지 교체">⟳</button>
             <button type="button" class="drag-card-action danger" data-act="del" title="삭제">✕</button>
           </div>
         </div>
         <div class="drag-card-meta">
-          <p class="drag-card-title">${adminUtil.escapeHtml(s.alt || "(alt 없음)")}</p>
+          <p class="drag-card-title">${adminUtil.escapeHtml(s.alt || "(제목 없음)")}</p>
           <p class="drag-card-sub ${s.href ? "accent" : ""}">${
             s.href ? "→ " + adminUtil.escapeHtml(s.href) : "클릭 불가"
           }</p>
@@ -54,7 +54,12 @@ function render() {
       `;
       card.querySelector('[data-act="del"]').addEventListener("click", (e) => {
         e.stopPropagation();
-        if (!confirm(`슬라이드 ${i + 1}을(를) 삭제할까요?`)) return;
+        if (
+          !confirm(
+            `슬라이드 ${i + 1}을(를) 삭제할까요?\n(저장 시 R2 이미지도 함께 삭제됩니다)`,
+          )
+        )
+          return;
         slides.splice(i, 1);
         setDirty(true);
         render();
@@ -65,6 +70,10 @@ function render() {
           e.stopPropagation();
           triggerFilePick(i);
         });
+      card.querySelector('[data-act="edit"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        editSlide(i);
+      });
       listEl.appendChild(card);
     });
   }
@@ -73,7 +82,23 @@ function render() {
   document.getElementById("btnAdd").disabled = slides.length >= MAX_SLIDES;
 }
 
-// 이미지 교체 파일 선택
+// 편집 (제목/링크)
+function editSlide(index) {
+  const s = slides[index];
+  const newAlt = prompt("제목 / Alt 텍스트", s.alt || "");
+  if (newAlt === null) return;
+  const newHref = prompt(
+    "링크 (비우면 클릭 불가)\n예: pages/portfolio.html",
+    s.href || "",
+  );
+  if (newHref === null) return;
+  slides[index].alt = newAlt.trim();
+  slides[index].href = newHref.trim();
+  setDirty(true);
+  render();
+}
+
+// 이미지 교체 파일 피커
 function triggerFilePick(index) {
   const inp = document.createElement("input");
   inp.type = "file";
@@ -88,9 +113,7 @@ function triggerFilePick(index) {
 async function handleImageReplace(index, file) {
   try {
     adminUtil.toast("이미지 업로드 중...");
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await adminUtil.apiUpload("/api/hero/upload", fd);
+    const res = await adminUtil.uploadImage(file, { folder: "hero" });
     slides[index].image = res.url;
     setDirty(true);
     render();
@@ -100,7 +123,7 @@ async function handleImageReplace(index, file) {
   }
 }
 
-// DnD 바인딩 (카드 순서 교체 + 파일 drop으로 이미지 교체)
+// DnD
 adminUtil.initDragSort({
   container: listEl,
   onReorder: (src, dest) => {
@@ -118,13 +141,12 @@ function showAddForm(show) {
   if (!show) resetAddForm();
 }
 function resetAddForm() {
-  urlInput.value = "";
   hrefInput.value = "";
   altInput.value = "";
   if (uploadInput) uploadInput.value = "";
   previewWrap.classList.add("hidden");
   previewEl.style.backgroundImage = "none";
-  previewEl.dataset.pendingUrl = "";
+  pendingAddUrl = "";
 }
 function setPreview(url) {
   if (!url) {
@@ -132,24 +154,16 @@ function setPreview(url) {
     return;
   }
   previewEl.style.backgroundImage = `url('${url}')`;
-  previewEl.dataset.pendingUrl = url;
   previewWrap.classList.remove("hidden");
 }
-
-urlInput.addEventListener("input", () => {
-  const u = urlInput.value.trim();
-  if (/^https?:\/\//.test(u)) setPreview(u);
-});
 
 uploadInput?.addEventListener("change", async () => {
   const file = uploadInput.files?.[0];
   if (!file) return;
   try {
     adminUtil.toast("업로드 중...");
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await adminUtil.apiUpload("/api/hero/upload", fd);
-    urlInput.value = res.url;
+    const res = await adminUtil.uploadImage(file, { folder: "hero" });
+    pendingAddUrl = res.url;
     setPreview(res.url);
     adminUtil.toast("업로드 완료");
   } catch (e) {
@@ -167,13 +181,12 @@ document
 
 document.getElementById("addForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  const image = (previewEl.dataset.pendingUrl || urlInput.value).trim();
-  if (!image) {
-    adminUtil.toast("이미지를 지정해주세요", "error");
+  if (!pendingAddUrl) {
+    adminUtil.toast("이미지를 업로드해주세요", "error");
     return;
   }
   slides.push({
-    image,
+    image: pendingAddUrl,
     href: hrefInput.value.trim(),
     alt: altInput.value.trim(),
   });
@@ -194,13 +207,16 @@ document.getElementById("btnSave").addEventListener("click", async () => {
   const btn = document.getElementById("btnSave");
   btn.disabled = true;
   try {
-    await adminUtil.api("/api/hero/slides", {
+    const res = await adminUtil.api("/api/hero/slides", {
       method: "PUT",
       json: { slides, config: { maxSlides: 10, autoPlayMs: 6000 } },
     });
     original = JSON.parse(JSON.stringify(slides));
     setDirty(false);
-    adminUtil.toast("저장 완료");
+    const cleaned = res?.cleaned || 0;
+    adminUtil.toast(
+      `저장 완료` + (cleaned ? ` (R2 고아 이미지 ${cleaned}장 정리)` : ""),
+    );
   } catch (e) {
     adminUtil.toast("저장 실패: " + e.message, "error");
   } finally {
