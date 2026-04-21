@@ -1287,3 +1287,176 @@
   margin: 0;
   line-height: 1.6;
 }
+
+/* ========== GRID + DRAG CARDS (공통) ========== */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+@media (max-width: 1400px) {
+  .card-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 900px) {
+  .card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 480px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.drag-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: grab;
+  transition:
+    border-color 140ms,
+    transform 140ms,
+    box-shadow 140ms;
+  position: relative;
+  user-select: none;
+}
+.drag-card:hover {
+  border-color: var(--c-text-sub);
+}
+.drag-card.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+.drag-card.drag-over {
+  border-color: var(--c-brand);
+  box-shadow: 0 0 0 2px var(--c-brand-soft);
+}
+.drag-card.file-over {
+  border-color: var(--c-info);
+  box-shadow: 0 0 0 2px #dbeafe;
+}
+.drag-card.file-over::after {
+  content: "📥 이미지 드롭";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(37, 99, 235, 0.2);
+  color: var(--c-info);
+  font-weight: 600;
+  pointer-events: none;
+  border-radius: var(--radius-sm);
+}
+
+.drag-card-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: #f3f4f6 no-repeat center/cover;
+  position: relative;
+  border-bottom: 1px solid var(--c-border-soft);
+}
+.drag-card-thumb.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-muted);
+  font-size: 11px;
+}
+
+.drag-card-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(17, 24, 39, 0.85);
+  color: #fff;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+}
+
+.drag-card-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 140ms;
+}
+.drag-card:hover .drag-card-actions,
+.drag-card:focus-within .drag-card-actions {
+  opacity: 1;
+}
+.drag-card-action {
+  background: rgba(17, 24, 39, 0.85);
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 140ms;
+}
+.drag-card-action:hover {
+  background: rgba(17, 24, 39, 1);
+}
+.drag-card-action.danger:hover {
+  background: var(--c-danger);
+}
+
+.drag-card-meta {
+  padding: 10px 12px;
+}
+.drag-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0 0 4px;
+}
+.drag-card-sub {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drag-card-sub.accent {
+  color: var(--c-brand);
+}
+.drag-card-tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.card-grid-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 16px;
+  color: var(--c-text-muted);
+  font-size: 13px;
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface);
+}

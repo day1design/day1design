@@ -24,8 +24,9 @@
       <main class="admin-content" id="adminContent">
         <section class="admin-section">
           <p class="admin-sub" style="margin-bottom: 16px">
-            시공 프로젝트를 등록·편집·정렬합니다. 이미지는 R2 폴더 규칙
-            <code>/portfolio/{folder}/NNN.webp</code>를 따릅니다.
+            드래그해서 순서를 바꾸고, 카드에 이미지를
+            <strong>드롭하면 썸네일이 교체</strong>됩니다. 변경 후
+            <strong>저장</strong> 버튼을 눌러 Airtable에 반영하세요.
           </p>
 
           <div class="admin-toolbar">
@@ -47,25 +48,25 @@
             </button>
           </div>
 
-          <div class="data-table-wrap">
-            <table class="data-table" id="pfTable">
-              <thead>
-                <tr>
-                  <th style="width: 40px">#</th>
-                  <th>이름</th>
-                  <th>Folder</th>
-                  <th style="width: 80px">Count</th>
-                  <th style="width: 100px">Category</th>
-                  <th style="width: 80px">Order</th>
-                  <th style="width: 120px"></th>
-                </tr>
-              </thead>
-              <tbody id="pfBody">
-                <tr>
-                  <td colspan="7" class="empty-state">불러오는 중...</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="card-grid" id="pfGrid"></div>
+
+          <div class="save-bar">
+            <div class="save-info">
+              <span id="dirtyLabel" class="dirty-label hidden"
+                >변경사항 있음</span
+              >
+              <span class="count-label">
+                프로젝트: <strong id="pfCount">0</strong>
+              </span>
+            </div>
+            <div class="save-actions">
+              <button type="button" class="btn btn-ghost" id="btnRevert">
+                되돌리기
+              </button>
+              <button type="button" class="btn btn-primary" id="btnSave">
+                저장
+              </button>
+            </div>
           </div>
         </section>
       </main>

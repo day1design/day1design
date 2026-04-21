@@ -1,7 +1,7 @@
-// ========== 히어로 슬라이드 관리 ==========
+// ========== 히어로 슬라이드 (그리드 + DnD) ==========
 const MAX_SLIDES = 10;
-let slides = []; // 현재 편집 중
-let original = []; // 저장된 스냅샷 (revert용)
+let slides = [];
+let original = [];
 let dirty = false;
 
 const listEl = document.getElementById("slidesList");
@@ -21,67 +21,102 @@ function setDirty(v) {
 }
 
 function render() {
+  // 바둑판 그리드로 리스트 변환
+  listEl.className = "card-grid";
   listEl.innerHTML = "";
+
   if (!slides.length) {
     const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "등록된 슬라이드가 없습니다. 아래 버튼으로 추가하세요.";
+    empty.className = "card-grid-empty";
+    empty.textContent =
+      "등록된 슬라이드가 없습니다. 아래 '+ 슬라이드 추가'로 등록하거나, 이미지를 이 영역에 드래그해 넣으세요.";
     listEl.appendChild(empty);
   } else {
     slides.forEach((s, i) => {
-      const item = document.createElement("div");
-      item.className = "slide-item";
-      item.innerHTML = `
-        <div class="slide-index">${i + 1}</div>
-        <div class="slide-thumb" style="background-image:url('${s.image}')"></div>
-        <div class="slide-meta">
-          <div class="slide-alt">${escapeHtml(s.alt || "(alt 없음)")}</div>
-          <div class="slide-url" title="${escapeHtml(s.image)}">${escapeHtml(s.image)}</div>
-          <div class="slide-href ${s.href ? "has-link" : ""}">
-            ${s.href ? "→ " + escapeHtml(s.href) : "클릭 불가"}
+      const card = document.createElement("div");
+      card.className = "drag-card";
+      card.draggable = true;
+      card.dataset.index = String(i);
+      card.innerHTML = `
+        <div class="drag-card-thumb" style="background-image:url('${adminUtil.escapeHtml(s.image)}')">
+          <span class="drag-card-badge">${i + 1}</span>
+          <div class="drag-card-actions">
+            <button type="button" class="drag-card-action" data-act="replace" title="이미지 교체">⟳</button>
+            <button type="button" class="drag-card-action danger" data-act="del" title="삭제">✕</button>
           </div>
         </div>
-        <div class="slide-actions">
-          <button class="icon-btn" data-act="up" ${i === 0 ? "disabled" : ""} title="위로">↑</button>
-          <button class="icon-btn" data-act="down" ${i === slides.length - 1 ? "disabled" : ""} title="아래로">↓</button>
-          <button class="icon-btn danger" data-act="del" title="삭제">✕</button>
+        <div class="drag-card-meta">
+          <p class="drag-card-title">${adminUtil.escapeHtml(s.alt || "(alt 없음)")}</p>
+          <p class="drag-card-sub ${s.href ? "accent" : ""}">${
+            s.href ? "→ " + adminUtil.escapeHtml(s.href) : "클릭 불가"
+          }</p>
         </div>
       `;
-      item.querySelectorAll("[data-act]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const act = btn.dataset.act;
-          if (act === "up" && i > 0) {
-            [slides[i - 1], slides[i]] = [slides[i], slides[i - 1]];
-          } else if (act === "down" && i < slides.length - 1) {
-            [slides[i + 1], slides[i]] = [slides[i], slides[i + 1]];
-          } else if (act === "del") {
-            if (!confirm(`슬라이드 ${i + 1}을(를) 삭제할까요?`)) return;
-            slides.splice(i, 1);
-          } else return;
-          setDirty(true);
-          render();
-        });
+      card.querySelector('[data-act="del"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!confirm(`슬라이드 ${i + 1}을(를) 삭제할까요?`)) return;
+        slides.splice(i, 1);
+        setDirty(true);
+        render();
       });
-      listEl.appendChild(item);
+      card
+        .querySelector('[data-act="replace"]')
+        .addEventListener("click", (e) => {
+          e.stopPropagation();
+          triggerFilePick(i);
+        });
+      listEl.appendChild(card);
     });
   }
+
   countEl.textContent = slides.length;
   document.getElementById("btnAdd").disabled = slides.length >= MAX_SLIDES;
 }
 
-function escapeHtml(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+// 이미지 교체 파일 선택
+function triggerFilePick(index) {
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "image/*";
+  inp.onchange = async () => {
+    if (!inp.files?.[0]) return;
+    await handleImageReplace(index, inp.files[0]);
+  };
+  inp.click();
 }
 
+async function handleImageReplace(index, file) {
+  try {
+    adminUtil.toast("이미지 업로드 중...");
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await adminUtil.apiUpload("/api/hero/upload", fd);
+    slides[index].image = res.url;
+    setDirty(true);
+    render();
+    adminUtil.toast("이미지 교체 완료");
+  } catch (e) {
+    adminUtil.toast("업로드 실패: " + e.message, "error");
+  }
+}
+
+// DnD 바인딩 (카드 순서 교체 + 파일 drop으로 이미지 교체)
+adminUtil.initDragSort({
+  container: listEl,
+  onReorder: (src, dest) => {
+    const moved = slides.splice(src, 1)[0];
+    slides.splice(dest, 0, moved);
+    setDirty(true);
+    render();
+  },
+  onFileDrop: (idx, file) => handleImageReplace(idx, file),
+});
+
+// ========== 추가 폼 ==========
 function showAddForm(show) {
   addFormEl.classList.toggle("hidden", !show);
   if (!show) resetAddForm();
 }
-
 function resetAddForm() {
   urlInput.value = "";
   hrefInput.value = "";
@@ -91,7 +126,6 @@ function resetAddForm() {
   previewEl.style.backgroundImage = "none";
   previewEl.dataset.pendingUrl = "";
 }
-
 function setPreview(url) {
   if (!url) {
     previewWrap.classList.add("hidden");
@@ -102,13 +136,11 @@ function setPreview(url) {
   previewWrap.classList.remove("hidden");
 }
 
-// URL 입력 시 미리보기
 urlInput.addEventListener("input", () => {
   const u = urlInput.value.trim();
   if (/^https?:\/\//.test(u)) setPreview(u);
 });
 
-// 파일 선택 → 업로드 → URL 획득
 uploadInput?.addEventListener("change", async () => {
   const file = uploadInput.files?.[0];
   if (!file) return;
@@ -178,8 +210,6 @@ document.getElementById("btnSave").addEventListener("click", async () => {
 
 // 초기 로드
 (async () => {
-  await adminUtil.ensureAuth();
-  adminUtil.pingApi();
   try {
     const d = await adminUtil.api("/api/hero/slides");
     slides = (d.slides || []).map((s) => ({

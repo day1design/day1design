@@ -277,6 +277,104 @@ if (document.readyState === "loading") {
   bootstrap();
 }
 
+// ========== DRAG & DROP SORT (공통) ==========
+/**
+ * 카드 그리드의 드래그 순서 교체 + 외부 파일 drop 처리를 일괄 바인딩.
+ * 각 카드에는 draggable="true" + dataset.index 필요.
+ * @param {object} opts
+ *  - container: HTMLElement (카드들의 부모)
+ *  - itemSelector: string (기본 ".drag-card")
+ *  - onReorder: (srcIdx, destIdx) => void   — 내부 순서 교체 시
+ *  - onFileDrop: (targetIdx, file) => void  — 외부 이미지 파일 drop 시
+ */
+function initDragSort(opts) {
+  const { container, onReorder, onFileDrop } = opts;
+  const itemSelector = opts.itemSelector || ".drag-card";
+  let srcIdx = null;
+
+  container.addEventListener("dragstart", (e) => {
+    const card = e.target.closest(itemSelector);
+    if (!card) return;
+    srcIdx = parseInt(card.dataset.index, 10);
+    card.classList.add("dragging");
+    try {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(srcIdx));
+    } catch {}
+  });
+
+  container.addEventListener("dragend", (e) => {
+    const card = e.target.closest(itemSelector);
+    if (card) card.classList.remove("dragging");
+    container.querySelectorAll(".drag-over, .file-over").forEach((el) => {
+      el.classList.remove("drag-over", "file-over");
+    });
+    srcIdx = null;
+  });
+
+  container.addEventListener("dragover", (e) => {
+    const card = e.target.closest(itemSelector);
+    if (!card) return;
+    e.preventDefault();
+    const types = e.dataTransfer.types || [];
+    const hasFiles = types.includes && types.includes("Files");
+    if (hasFiles) {
+      e.dataTransfer.dropEffect = "copy";
+      card.classList.add("file-over");
+    } else {
+      e.dataTransfer.dropEffect = "move";
+      const idx = parseInt(card.dataset.index, 10);
+      if (srcIdx !== null && idx !== srcIdx) card.classList.add("drag-over");
+    }
+  });
+
+  container.addEventListener("dragleave", (e) => {
+    const card = e.target.closest(itemSelector);
+    if (!card) return;
+    // 카드 경계를 벗어났을 때만 해제
+    const related = e.relatedTarget;
+    if (related && card.contains(related)) return;
+    card.classList.remove("drag-over", "file-over");
+  });
+
+  container.addEventListener("drop", (e) => {
+    const card = e.target.closest(itemSelector);
+    if (!card) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const targetIdx = parseInt(card.dataset.index, 10);
+    card.classList.remove("drag-over", "file-over");
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith("image/") && typeof onFileDrop === "function") {
+        onFileDrop(targetIdx, file);
+      }
+      srcIdx = null;
+      return;
+    }
+
+    if (
+      srcIdx !== null &&
+      srcIdx !== targetIdx &&
+      typeof onReorder === "function"
+    ) {
+      onReorder(srcIdx, targetIdx);
+    }
+    srcIdx = null;
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 window.adminUtil = {
   api,
   apiUpload,
@@ -287,5 +385,7 @@ window.adminUtil = {
   ensureAuth,
   fmtDate,
   pingApi,
+  initDragSort,
+  escapeHtml,
   API_BASE,
 };
