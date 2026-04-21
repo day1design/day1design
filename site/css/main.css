@@ -4,6 +4,8 @@
   width: 100%;
   height: 720px;
   overflow: hidden;
+  /* 슬라이드 이미지 로드 전에 흰 body 위로 .hero-overlay가 깔려 회색으로 보이는 깜빡임 방지 */
+  background-color: #1c1917;
 }
 .hero-bg {
   position: absolute;
@@ -214,14 +216,20 @@
   padding: 0;
 }
 .project-grid.office-grid {
-  display: block;
-  columns: 3;
-  column-gap: 4px;
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+}
+.office-grid .office-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .office-grid .project-card {
   aspect-ratio: auto;
-  break-inside: avoid;
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 .office-grid .project-card .img-after {
   height: auto;
