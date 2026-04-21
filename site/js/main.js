@@ -135,9 +135,26 @@ const modalClose = document.getElementById("projectModalClose");
 
 const OFFICE_TOTAL = 50;
 
-// Render HOUSE grid — 2열, 프로젝트당 2장 썸네일
-function renderHouse() {
+// --- Size helpers (평수 필터) ---
+function getPy(folder) {
+  const m = folder && folder.match(/(\d+)py/i);
+  return m ? parseInt(m[1], 10) : 0;
+}
+function sizeMatch(py, size) {
+  if (size === "all") return true;
+  if (size === "20-30") return py >= 20 && py < 30;
+  if (size === "30-40") return py >= 30 && py < 40;
+  if (size === "40-50") return py >= 40 && py < 50;
+  if (size === "50+") return py >= 50;
+  return true;
+}
+
+let currentSize = "all";
+
+// Render HOUSE grid — 2열, 프로젝트당 2장 썸네일 (평수 필터 지원)
+function renderHouse(size) {
   if (!grid) return;
+  if (typeof size === "string") currentSize = size;
   grid.innerHTML = "";
   grid.className = "project-grid";
   for (let i = 0; i < TOTAL_PROJECTS; i++) {
@@ -154,6 +171,8 @@ function renderHouse() {
           }
         : proj;
       const displayName = isRight ? proj.rightName : proj.name;
+      const folderForSize = isRight ? proj.rightFolder : proj.folder;
+      if (!sizeMatch(getPy(folderForSize), currentSize)) return;
       const card = document.createElement("div");
       card.className = "project-card";
       card.innerHTML = `
@@ -197,15 +216,37 @@ function openOfficeLightbox(index) {
   document.getElementById("lightbox").classList.add("open");
 }
 
-// Filter tabs
+// Filter tabs (HOUSE / OFFICE)
 const filterBtns = document.querySelectorAll(".filter-tabs button");
+const sizeSubFilter = document.getElementById("sizeSubFilter");
+const sizeBtns = sizeSubFilter ? sizeSubFilter.querySelectorAll("button") : [];
+
 filterBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
     filterBtns.forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     const filter = btn.dataset.filter;
-    if (filter === "office") renderOffice();
-    else renderHouse();
+    if (filter === "office") {
+      if (sizeSubFilter) sizeSubFilter.classList.add("hidden");
+      renderOffice();
+    } else {
+      if (sizeSubFilter) sizeSubFilter.classList.remove("hidden");
+      // reset 평수 필터 to 전체
+      sizeBtns.forEach((b) => b.classList.remove("active"));
+      const allBtn = sizeSubFilter?.querySelector('button[data-size="all"]');
+      if (allBtn) allBtn.classList.add("active");
+      currentSize = "all";
+      renderHouse("all");
+    }
+  });
+});
+
+// Sub filter (HOUSE 평수)
+sizeBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    sizeBtns.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    renderHouse(btn.dataset.size);
   });
 });
 

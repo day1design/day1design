@@ -36,6 +36,38 @@
   border-bottom-color: var(--color-text-heading);
 }
 
+/* Sub Filter (HOUSE 평수) */
+.sub-filter {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 0 32px;
+  flex-wrap: wrap;
+}
+.sub-filter button {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--color-text-light);
+  padding: 6px 16px;
+  border: 1px solid #d9d4c7;
+  border-radius: 999px;
+  background: transparent;
+  transition: var(--transition);
+  cursor: pointer;
+}
+.sub-filter button:hover {
+  color: var(--color-text-heading);
+  border-color: var(--color-text-heading);
+}
+.sub-filter button.active {
+  color: #fff;
+  background: var(--color-brand-grey);
+  border-color: var(--color-brand-grey);
+}
+.sub-filter.hidden {
+  display: none;
+}
+
 /* Portfolio Grid */
 .portfolio-grid {
   display: grid;

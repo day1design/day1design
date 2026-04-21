@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hover Options Compare — Header Menu EN ↔ KO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        font-family: "Century Gothic", "Noto Sans KR", sans-serif;
+        background: #f1ede4;
+        color: #2b2720;
+      }
+      .brand {
+        color: #5a5448;
+      }
+
+      /* ========== A. CROSSFADE (opacity only, 움직임 없음) ========== */
+      .opt-a .menu-item {
+        position: relative;
+        display: inline-block;
+      }
+      .opt-a .menu-item .en,
+      .opt-a .menu-item .ko {
+        display: block;
+        transition: opacity 260ms ease;
+      }
+      .opt-a .menu-item .ko {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+      }
+      .opt-a .menu-item:hover .en {
+        opacity: 0;
+      }
+      .opt-a .menu-item:hover .ko {
+        opacity: 1;
+      }
+
+      /* ========== B. 영문 + 한글 부제 (상시 표시) ========== */
+      .opt-b .menu-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        line-height: 1.1;
+        transition: color 200ms ease;
+      }
+      .opt-b .menu-item .en {
+        font-size: 13px;
+        letter-spacing: 3px;
+      }
+      .opt-b .menu-item .ko {
+        font-size: 10px;
+        letter-spacing: 1px;
+        color: #9a9488;
+        margin-top: 3px;
+        transition: color 200ms ease;
+      }
+      .opt-b .menu-item:hover,
+      .opt-b .menu-item:hover .ko {
+        color: #3b362c;
+      }
+
+      /* ========== C. 영문 아래 밑줄 + 호버 시 한글 툴팁 ========== */
+      .opt-c .menu-item {
+        position: relative;
+        display: inline-block;
+        padding-bottom: 6px;
+      }
+      .opt-c .menu-item .en::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        width: 0;
+        height: 1px;
+        background: #5a5448;
+        transition:
+          width 260ms ease,
+          left 260ms ease;
+      }
+      .opt-c .menu-item:hover .en::after {
+        width: 100%;
+        left: 0;
+      }
+      .opt-c .menu-item .ko {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%) translateY(-4px);
+        font-size: 11px;
+        letter-spacing: 1px;
+        color: #9a9488;
+        opacity: 0;
+        white-space: nowrap;
+        transition:
+          opacity 240ms ease,
+          transform 240ms ease;
+        pointer-events: none;
+      }
+      .opt-c .menu-item:hover .ko {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+
+      /* ========== D. 즉시 텍스트 교체 + 밑줄 (애니메이션 최소) ========== */
+      .opt-d .menu-item {
+        position: relative;
+        padding-bottom: 6px;
+      }
+      .opt-d .menu-item .en,
+      .opt-d .menu-item .ko {
+        display: block;
+      }
+      .opt-d .menu-item .ko {
+        display: none;
+      }
+      .opt-d .menu-item:hover .en {
+        display: none;
+      }
+      .opt-d .menu-item:hover .ko {
+        display: block;
+      }
+      .opt-d .menu-item::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        width: 0;
+        height: 1px;
+        background: #5a5448;
+        transition:
+          width 220ms ease,
+          left 220ms ease;
+      }
+      .opt-d .menu-item:hover::after {
+        width: 100%;
+        left: 0;
+      }
+
+      /* ========== REF (기존 슬라이드업 v1) - 비교용 ========== */
+      .opt-ref .menu-item {
+        position: relative;
+        display: inline-block;
+        overflow: hidden;
+        height: 1.2em;
+        line-height: 1.2em;
+      }
+      .opt-ref .menu-item .en,
+      .opt-ref .menu-item .ko {
+        display: block;
+        transition:
+          transform 220ms ease,
+          opacity 220ms ease;
+      }
+      .opt-ref .menu-item .ko {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        opacity: 0;
+      }
+      .opt-ref .menu-item:hover .en {
+        transform: translateY(-100%);
+        opacity: 0;
+      }
+      .opt-ref .menu-item:hover .ko {
+        transform: translateY(-100%);
+        opacity: 1;
+      }
+
+      .hdr-box {
+        background: #fff;
+        border: 1px solid #e5e1d6;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body class="py-10">
+    <div class="max-w-[1100px] mx-auto px-8">
+      <h1 class="text-2xl font-bold brand tracking-[3px] mb-2">
+        HEADER HOVER OPTIONS
+      </h1>
+      <p class="text-sm text-[#8a8376] mb-10">
+        마우스를 메뉴 위에 올려보세요 — 각 옵션의 전환 느낌을 비교
+      </p>
+
+      <!-- ========== OPTION A ========== -->
+      <div class="mb-10">
+        <div class="text-xs tracking-[3px] text-[#9a9488] mb-2">
+          OPTION A · Crossfade (움직임 없이 opacity만 전환)
+        </div>
+        <p class="text-xs text-[#8a8376] mb-3">
+          글자가 상하 이동 없이 그 자리에서 영문→한글로 부드럽게 교체. 가장
+          미니멀.
+        </p>
+        <div class="hdr-box opt-a">
+          <div class="flex items-center justify-between px-8 h-16">
+            <span class="brand font-bold tracking-[4px] text-sm"
+              >DAYONE DESIGN</span
+            >
+            <ul
+              class="flex gap-10 text-[13px] tracking-[3px] brand font-semibold"
+            >
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ABOUT US</span
+                  ><span class="ko">회사소개</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">PORTFOLIO</span
+                  ><span class="ko">포트폴리오</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">COMMUNITY</span
+                  ><span class="ko">커뮤니티</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ESTIMATE</span
+                  ><span class="ko">견적문의</span></a
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== OPTION B ========== -->
+      <div class="mb-10">
+        <div class="text-xs tracking-[3px] text-[#9a9488] mb-2">
+          OPTION B · 영문 + 한글 부제 (상시 표시, 호버 없이도 둘 다 보임)
+        </div>
+        <p class="text-xs text-[#8a8376] mb-3">
+          영문 아래 작은 한글 부제가 항상 보임. 전환 자체가 없어 가장 차분함.
+          프리미엄 스튜디오 스타일.
+        </p>
+        <div class="hdr-box opt-b">
+          <div class="flex items-center justify-between px-8 h-20">
+            <span class="brand font-bold tracking-[4px] text-sm"
+              >DAYONE DESIGN</span
+            >
+            <ul class="flex gap-10 brand font-semibold">
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ABOUT US</span
+                  ><span class="ko">회사소개</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">PORTFOLIO</span
+                  ><span class="ko">포트폴리오</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">COMMUNITY</span
+                  ><span class="ko">커뮤니티</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ESTIMATE</span
+                  ><span class="ko">견적문의</span></a
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== OPTION C ========== -->
+      <div class="mb-10">
+        <div class="text-xs tracking-[3px] text-[#9a9488] mb-2">
+          OPTION C · 밑줄 등장 + 한글 툴팁 (호버 시 아래에 살짝 한글)
+        </div>
+        <p class="text-xs text-[#8a8376] mb-3">
+          영문은 그대로 유지되고 호버 시 밑줄이 그어지며 아래에 작은 한글 라벨이
+          페이드로 등장.
+        </p>
+        <div class="hdr-box opt-c">
+          <div class="flex items-center justify-between px-8 h-24">
+            <span class="brand font-bold tracking-[4px] text-sm"
+              >DAYONE DESIGN</span
+            >
+            <ul
+              class="flex gap-10 text-[13px] tracking-[3px] brand font-semibold"
+            >
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ABOUT US</span
+                  ><span class="ko">회사소개</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">PORTFOLIO</span
+                  ><span class="ko">포트폴리오</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">COMMUNITY</span
+                  ><span class="ko">커뮤니티</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ESTIMATE</span
+                  ><span class="ko">견적문의</span></a
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== OPTION D ========== -->
+      <div class="mb-10">
+        <div class="text-xs tracking-[3px] text-[#9a9488] mb-2">
+          OPTION D · 즉시 교체 + 밑줄 (애니메이션 최소)
+        </div>
+        <p class="text-xs text-[#8a8376] mb-3">
+          호버 시 영문이 한글로 즉시 교체되고 아래에 밑줄만 자연스럽게 그어짐.
+          군더더기 없음.
+        </p>
+        <div class="hdr-box opt-d">
+          <div class="flex items-center justify-between px-8 h-16">
+            <span class="brand font-bold tracking-[4px] text-sm"
+              >DAYONE DESIGN</span
+            >
+            <ul
+              class="flex gap-10 text-[13px] tracking-[3px] brand font-semibold"
+            >
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ABOUT US</span
+                  ><span class="ko">회사소개</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">PORTFOLIO</span
+                  ><span class="ko">포트폴리오</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">COMMUNITY</span
+                  ><span class="ko">커뮤니티</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ESTIMATE</span
+                  ><span class="ko">견적문의</span></a
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== REF (기존 v1) ========== -->
+      <div class="mb-10 opacity-60">
+        <div class="text-xs tracking-[3px] text-[#9a9488] mb-2">
+          (참고) 기존 v1 · Slide-up — 사용자가 "촌스럽다"고 한 방식
+        </div>
+        <div class="hdr-box opt-ref">
+          <div class="flex items-center justify-between px-8 h-16">
+            <span class="brand font-bold tracking-[4px] text-sm"
+              >DAYONE DESIGN</span
+            >
+            <ul
+              class="flex gap-10 text-[13px] tracking-[3px] brand font-semibold"
+            >
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ABOUT US</span
+                  ><span class="ko">회사소개</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">PORTFOLIO</span
+                  ><span class="ko">포트폴리오</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">COMMUNITY</span
+                  ><span class="ko">커뮤니티</span></a
+                >
+              </li>
+              <li>
+                <a href="#" class="menu-item"
+                  ><span class="en">ESTIMATE</span
+                  ><span class="ko">견적문의</span></a
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-[#8a8376] mt-12">
+        추천: <b>Option A (Crossfade)</b> 또는 <b>Option B (부제 상시 표시)</b>.
+        <br />
+        프리미엄 브랜드/스튜디오 사이트에서 가장 흔하게 쓰이는 방식.
+      </p>
+    </div>
+  </body>
+</html>

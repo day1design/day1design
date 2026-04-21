@@ -1,7 +1,6 @@
-// ========== COMMUNITY ==========
+// ========== COMMUNITY (RESIDENTIAL only) ==========
 const PER_PAGE = 16;
 let communityData = [];
-let currentFilter = "residential";
 let currentPage = 1;
 
 fetch("../data/community.json")
@@ -20,12 +19,7 @@ function getCateClass(cat) {
 }
 
 function getFiltered() {
-  if (currentFilter === "all") return communityData;
-  if (currentFilter === "residential")
-    return communityData.filter((p) => p.board === "Residential");
-  if (currentFilter === "commercial")
-    return communityData.filter((p) => p.board === "Commercial");
-  return communityData;
+  return communityData.filter((p) => p.board === "Residential");
 }
 
 function renderCommunity() {
@@ -80,16 +74,3 @@ function renderCommunity() {
     }
   }
 }
-
-// Filter tabs
-document.querySelectorAll(".filter-tabs button").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document
-      .querySelectorAll(".filter-tabs button")
-      .forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    currentFilter = btn.dataset.filter;
-    currentPage = 1;
-    renderCommunity();
-  });
-});

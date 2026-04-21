@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>
+      Wireframe v2 — Menu Hover + ABOUT/PORTFOLIO LNB + Community 단순화
+    </title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        font-family: "Century Gothic", "Noto Sans KR", sans-serif;
+        background: #f1ede4;
+        color: #2b2720;
+      }
+      .brand {
+        color: #5a5448;
+      }
+      .bg-brand {
+        background: #5a5448;
+      }
+
+      /* ===== HEADER MENU HOVER (Option A · Crossfade) ===== */
+      .menu-item {
+        position: relative;
+        display: inline-block;
+      }
+      .menu-item .en,
+      .menu-item .ko {
+        display: block;
+        transition: opacity 260ms ease;
+      }
+      .menu-item .ko {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+      }
+      .menu-item:hover .en {
+        opacity: 0;
+      }
+      .menu-item:hover .ko {
+        opacity: 1;
+      }
+
+      /* ===== LNB ===== */
+      .lnb {
+        position: sticky;
+        top: 64px;
+        z-index: 40;
+        background: #fff;
+        border-bottom: 1px solid #e5e1d6;
+      }
+      .lnb-inner {
+        display: flex;
+        gap: 6px;
+      }
+      .lnb-tab {
+        position: relative;
+        padding: 14px 22px;
+        letter-spacing: 3px;
+        color: #9a9488;
+        font-size: 13px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .lnb-tab:hover {
+        color: #5a5448;
+      }
+      .lnb-tab.active {
+        color: #5a5448;
+        font-weight: 600;
+      }
+      .lnb-tab.active::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: -1px;
+        width: 32px;
+        height: 2px;
+        background: #5a5448;
+        transform: translateX(-50%);
+      }
+
+      /* ===== Sub LNB (Portfolio 평수 필터) ===== */
+      .sub-lnb {
+        background: #fbf8f1;
+        border-bottom: 1px solid #e5e1d6;
+      }
+      .sub-lnb-inner {
+        display: flex;
+        gap: 4px;
+        padding: 10px 0;
+      }
+      .sub-pill {
+        padding: 6px 14px;
+        font-size: 12px;
+        letter-spacing: 1px;
+        color: #8a8376;
+        background: transparent;
+        border: 1px solid #e5e1d6;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .sub-pill:hover {
+        color: #5a5448;
+        border-color: #5a5448;
+      }
+      .sub-pill.active {
+        background: #5a5448;
+        color: #fff;
+        border-color: #5a5448;
+      }
+
+      .card {
+        background: #fff;
+        border: 1px solid #e5e1d6;
+        aspect-ratio: 4/5;
+        display: flex;
+        align-items: end;
+        padding: 14px;
+        color: #9a9488;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ===================== HEADER ===================== -->
+    <header class="bg-white border-b border-[#e5e1d6] sticky top-0 z-50">
+      <div
+        class="max-w-[1280px] mx-auto flex items-center justify-between px-8 h-16"
+      >
+        <a href="#" class="brand font-bold tracking-[4px] text-sm"
+          >DAYONE DESIGN</a
+        >
+        <nav>
+          <ul
+            class="flex gap-10 text-[13px] tracking-[3px] brand font-semibold"
+          >
+            <li>
+              <a href="#about" class="menu-item">
+                <span class="en">ABOUT US</span>
+                <span class="ko">회사소개</span>
+              </a>
+            </li>
+            <li>
+              <a href="#portfolio" class="menu-item">
+                <span class="en">PORTFOLIO</span>
+                <span class="ko">포트폴리오</span>
+              </a>
+            </li>
+            <li>
+              <a href="#community" class="menu-item">
+                <span class="en">COMMUNITY</span>
+                <span class="ko">커뮤니티</span>
+              </a>
+            </li>
+            <li>
+              <a href="#estimate" class="menu-item">
+                <span class="en">ESTIMATE</span>
+                <span class="ko">견적문의</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <!-- ===================== ABOUT US ===================== -->
+    <section id="about" class="pt-8">
+      <div class="max-w-[1280px] mx-auto px-8">
+        <div class="text-xs tracking-[4px] brand mb-2">ABOUT US</div>
+        <h2 class="text-3xl font-bold brand mb-6">회사소개</h2>
+
+        <div
+          class="h-[280px] bg-[#ece7db] rounded flex items-center justify-center text-[#9a9488] mb-8 text-sm tracking-widest"
+        >
+          (Hero 이미지)
+        </div>
+      </div>
+
+      <!-- LNB (ABOUT 전용) — 2개 탭 -->
+      <div class="lnb">
+        <div class="max-w-[1280px] mx-auto px-8 lnb-inner">
+          <div class="lnb-tab active" data-about-tab="dayone-is">DAYONE IS</div>
+          <div class="lnb-tab" data-about-tab="project-flow">PROJECT FLOW</div>
+        </div>
+      </div>
+
+      <!-- 패널: DAYONE IS (기본 active) -->
+      <div class="max-w-[1280px] mx-auto px-8 py-16" id="panel-dayone-is">
+        <div class="text-xs tracking-[4px] text-[#9a9488] mb-2">
+          01 / DAYONE IS
+        </div>
+        <h3 class="text-2xl brand mb-8">DAYONE is..</h3>
+        <div class="grid grid-cols-2 gap-8">
+          <div
+            class="h-[260px] bg-[#ece7db] rounded flex items-center justify-center text-[#9a9488] text-sm"
+          >
+            (브랜드 이미지)
+          </div>
+          <div class="text-[15px] leading-7 brand">
+            첫 번째 공간을 데이원과 함께.<br />
+            공간에 대한 진지한 태도, 살아가는 사람의 일상에 맞춘 디자인.<br /><br />
+            — 브랜드 인트로 텍스트 영역 —
+          </div>
+        </div>
+      </div>
+
+      <!-- 패널: PROJECT FLOW -->
+      <div
+        class="max-w-[1280px] mx-auto px-8 py-16 border-t border-[#e5e1d6]"
+        id="panel-project-flow"
+      >
+        <div class="text-xs tracking-[4px] text-[#9a9488] mb-2">
+          02 / PROJECT FLOW
+        </div>
+        <h3 class="text-2xl brand mb-8">프로젝트 플로우</h3>
+        <div class="grid grid-cols-5 gap-4">
+          <div class="card">01 문의·상담</div>
+          <div class="card">02 현장실측</div>
+          <div class="card">03 디자인</div>
+          <div class="card">04 시공</div>
+          <div class="card">05 입주</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== PORTFOLIO ===================== -->
+    <section id="portfolio" class="mt-16">
+      <div class="max-w-[1280px] mx-auto px-8 py-8">
+        <div class="text-xs tracking-[4px] brand mb-2">PORTFOLIO</div>
+        <h2 class="text-3xl font-bold brand">포트폴리오</h2>
+      </div>
+
+      <!-- 1차 LNB: HOUSE / OFFICE -->
+      <div class="lnb">
+        <div class="max-w-[1280px] mx-auto px-8 lnb-inner">
+          <div class="lnb-tab active" data-portfolio-cat="house">HOUSE</div>
+          <div class="lnb-tab" data-portfolio-cat="office">OFFICE</div>
+        </div>
+      </div>
+
+      <!-- 2차 Sub LNB: HOUSE 평수 필터 (HOUSE 활성일 때만 표시) -->
+      <div class="sub-lnb" id="house-sub">
+        <div class="max-w-[1280px] mx-auto px-8 sub-lnb-inner">
+          <div class="sub-pill active" data-size="all">전체</div>
+          <div class="sub-pill" data-size="20-30">20~30평</div>
+          <div class="sub-pill" data-size="30-40">30~40평</div>
+          <div class="sub-pill" data-size="40-50">40~50평</div>
+          <div class="sub-pill" data-size="50+">50평 이상</div>
+        </div>
+      </div>
+
+      <!-- 2차 Sub LNB: OFFICE -->
+      <div class="sub-lnb hidden" id="office-sub">
+        <div class="max-w-[1280px] mx-auto px-8 sub-lnb-inner">
+          <div class="sub-pill active" data-size="all">전체</div>
+        </div>
+      </div>
+
+      <div class="max-w-[1280px] mx-auto px-8 py-10">
+        <div class="text-xs text-[#9a9488] mb-4" id="portfolio-status">
+          HOUSE / 전체
+        </div>
+        <div class="grid grid-cols-3 gap-6">
+          <div class="card">판교 TH212 47py</div>
+          <div class="card">판교 원마을 38py</div>
+          <div class="card">도곡렉슬 43py</div>
+          <div class="card">분당 미켈란 58py</div>
+          <div class="card">봇들마을 29py</div>
+          <div class="card">목동 우성2차 42py</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== COMMUNITY ===================== -->
+    <section
+      id="community"
+      class="mt-16 bg-white border-t border-[#e5e1d6] pt-12 pb-16"
+    >
+      <div class="max-w-[1280px] mx-auto px-8">
+        <div class="text-xs tracking-[4px] brand mb-2">COMMUNITY</div>
+        <h2 class="text-3xl font-bold brand mb-2">커뮤니티</h2>
+        <p class="text-sm text-[#9a9488] mb-10">
+          데이원의 실제 시공 사례와 이야기 (RESIDENTIAL)
+        </p>
+
+        <!-- 필터 탭 없음. 카드 그리드 단일 출력 -->
+        <div class="grid grid-cols-3 gap-6">
+          <div class="card">게시글 01</div>
+          <div class="card">게시글 02</div>
+          <div class="card">게시글 03</div>
+          <div class="card">게시글 04</div>
+          <div class="card">게시글 05</div>
+          <div class="card">게시글 06</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== ESTIMATE ===================== -->
+    <section id="estimate" class="py-20">
+      <div class="max-w-[1280px] mx-auto px-8 text-center">
+        <div class="text-xs tracking-[4px] brand mb-2">ESTIMATE</div>
+        <h2 class="text-3xl font-bold brand">견적문의</h2>
+      </div>
+    </section>
+
+    <footer
+      class="bg-brand text-white/70 py-10 text-center text-xs tracking-[3px]"
+    >
+      DAYONE DESIGN · Made by Pola
+    </footer>
+
+    <!-- ===================== PROTOTYPE JS ===================== -->
+    <script>
+      // ABOUT LNB
+      document.querySelectorAll("[data-about-tab]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document
+            .querySelectorAll("[data-about-tab]")
+            .forEach((t) => t.classList.remove("active"));
+          tab.classList.add("active");
+          const id = tab.dataset.aboutTab;
+          const panel = document.getElementById("panel-" + id);
+          if (panel)
+            panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+
+      // PORTFOLIO 1차 탭 (HOUSE/OFFICE)
+      document.querySelectorAll("[data-portfolio-cat]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document
+            .querySelectorAll("[data-portfolio-cat]")
+            .forEach((t) => t.classList.remove("active"));
+          tab.classList.add("active");
+          const cat = tab.dataset.portfolioCat;
+          document
+            .getElementById("house-sub")
+            .classList.toggle("hidden", cat !== "house");
+          document
+            .getElementById("office-sub")
+            .classList.toggle("hidden", cat !== "office");
+          // 서브 필터 리셋
+          document
+            .querySelectorAll(".sub-pill")
+            .forEach((p) => p.classList.remove("active"));
+          const targetSub = document.getElementById(cat + "-sub");
+          const firstPill = targetSub.querySelector(
+            '.sub-pill[data-size="all"]',
+          );
+          if (firstPill) firstPill.classList.add("active");
+          updateStatus();
+        });
+      });
+
+      // PORTFOLIO 2차 평수 필터
+      document.querySelectorAll(".sub-pill").forEach((pill) => {
+        pill.addEventListener("click", () => {
+          const parent = pill.closest(".sub-lnb");
+          parent
+            .querySelectorAll(".sub-pill")
+            .forEach((p) => p.classList.remove("active"));
+          pill.classList.add("active");
+          updateStatus();
+        });
+      });
+
+      function updateStatus() {
+        const cat = document
+          .querySelector("[data-portfolio-cat].active")
+          .textContent.trim();
+        const sub = document
+          .querySelector(".sub-lnb:not(.hidden) .sub-pill.active")
+          .textContent.trim();
+        document.getElementById("portfolio-status").textContent =
+          `${cat} / ${sub}`;
+      }
+    </script>
+  </body>
+</html>

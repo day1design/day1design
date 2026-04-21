@@ -57,6 +57,28 @@
   background: var(--color-brand-beige);
 }
 
+/* Menu EN ↔ KO crossfade (Option A) */
+.nav-list a.menu-item {
+  display: inline-block;
+  position: relative;
+}
+.nav-list a.menu-item .en,
+.nav-list a.menu-item .ko {
+  display: block;
+  transition: opacity 260ms ease;
+}
+.nav-list a.menu-item .ko {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.nav-list a.menu-item:hover .en {
+  opacity: 0;
+}
+.nav-list a.menu-item:hover .ko {
+  opacity: 1;
+}
+
 /* Mobile Menu */
 .hamburger {
   display: none;
