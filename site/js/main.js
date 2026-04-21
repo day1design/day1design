@@ -176,7 +176,7 @@ function renderHouse(size) {
       const card = document.createElement("div");
       card.className = "project-card";
       card.innerHTML = `
-        <img class="img-after" src="${_prefix}images/portfolio-thumbs/${thumb}" alt="${displayName}">
+        <img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/${thumb}" alt="${displayName}">
         <div class="project-overlay">
           <span class="project-name">${displayName}</span>
         </div>
@@ -206,7 +206,9 @@ function renderOffice() {
 function openOfficeLightbox(index) {
   lbImages = [];
   for (let i = 1; i <= OFFICE_TOTAL; i++) {
-    lbImages.push(`${_prefix}images/office/${String(i).padStart(3, "0")}.webp`);
+    lbImages.push(
+      `https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/office/${String(i).padStart(3, "0")}.webp`,
+    );
   }
   lbIndex = index;
   lbZoom = 1;
