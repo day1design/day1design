@@ -227,8 +227,12 @@ function renderGrid(filter) {
     const card = document.createElement("div");
     card.className = "portfolio-card";
     card.dataset.index = idx;
+    const loadAttr =
+      idx < 4
+        ? 'fetchpriority="high" decoding="async"'
+        : 'loading="lazy" decoding="async"';
     card.innerHTML = `
-      <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/${proj.folder}/001.webp" alt="${proj.name}" loading="lazy">
+      <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/${proj.folder}/001.webp" alt="${proj.name}" ${loadAttr}>
       <div class="card-overlay">
         <span class="card-name">${proj.name}</span>
       </div>

@@ -213,7 +213,9 @@ btnNext.addEventListener("click", () => {
       });
       return;
     }
-    // Hide form, show completion
+    // 1) DOM 값 캡처 (UI 전환 전에)
+    const payload = buildSubmitPayload();
+    // 2) 즉시 완료 화면 전환 (사용자는 대기 없음)
     document.querySelector(".wizard-progress").style.display = "none";
     document.querySelector(".wizard-nav").style.display = "none";
     steps.forEach((s) => s.classList.remove("active"));
@@ -221,6 +223,8 @@ btnNext.addEventListener("click", () => {
     const summary = document.getElementById("wizardSummary");
     if (summary) summary.style.display = "none";
     window.scrollTo({ top: 0, behavior: "smooth" });
+    // 3) 백그라운드 전송 (이탈해도 keepalive로 완주)
+    submitInBackground(payload);
   }
 });
 
@@ -320,3 +324,111 @@ document
     input.addEventListener("input", updateSummary);
     input.addEventListener("change", updateSummary);
   });
+
+// ========== SUBMIT: fire-and-forget (Worker + R2 + Airtable) ==========
+// window.DAY1_API_BASE(site/js/config.js)가 있으면 자동으로 Worker URL 사용
+const ESTIMATES_ENDPOINT =
+  typeof window !== "undefined" && window.DAY1_API_BASE
+    ? `${window.DAY1_API_BASE.replace(/\/$/, "")}/api/estimates`
+    : null;
+const PENDING_KEY = "day1_pending_estimates";
+
+function buildSubmitPayload() {
+  const f = form;
+  const val = (name) => {
+    const el = f.querySelector(`[name="${name}"]`);
+    return el ? el.value.trim() : "";
+  };
+
+  const phone = [val("phone1"), val("phone2"), val("phone3")]
+    .filter(Boolean)
+    .join("-");
+  const emailId = val("email_id");
+  const emailDomain = val("email_domain");
+  const email = emailId && emailDomain ? `${emailId}@${emailDomain}` : "";
+
+  const fields = {
+    submittedAt: new Date().toISOString(),
+    name: val("name"),
+    phone,
+    email,
+    space_type: selections.space_type || "",
+    space_size: selections.space_size || "",
+    postcode: val("postcode"),
+    address: val("address"),
+    address_detail: val("address_detail"),
+    schedule: val("schedule"),
+    referral: selections.referral || "",
+    branch: selections.branch || "",
+    detail: val("detail"),
+    privacy_agreed: !!f.querySelector('input[name="privacy"]').checked,
+    concept_files_count: compressedFiles.concept_files.length,
+    floor_plans_count: compressedFiles.floor_plans.length,
+  };
+
+  const fd = new FormData();
+  Object.entries(fields).forEach(([k, v]) => fd.append(k, String(v)));
+  compressedFiles.concept_files.forEach((item) =>
+    fd.append("concept_files", item.blob, item.name),
+  );
+  compressedFiles.floor_plans.forEach((item) =>
+    fd.append("floor_plans", item.blob, item.name),
+  );
+
+  return { fields, formData: fd };
+}
+
+async function submitInBackground(payload) {
+  if (!ESTIMATES_ENDPOINT) {
+    // 엔드포인트 미연결: 로컬에 누적 → 연결 후 retryPending()이 자동 발송
+    queuePending(payload.fields);
+    return;
+  }
+  try {
+    const res = await fetch(ESTIMATES_ENDPOINT, {
+      method: "POST",
+      body: payload.formData,
+      keepalive: true,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } catch (e) {
+    queuePending(payload.fields);
+  }
+}
+
+function queuePending(fields) {
+  try {
+    const pending = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
+    pending.push(fields);
+    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  } catch (e) {}
+}
+
+async function retryPending() {
+  if (!ESTIMATES_ENDPOINT) return;
+  let pending = [];
+  try {
+    pending = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
+  } catch (e) {
+    return;
+  }
+  if (!pending.length) return;
+  const remaining = [];
+  for (const fields of pending) {
+    try {
+      const fd = new FormData();
+      Object.entries(fields).forEach(([k, v]) => fd.append(k, String(v)));
+      const res = await fetch(ESTIMATES_ENDPOINT, {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) remaining.push(fields);
+    } catch (e) {
+      remaining.push(fields);
+    }
+  }
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(remaining));
+  } catch (e) {}
+}
+retryPending();

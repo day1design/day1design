@@ -1,0 +1,11 @@
+_private
+_archive
+docs
+scripts
+node_modules
+.git
+*.md
+NEXT_SESSION_*
+site/images
+site/_archive
+site/_private

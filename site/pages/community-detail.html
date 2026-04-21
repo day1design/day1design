@@ -3,14 +3,46 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>커뮤니티 - 데이원디자인</title>
-    <meta property="og:title" content="커뮤니티 - 데이원디자인" />
+    <title>커뮤니티 | 데이원디자인</title>
+    <meta
+      name="description"
+      content="데이원디자인 커뮤니티 게시글. 인테리어 시공 사례·디자인 제안·상업 공간 리포트."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#5A5448" />
+    <!-- canonical / og:url은 idx 기반으로 JS가 동적 주입 -->
+    <link
+      id="canonicalLink"
+      rel="canonical"
+      href="https://day1design.vercel.app/pages/community.html"
+    />
+
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="DAYONE DESIGN" />
+    <meta property="og:locale" content="ko_KR" />
+    <meta property="og:title" content="커뮤니티 | 데이원디자인" />
     <meta
       property="og:description"
-      content="감각적인 공간 디자인, 데이원디자인"
+      content="인테리어 시공 사례·디자인 제안·상업 공간 리포트."
     />
-    <meta property="og:image" content="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/og-image.png" />
-    <meta property="og:type" content="website" />
+    <meta
+      property="og:image"
+      content="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/og-image-1200x630.png"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:image"
+      content="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/og-image-1200x630.png"
+    />
+    <link
+      rel="preconnect"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+      crossorigin
+    />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="stylesheet" href="../css/fonts.css" />
     <link rel="stylesheet" href="../css/variables.css" />
     <link rel="stylesheet" href="../css/reset.css" />
@@ -23,10 +55,30 @@
         <div class="logo"><a href="../index.html">DAYONE DESIGN</a></div>
         <nav>
           <ul class="nav-list">
-            <li><a href="about.html" class="menu-item"><span class="en">ABOUT US</span><span class="ko">회사소개</span></a></li>
-            <li><a href="portfolio.html" class="menu-item"><span class="en">PORTFOLIO</span><span class="ko">포트폴리오</span></a></li>
-            <li><a href="community.html" class="menu-item active"><span class="en">COMMUNITY</span><span class="ko">커뮤니티</span></a></li>
-            <li><a href="estimates.html" class="menu-item"><span class="en">ESTIMATE</span><span class="ko">견적문의</span></a></li>
+            <li>
+              <a href="about.html" class="menu-item"
+                ><span class="en">ABOUT US</span
+                ><span class="ko">회사소개</span></a
+              >
+            </li>
+            <li>
+              <a href="portfolio.html" class="menu-item"
+                ><span class="en">PORTFOLIO</span
+                ><span class="ko">포트폴리오</span></a
+              >
+            </li>
+            <li>
+              <a href="community.html" class="menu-item active"
+                ><span class="en">COMMUNITY</span
+                ><span class="ko">커뮤니티</span></a
+              >
+            </li>
+            <li>
+              <a href="estimates.html" class="menu-item"
+                ><span class="en">ESTIMATE</span
+                ><span class="ko">견적문의</span></a
+              >
+            </li>
           </ul>
         </nav>
         <button class="hamburger" id="hamburger" aria-label="메뉴">
@@ -107,6 +159,7 @@
       </div>
     </footer>
 
+    <script src="../js/config.js"></script>
     <script src="../js/common.js"></script>
     <script>
       const params = new URLSearchParams(window.location.search);
@@ -166,26 +219,143 @@
           .filter((p) => p.length > 0);
       }
 
-      fetch("../data/community.json")
-        .then((r) => r.json())
-        .then((data) => {
-          const posts = data.posts || [];
-          const postIdx = posts.findIndex((p) => p.idx === idx);
-          const post = posts[postIdx];
+      const API_BASE = (window.DAY1_API_BASE || "").replace(/\/$/, "");
 
-          if (!post) {
-            mainEl.innerHTML =
-              '<div class="detail-loading">게시글을 찾을 수 없습니다.</div>';
-            return;
+      async function loadPost() {
+        if (API_BASE) {
+          try {
+            const r = await fetch(
+              `${API_BASE}/api/community/${encodeURIComponent(idx)}`,
+            );
+            if (r.ok) {
+              const d = await r.json();
+              return d.post || null;
+            }
+          } catch {}
+        }
+        const r = await fetch(`../data/community/${idx}.json`);
+        return r.ok ? r.json() : null;
+      }
+
+      async function loadList() {
+        if (API_BASE) {
+          try {
+            const r = await fetch(`${API_BASE}/api/community`);
+            if (r.ok) return r.json();
+          } catch {}
+        }
+        const r = await fetch("../data/community-list.json");
+        return r.json();
+      }
+
+      Promise.all([loadPost(), loadList()]).then(([post, listData]) => {
+        const posts = listData.posts || [];
+        const postIdx = posts.findIndex((p) => p.idx === idx);
+
+        if (!post) {
+          mainEl.innerHTML =
+            '<div class="detail-loading">게시글을 찾을 수 없습니다.</div>';
+          return;
+        }
+
+        document.title = post.title + " | 데이원디자인";
+        const images = post.images || [];
+
+        // SEO/AEO/GEO: dynamically inject BlogPosting structured data + canonical + og:url
+        const canonicalUrl = `https://day1design.vercel.app/pages/community-detail.html?idx=${post.idx}`;
+        const canonicalLink = document.getElementById("canonicalLink");
+        if (canonicalLink) canonicalLink.href = canonicalUrl;
+
+        const setMeta = (prop, value) => {
+          let m = document.querySelector(`meta[property="${prop}"]`);
+          if (!m) {
+            m = document.createElement("meta");
+            m.setAttribute("property", prop);
+            document.head.appendChild(m);
           }
+          m.setAttribute("content", value);
+        };
+        const heroImg =
+          (images && images[0]) ||
+          post.thumb ||
+          "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/og-image-1200x630.png";
+        const postDescription =
+          (post.body_text || "").replace(/\s+/g, " ").trim().slice(0, 160) ||
+          "데이원디자인 인테리어 시공 사례.";
+        setMeta("og:url", canonicalUrl);
+        setMeta("og:title", post.title + " | 데이원디자인");
+        setMeta("og:description", postDescription);
+        setMeta("og:image", heroImg);
+        const descMeta = document.querySelector('meta[name="description"]');
+        if (descMeta) descMeta.setAttribute("content", postDescription);
 
-          document.title = post.title + " - 데이원디자인";
-          const images = post.images || [];
-          const bodyText = cleanBodyText(post.body_text);
-          const paragraphs = bodyText ? splitParagraphs(bodyText) : [];
+        const ld = {
+          "@context": "https://schema.org",
+          "@type": "BlogPosting",
+          headline: post.title,
+          description: postDescription,
+          image: heroImg,
+          datePublished: post.date,
+          dateModified: post.date,
+          author: {
+            "@type": "Organization",
+            name: "데이원디자인",
+            url: "https://day1design.vercel.app/",
+          },
+          publisher: {
+            "@type": "Organization",
+            name: "데이원디자인",
+            logo: {
+              "@type": "ImageObject",
+              url: "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone.webp",
+            },
+          },
+          mainEntityOfPage: {
+            "@type": "WebPage",
+            "@id": canonicalUrl,
+          },
+          articleSection: post.category || "인테리어",
+          inLanguage: "ko-KR",
+        };
+        const ldScript = document.createElement("script");
+        ldScript.type = "application/ld+json";
+        ldScript.textContent = JSON.stringify(ld);
+        document.head.appendChild(ldScript);
 
-          // Build interleaved content: text → images → text → images
-          let mainHtml = `
+        // BreadcrumbList
+        const breadcrumb = {
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            {
+              "@type": "ListItem",
+              position: 1,
+              name: "홈",
+              item: "https://day1design.vercel.app/",
+            },
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: "커뮤니티",
+              item: "https://day1design.vercel.app/pages/community.html",
+            },
+            {
+              "@type": "ListItem",
+              position: 3,
+              name: post.title,
+              item: canonicalUrl,
+            },
+          ],
+        };
+        const bcScript = document.createElement("script");
+        bcScript.type = "application/ld+json";
+        bcScript.textContent = JSON.stringify(breadcrumb);
+        document.head.appendChild(bcScript);
+        const bodyText = cleanBodyText(post.body_text);
+        const paragraphs = bodyText ? splitParagraphs(bodyText) : [];
+
+        // Build interleaved content: text → images → text → images
+        let mainHtml = `
             <span class="detail-cate ${getCateClass(post.category)}">${post.category || ""}</span>
             <h1 class="detail-title">${post.title}</h1>
             <div class="detail-meta">
@@ -195,74 +365,74 @@
             </div>
           `;
 
-          // Subtitle detection
-          const subtitlePatterns = [
-            /[│\|]/, // Contains │ or | separator
-            /^(단지|고객|설계|마무리|현관|거실|주방|안방|욕실|서브룸|발코니|침실|드레스룸|다용도|베란다|공간별)/,
-            /&\s*(설계|기본|컨셉|드레스룸|니즈)/,
-          ];
-          function isSubtitle(line) {
-            const trimmed = line.trim();
-            if (trimmed.length < 2 || trimmed.length > 30) return false;
-            return subtitlePatterns.some((p) => p.test(trimmed));
-          }
-          let subtitleNum = 0;
+        // Subtitle detection
+        const subtitlePatterns = [
+          /[│\|]/, // Contains │ or | separator
+          /^(단지|고객|설계|마무리|현관|거실|주방|안방|욕실|서브룸|발코니|침실|드레스룸|다용도|베란다|공간별)/,
+          /&\s*(설계|기본|컨셉|드레스룸|니즈)/,
+        ];
+        function isSubtitle(line) {
+          const trimmed = line.trim();
+          if (trimmed.length < 2 || trimmed.length > 30) return false;
+          return subtitlePatterns.some((p) => p.test(trimmed));
+        }
+        let subtitleNum = 0;
 
-          // Render content blocks (text-image interleaved, original order)
-          const blocks = post.content_blocks || [];
-          if (blocks.length > 0) {
-            blocks.forEach((block) => {
-              if (block.type === "text") {
-                const cleaned = cleanBodyText(block.content);
-                if (!cleaned) return;
-                // Split into lines and detect subtitles
-                const lines = cleaned.split("\n");
-                let buffer = [];
-                const flushBuffer = () => {
-                  if (buffer.length > 0) {
-                    mainHtml += `<div class="detail-text">${buffer.join("<br>")}</div>`;
-                    buffer = [];
-                  }
-                };
-                lines.forEach((line) => {
-                  const trimmed = line.trim();
-                  if (!trimmed) {
-                    buffer.push("");
-                    return;
-                  }
-                  if (isSubtitle(trimmed)) {
-                    flushBuffer();
-                    subtitleNum++;
-                    const num = String(subtitleNum).padStart(2, "0");
-                    mainHtml += `<div class="detail-subtitle"><span class="num">${num}</span><h3>${trimmed}</h3></div>`;
-                  } else {
-                    buffer.push(trimmed);
-                  }
-                });
-                flushBuffer();
-              } else if (block.type === "image" && block.src) {
-                mainHtml += `<div class="detail-img"><img src="${block.src}" alt="${post.title}" loading="lazy"></div>`;
-              }
+        // Render content blocks (text-image interleaved, original order)
+        const blocks = post.content_blocks || [];
+        if (blocks.length > 0) {
+          blocks.forEach((block) => {
+            if (block.type === "text") {
+              const cleaned = cleanBodyText(block.content);
+              if (!cleaned) return;
+              // Split into lines and detect subtitles
+              const lines = cleaned.split("\n");
+              let buffer = [];
+              const flushBuffer = () => {
+                if (buffer.length > 0) {
+                  mainHtml += `<div class="detail-text">${buffer.join("<br>")}</div>`;
+                  buffer = [];
+                }
+              };
+              lines.forEach((line) => {
+                const trimmed = line.trim();
+                if (!trimmed) {
+                  buffer.push("");
+                  return;
+                }
+                if (isSubtitle(trimmed)) {
+                  flushBuffer();
+                  subtitleNum++;
+                  const num = String(subtitleNum).padStart(2, "0");
+                  mainHtml += `<div class="detail-subtitle"><span class="num">${num}</span><h3>${trimmed}</h3></div>`;
+                } else {
+                  buffer.push(trimmed);
+                }
+              });
+              flushBuffer();
+            } else if (block.type === "image" && block.src) {
+              mainHtml += `<div class="detail-img"><img src="${block.src}" alt="${post.title}" loading="lazy"></div>`;
+            }
+          });
+        } else {
+          // Fallback: body_text + images separately
+          if (paragraphs.length > 0) {
+            mainHtml += '<div class="detail-body">';
+            paragraphs.forEach((para) => {
+              mainHtml += `<p>${para.replace(/\n/g, "<br>")}</p>`;
             });
-          } else {
-            // Fallback: body_text + images separately
-            if (paragraphs.length > 0) {
-              mainHtml += '<div class="detail-body">';
-              paragraphs.forEach((para) => {
-                mainHtml += `<p>${para.replace(/\n/g, "<br>")}</p>`;
-              });
-              mainHtml += "</div>";
-            }
-            if (images.length > 0) {
-              images.forEach((url, i) => {
-                const src = url.replace("/thumbnail/", "/upload/");
-                mainHtml += `<div class="detail-img"><img src="${src}" alt="${post.title}" loading="lazy"></div>`;
-              });
-            }
+            mainHtml += "</div>";
           }
+          if (images.length > 0) {
+            images.forEach((url, i) => {
+              const src = url.replace("/thumbnail/", "/upload/");
+              mainHtml += `<div class="detail-img"><img src="${src}" alt="${post.title}" loading="lazy"></div>`;
+            });
+          }
+        }
 
-          // Add inline CTA at the end of content
-          mainHtml += `
+        // Add inline CTA at the end of content
+        mainHtml += `
             <div class="detail-inline-cta">
               <div class="inline-cta-text">
                 <h3>INTERIOR CONSULTATION</h3>
@@ -272,62 +442,59 @@
             </div>
           `;
 
-          mainEl.innerHTML = mainHtml;
+        mainEl.innerHTML = mainHtml;
 
-          // Side panel - project info + CTA
-          // Extract spec info from body text if possible
-          const specItems = [];
-          const locationMatch = bodyText.match(/위치[:\s]*([^\n]+)/);
-          const sizeMatch = post.title.match(/(\d+평[^\s]*)/);
-          const typeMatch = post.title.match(
-            /(아파트|빌라|주택|오피스텔|사무실|상가|병원|의원|안경원)/,
-          );
-          const catText = post.category || "";
+        // Side panel - project info + CTA
+        // Extract spec info from body text if possible
+        const specItems = [];
+        const locationMatch = bodyText.match(/위치[:\s]*([^\n]+)/);
+        const sizeMatch = post.title.match(/(\d+평[^\s]*)/);
+        const typeMatch = post.title.match(
+          /(아파트|빌라|주택|오피스텔|사무실|상가|병원|의원|안경원)/,
+        );
+        const catText = post.category || "";
 
-          if (catText) specItems.push(["분류", catText]);
-          if (typeMatch) specItems.push(["유형", typeMatch[1]]);
-          if (sizeMatch) specItems.push(["규모", sizeMatch[1]]);
-          specItems.push(["시공사", "데이원디자인"]);
+        if (catText) specItems.push(["분류", catText]);
+        if (typeMatch) specItems.push(["유형", typeMatch[1]]);
+        if (sizeMatch) specItems.push(["규모", sizeMatch[1]]);
+        specItems.push(["시공사", "데이원디자인"]);
 
-          // Related cases: same board, exclude current post
-          const related = posts
-            .filter((p) => p.board === post.board && p.idx !== post.idx)
-            .slice(0, 5);
+        // Related cases: same board, exclude current post
+        const related = posts
+          .filter((p) => p.board === post.board && p.idx !== post.idx)
+          .slice(0, 5);
 
-          let relatedHtml = "";
-          if (related.length > 0) {
-            const slides = related
-              .map((rp, ri) => {
-                const src =
-                  rp.images && rp.images[0]
-                    ? rp.images[0]
-                    : rp.thumb
-                      ? "https:" + rp.thumb
-                      : "";
-                return `<a href="community-detail.html?idx=${rp.idx}" class="side-slide${ri === 0 ? " active" : ""}">
-                <img src="${src}" alt="${rp.title}" loading="lazy">
+        let relatedHtml = "";
+        if (related.length > 0) {
+          const slides = related
+            .map((rp, ri) => {
+              // slim list: `thumb` is already an absolute URL.
+              let src = rp.thumb || "";
+              if (src && !src.startsWith("http")) src = "https:" + src;
+              return `<a href="community-detail.html?idx=${rp.idx}" class="side-slide${ri === 0 ? " active" : ""}">
+                <img src="${src}" alt="${rp.title}" loading="lazy" decoding="async">
                 <div class="overlay">
                   <span class="cate">${rp.category || ""}</span>
                   <p class="title">${rp.title}</p>
                   <span class="meta">${formatDate(rp.date)} · 조회 ${rp.views || 0}</span>
                 </div>
               </a>`;
-              })
-              .join("");
-            const dots = related
-              .map(
-                (_, ri) =>
-                  `<span class="dot${ri === 0 ? " active" : ""}" data-idx="${ri}"></span>`,
-              )
-              .join("");
-            relatedHtml = `
+            })
+            .join("");
+          const dots = related
+            .map(
+              (_, ri) =>
+                `<span class="dot${ri === 0 ? " active" : ""}" data-idx="${ri}"></span>`,
+            )
+            .join("");
+          relatedHtml = `
               <p class="side-related-label">Related Cases</p>
               <div class="side-slider" id="sideSlider">${slides}</div>
               <div class="side-dots" id="sideDots">${dots}</div>
             `;
-          }
+        }
 
-          sideEl.innerHTML = `
+        sideEl.innerHTML = `
             <div class="side-card">
               <h4>Project Info</h4>
               <dl>
@@ -343,31 +510,30 @@
             </div>
           `;
 
-          // Auto-rotate slider
-          if (related.length > 1) {
-            let current = 0;
-            const slides = document.querySelectorAll("#sideSlider .side-slide");
-            const dots = document.querySelectorAll("#sideDots .dot");
-            const goTo = (n) => {
-              slides.forEach((s, i) => s.classList.toggle("active", i === n));
-              dots.forEach((d, i) => d.classList.toggle("active", i === n));
-              current = n;
-            };
-            dots.forEach((d) =>
-              d.addEventListener("click", () => goTo(parseInt(d.dataset.idx))),
-            );
-            setInterval(() => goTo((current + 1) % slides.length), 4000);
-          }
+        // Auto-rotate slider
+        if (related.length > 1) {
+          let current = 0;
+          const slides = document.querySelectorAll("#sideSlider .side-slide");
+          const dots = document.querySelectorAll("#sideDots .dot");
+          const goTo = (n) => {
+            slides.forEach((s, i) => s.classList.toggle("active", i === n));
+            dots.forEach((d, i) => d.classList.toggle("active", i === n));
+            current = n;
+          };
+          dots.forEach((d) =>
+            d.addEventListener("click", () => goTo(parseInt(d.dataset.idx))),
+          );
+          setInterval(() => goTo((current + 1) % slides.length), 4000);
+        }
 
-          // Prev/Next navigation
-          const prevPost = postIdx > 0 ? posts[postIdx - 1] : null;
-          const nextPost =
-            postIdx < posts.length - 1 ? posts[postIdx + 1] : null;
-          navEl.innerHTML = `
+        // Prev/Next navigation
+        const prevPost = postIdx > 0 ? posts[postIdx - 1] : null;
+        const nextPost = postIdx < posts.length - 1 ? posts[postIdx + 1] : null;
+        navEl.innerHTML = `
             ${prevPost ? `<a href="community-detail.html?idx=${prevPost.idx}">← 이전 글</a>` : "<span></span>"}
             ${nextPost ? `<a href="community-detail.html?idx=${nextPost.idx}">다음 글 →</a>` : "<span></span>"}
           `;
-        });
+      });
     </script>
   </body>
 </html>

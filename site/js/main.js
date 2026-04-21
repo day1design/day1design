@@ -1,6 +1,6 @@
 // ========== PORTFOLIO GRID ==========
 const _prefix = typeof IMG_PREFIX !== "undefined" ? IMG_PREFIX : "";
-const TOTAL_PROJECTS = 35;
+let TOTAL_PROJECTS = 35;
 
 const projectData = [
   { name: "판교 TH212 47py", folder: "판교-th212-47py", count: 22 },
@@ -217,8 +217,13 @@ function renderHouse(size) {
     const { thumb, modalProj, displayName } = cards[k];
     const card = document.createElement("div");
     card.className = "project-card";
+    // Above-the-fold (first 4) eager + high priority, rest lazy
+    const loadAttr =
+      k < 4
+        ? 'fetchpriority="high" decoding="async"'
+        : 'loading="lazy" decoding="async"';
     card.innerHTML = `
-      <img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/${thumb}" alt="${displayName}">
+      <img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/${thumb}" alt="${displayName}" ${loadAttr}>
       <div class="project-overlay">
         <span class="project-name">${displayName}</span>
       </div>
@@ -229,15 +234,24 @@ function renderHouse(size) {
   renderHouseMoreBtn(cards.length);
 }
 
-// Render OFFICE grid — 3 고정 컬럼 (round-robin 분배)
-// CSS columns로 하면 이미지 로드 시마다 리밸런싱되어 슬롯머신처럼 튐
+// Render OFFICE grid — 고정 컬럼 (round-robin 분배)
+// CSS columns는 이미지 로드 시마다 리밸런싱되어 슬롯머신처럼 튐
+// 뷰포트에 따라 2~3 컬럼 반응형 (모바일에서 너무 작게 보이지 않게)
+function getOfficeColCount() {
+  const w = window.innerWidth;
+  if (w >= 900) return 3;
+  return 2;
+}
+
+let _officeResizeBound = false;
 function renderOffice() {
   if (!grid) return;
   removeHouseMoreBtn();
   grid.innerHTML = "";
   grid.className = "project-grid office-grid";
 
-  const COL_COUNT = 3;
+  const COL_COUNT = getOfficeColCount();
+  grid.dataset.cols = String(COL_COUNT);
   const cols = [];
   for (let c = 0; c < COL_COUNT; c++) {
     const col = document.createElement("div");
@@ -250,9 +264,27 @@ function renderOffice() {
     const num = String(i).padStart(3, "0");
     const card = document.createElement("div");
     card.className = "project-card";
-    card.innerHTML = `<img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/office/${num}.webp" alt="Office ${i}" loading="lazy" decoding="async">`;
+    const officeLoad =
+      i <= 6
+        ? 'fetchpriority="high" decoding="async"'
+        : 'loading="lazy" decoding="async"';
+    card.innerHTML = `<img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/office/${num}.webp" alt="Office ${i}" ${officeLoad}>`;
     card.addEventListener("click", () => openOfficeLightbox(i - 1));
     cols[(i - 1) % COL_COUNT].appendChild(card);
+  }
+
+  // Responsive: re-render if viewport crosses breakpoint
+  if (!_officeResizeBound) {
+    _officeResizeBound = true;
+    let t;
+    window.addEventListener("resize", () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        if (!grid.classList.contains("office-grid")) return;
+        const target = getOfficeColCount();
+        if (parseInt(grid.dataset.cols) !== target) renderOffice();
+      }, 150);
+    });
   }
 }
 
@@ -468,10 +500,41 @@ function closeLightbox() {
   if (lb) lb.classList.remove("open");
 }
 
+// ========== YOUTUBE FACADE (click-to-play) ==========
+// Avoid loading the ~400KB YouTube player until the user actually clicks.
+document.querySelectorAll(".youtube-facade").forEach((facade) => {
+  const load = () => {
+    const id = facade.dataset.videoId;
+    if (!id) return;
+    const iframe = document.createElement("iframe");
+    iframe.src = `https://www.youtube.com/embed/${id}?autoplay=1&rel=0`;
+    iframe.title = "DAYONE BRAND FILM";
+    iframe.allow =
+      "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+    iframe.referrerPolicy = "strict-origin-when-cross-origin";
+    iframe.allowFullscreen = true;
+    facade.innerHTML = "";
+    facade.appendChild(iframe);
+    facade.classList.add("loaded");
+  };
+  facade.addEventListener("click", load);
+  facade.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      load();
+    }
+  });
+});
+
 // ========== HERO SLIDER ==========
 (async function initHeroSlider() {
   const track = document.getElementById("heroTrack");
   if (!track) return;
+
+  // 로더가 히어로 첫 이미지 로드까지 기다릴 수 있게 이벤트 dispatch
+  const signalHeroReady = () => {
+    window.dispatchEvent(new CustomEvent("day1:hero-ready"));
+  };
 
   const DEFAULTS = { maxSlides: 10, autoPlayMs: 6000 };
   const prefix = typeof IMG_PREFIX !== "undefined" ? IMG_PREFIX : "";
@@ -480,31 +543,55 @@ function closeLightbox() {
   let config = { ...DEFAULTS };
 
   try {
-    const res = await fetch(`${prefix}data/hero-slides.json`);
-    const data = await res.json();
+    const API_BASE =
+      (typeof window !== "undefined" && window.DAY1_API_BASE) || "";
+    let data = null;
+    if (API_BASE) {
+      try {
+        const r = await fetch(`${API_BASE}/api/hero/slides`);
+        if (r.ok) data = await r.json();
+      } catch {}
+    }
+    if (!data) {
+      const res = await fetch(`${prefix}data/hero-slides.json`);
+      data = await res.json();
+    }
     if (data.config) Object.assign(config, data.config);
     slides = (data.slides || []).slice(0, config.maxSlides);
   } catch (e) {
     console.warn("[hero-slider] load failed:", e);
+    signalHeroReady();
     return;
   }
 
-  if (slides.length === 0) return;
+  if (slides.length === 0) {
+    signalHeroReady();
+    return;
+  }
 
   const slider = track.closest(".hero-slider");
   if (slides.length === 1) slider.classList.add("single");
 
+  // Only the first slide gets its background-image inline (LCP).
+  // Other slides store the URL in data-bg and load it just before activation.
   track.innerHTML = slides
     .map((s, i) => {
-      const style = `background-image:url('${s.image}');`;
       const alt = (s.alt || "").replace(/"/g, "&quot;");
       const activeClass = i === 0 ? " active" : "";
+      const style = i === 0 ? `background-image:url('${s.image}');` : "";
+      const dataBg = i === 0 ? "" : ` data-bg="${s.image}"`;
       if (s.href) {
-        return `<a href="${s.href}" class="hero-slide${activeClass}" style="${style}" aria-label="${alt}"></a>`;
+        return `<a href="${s.href}" class="hero-slide${activeClass}" style="${style}"${dataBg} aria-label="${alt}"></a>`;
       }
-      return `<div class="hero-slide${activeClass}" style="${style}" role="img" aria-label="${alt}"></div>`;
+      return `<div class="hero-slide${activeClass}" style="${style}"${dataBg} role="img" aria-label="${alt}"></div>`;
     })
     .join("");
+
+  // 첫 슬라이드 이미지 로드 완료 시 로더 신호
+  const firstSlideImg = new Image();
+  firstSlideImg.onload = signalHeroReady;
+  firstSlideImg.onerror = signalHeroReady;
+  firstSlideImg.src = slides[0].image;
 
   const dotsEl = document.getElementById("heroDots");
   if (dotsEl) {
@@ -521,8 +608,21 @@ function closeLightbox() {
   let current = 0;
   let timer = null;
 
+  // Load a slide's background-image on demand (lazy hero).
+  function ensureSlideBg(i) {
+    const el = slideEls[i];
+    if (!el) return;
+    const url = el.dataset.bg;
+    if (!url) return;
+    el.style.backgroundImage = `url('${url}')`;
+    el.removeAttribute("data-bg");
+  }
+
   function goTo(idx) {
     current = (idx + slides.length) % slides.length;
+    // Preload current + next slide so the next transition is instant.
+    ensureSlideBg(current);
+    ensureSlideBg((current + 1) % slides.length);
     slideEls.forEach((el, i) => el.classList.toggle("active", i === current));
     dotEls.forEach((el, i) => el.classList.toggle("active", i === current));
   }
@@ -531,6 +631,16 @@ function closeLightbox() {
   }
   function prev() {
     goTo(current - 1);
+  }
+
+  // Preload slide #2 once idle so the first auto-advance is smooth.
+  if (slides.length > 1) {
+    const preloadNext = () => ensureSlideBg(1);
+    if ("requestIdleCallback" in window) {
+      requestIdleCallback(preloadNext, { timeout: 2000 });
+    } else {
+      setTimeout(preloadNext, 1500);
+    }
   }
   function resetTimer() {
     if (timer) clearInterval(timer);
@@ -561,4 +671,39 @@ function closeLightbox() {
   slider.addEventListener("mouseleave", resetTimer);
 
   resetTimer();
+})();
+
+// ========== PORTFOLIO API 전환 (optional) ==========
+// window.DAY1_API_BASE 가 설정되어 있으면 Airtable에서 projectData를 덮어쓰고 재렌더.
+// 실패 시 기존 하드코딩 projectData 유지 (fallback).
+(async function loadPortfolioFromApi() {
+  const API_BASE =
+    (typeof window !== "undefined" && window.DAY1_API_BASE) || "";
+  if (!API_BASE || !grid) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/portfolio`);
+    if (!res.ok) return;
+    const d = await res.json();
+    if (!Array.isArray(d.records) || !d.records.length) return;
+    projectData.length = 0;
+    d.records.forEach((r) => {
+      const o = { name: r.name, folder: r.folder, count: r.count };
+      if (r.rightName) {
+        o.rightName = r.rightName;
+        o.rightFolder = r.rightFolder;
+        o.rightCount = r.rightCount;
+      }
+      projectData.push(o);
+    });
+    TOTAL_PROJECTS = projectData.length;
+    // HOUSE 탭이 활성화된 상태에서만 재렌더 (OFFICE는 영향 없음)
+    if (
+      grid.classList.contains("project-grid") &&
+      !grid.classList.contains("office-grid")
+    ) {
+      renderHouse(currentSize);
+    }
+  } catch (e) {
+    // 조용히 fallback 유지
+  }
 })();

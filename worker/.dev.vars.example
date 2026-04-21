@@ -1,0 +1,5 @@
+AIRTABLE_TOKEN=pat.xxx
+AIRTABLE_BASE_ID=appxxxxxxxxxxxxxx
+ADMIN_TOKEN=your-long-random-admin-password
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=

@@ -1,20 +1,7 @@
-/* S-Core Dream - 에스코어드림 웹폰트 (CDN) */
-@font-face {
-  font-family: "S-Core Dream";
-  font-weight: 100;
-  font-style: normal;
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-1Thin.woff")
-    format("woff");
-  font-display: swap;
-}
-@font-face {
-  font-family: "S-Core Dream";
-  font-weight: 200;
-  font-style: normal;
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-2ExtraLight.woff")
-    format("woff");
-  font-display: swap;
-}
+/* S-Core Dream - 에스코어드림 웹폰트 (CDN)
+ * 실제 사용 weight만 로드: 300(Light) / 400(Regular) / 500(Medium) / 600(Bold) / 700(ExtraBold)
+ * 100/200/800/900은 어디에도 사용되지 않아 제거 (전체 약 200KB 절감)
+ */
 @font-face {
   font-family: "S-Core Dream";
   font-weight: 300;
@@ -52,22 +39,6 @@
   font-weight: 700;
   font-style: normal;
   src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-7ExtraBold.woff")
-    format("woff");
-  font-display: swap;
-}
-@font-face {
-  font-family: "S-Core Dream";
-  font-weight: 800;
-  font-style: normal;
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-8Heavy.woff")
-    format("woff");
-  font-display: swap;
-}
-@font-face {
-  font-family: "S-Core Dream";
-  font-weight: 900;
-  font-style: normal;
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-9Black.woff")
     format("woff");
   font-display: swap;
 }

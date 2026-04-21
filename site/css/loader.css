@@ -1,0 +1,126 @@
+/* ============================================================
+ * DAY1DESIGN · Page Loader (Warm Flow)
+ * - Gradient Flow 기법: 앰버 그래디언트가 로고 텍스트 위로 흐름
+ * - 페이지 리소스 로딩 중 표시, window.load 시 자동 페이드아웃
+ * - Cormorant 300 + Times New Roman 폴백 (폰트 로드 전에도 작동)
+ * ============================================================ */
+@import url("https://fonts.googleapis.com/css2?family=Cormorant:wght@300&display=swap");
+
+:root {
+  --loader-dim: #4a3f2d;
+  --loader-lit: #f7e8c6;
+  --loader-glow-ambient: rgba(233, 199, 139, 0.14);
+  --loader-glow-mid: rgba(233, 199, 139, 0.35);
+  --loader-duration: 5s;
+  --loader-fade: 0.6s;
+}
+
+#page-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 30%, #1a1510 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 50% 80%, #1c1813 0%, transparent 70%),
+    #070502;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--loader-fade) ease-out,
+    visibility 0s linear var(--loader-fade);
+}
+
+#page-loader.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#page-loader .loader-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+#page-loader .loader-text,
+#page-loader .loader-glow {
+  font-family: "Cormorant", "Times New Roman", Georgia, serif;
+  font-weight: 300;
+  letter-spacing: 0.14em;
+  font-size: clamp(40px, 8vw, 112px);
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  margin: 0;
+}
+
+#page-loader .loader-text {
+  background: linear-gradient(
+    90deg,
+    var(--loader-dim) 0%,
+    var(--loader-dim) 25%,
+    var(--loader-lit) 50%,
+    var(--loader-dim) 75%,
+    var(--loader-dim) 100%
+  );
+  background-size: 50% 100%;
+  background-repeat: repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  filter: drop-shadow(0 0 10px var(--loader-glow-ambient))
+    drop-shadow(0 0 22px var(--loader-glow-ambient));
+  animation: loader-flow var(--loader-duration) linear infinite;
+}
+
+#page-loader .loader-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 30%,
+    var(--loader-glow-mid) 50%,
+    transparent 70%,
+    transparent 100%
+  );
+  background-size: 50% 100%;
+  background-repeat: repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  filter: blur(14px) brightness(1.4);
+  mix-blend-mode: screen;
+  animation: loader-flow var(--loader-duration) linear infinite;
+}
+
+@keyframes loader-flow {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 0%;
+  }
+}
+
+/* 접근성: prefers-reduced-motion 대응 — 정적 로고로 대체 */
+@media (prefers-reduced-motion: reduce) {
+  #page-loader .loader-text,
+  #page-loader .loader-glow {
+    animation: none;
+    background: var(--loader-lit);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  #page-loader .loader-glow {
+    opacity: 0.4;
+    filter: blur(20px);
+  }
+}

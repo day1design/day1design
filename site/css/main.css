@@ -328,6 +328,49 @@
   height: 100%;
   border: 0;
 }
+.youtube-facade {
+  cursor: pointer;
+}
+.youtube-facade img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.youtube-facade .yt-play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 68px;
+  height: 48px;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+.youtube-facade:hover .yt-play-btn {
+  background: #e62117;
+}
+.youtube-facade .yt-play-btn::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-40%, -50%);
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 10px 0 10px 16px;
+  border-color: transparent transparent transparent #fff;
+}
+.youtube-facade.loaded .yt-play-btn {
+  display: none;
+}
 .brandfilm-caption {
   margin-top: 16px;
   font-family: var(--font-en), var(--font-kr);

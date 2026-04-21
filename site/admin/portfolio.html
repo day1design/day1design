@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>포트폴리오 관리 · DAYONE DESIGN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="stylesheet" href="../css/fonts.css" />
+    <link rel="stylesheet" href="../css/variables.css" />
+    <link rel="stylesheet" href="../css/reset.css" />
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body class="admin-body">
+    <header class="admin-header">
+      <div class="admin-header-inner">
+        <div class="admin-logo">DAYONE ADMIN</div>
+        <nav class="admin-nav">
+          <a href="index.html" data-nav="home">Dashboard</a>
+          <a href="hero-slides.html" data-nav="hero">Hero</a>
+          <a href="portfolio.html" data-nav="portfolio" class="active"
+            >Portfolio</a
+          >
+          <a href="community.html" data-nav="community">Community</a>
+          <a href="estimates.html" data-nav="estimates">Estimates</a>
+          <a href="#" id="btnLogout" class="admin-nav-secondary">로그아웃</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="admin-main">
+      <section class="admin-section">
+        <div class="admin-section-head">
+          <div>
+            <h1>포트폴리오 관리</h1>
+            <p class="admin-sub">
+              시공 현장 프로젝트를 등록·편집·정렬합니다. 이미지는 R2 폴더 규칙
+              <code>/portfolio/{folder}/NNN.webp</code>을 따릅니다.
+            </p>
+          </div>
+          <div class="admin-status" id="apiStatus" data-state="unknown">
+            <span class="dot"></span><span class="txt">API 확인 중</span>
+          </div>
+        </div>
+
+        <div class="admin-toolbar">
+          <div class="filter-row">
+            <label>카테고리</label>
+            <select id="filterCategory">
+              <option value="">전체</option>
+              <option value="HOUSE">HOUSE</option>
+              <option value="OFFICE">OFFICE</option>
+            </select>
+            <input
+              type="search"
+              id="filterSearch"
+              placeholder="이름 또는 folder 검색"
+            />
+          </div>
+          <button type="button" class="btn btn-primary" id="btnNew">
+            + 새 프로젝트
+          </button>
+        </div>
+
+        <div class="data-table-wrap">
+          <table class="data-table" id="pfTable">
+            <thead>
+              <tr>
+                <th style="width: 40px">#</th>
+                <th>이름</th>
+                <th>Folder</th>
+                <th style="width: 80px">Count</th>
+                <th style="width: 100px">Category</th>
+                <th style="width: 80px">Order</th>
+                <th style="width: 140px"></th>
+              </tr>
+            </thead>
+            <tbody id="pfBody">
+              <tr>
+                <td colspan="7" class="empty-state">불러오는 중...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- 편집 모달 -->
+    <div class="modal" id="pfModal" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-panel">
+        <div class="modal-head">
+          <h2 id="modalTitle">새 프로젝트</h2>
+          <button class="icon-btn" data-close>✕</button>
+        </div>
+        <form id="pfForm" class="modal-body">
+          <div class="field">
+            <label>이름 <span class="req">*</span></label>
+            <input
+              type="text"
+              name="name"
+              required
+              placeholder="예: 판교 TH212 47py"
+            />
+          </div>
+          <div class="field">
+            <label>Folder (R2 slug) <span class="req">*</span></label>
+            <input
+              type="text"
+              name="folder"
+              required
+              placeholder="예: 판교-th212-47py"
+            />
+            <p class="hint">
+              공백/특수문자 대신 대시(-) 사용. 이미지 URL:
+              <code>/portfolio/{folder}/001.webp</code>
+            </p>
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Count (이미지 수)</label>
+              <input type="number" name="count" min="0" value="0" />
+            </div>
+            <div class="field">
+              <label>Category</label>
+              <select name="category">
+                <option value="HOUSE">HOUSE</option>
+                <option value="OFFICE">OFFICE</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Order</label>
+              <input type="number" name="order" min="0" value="0" />
+            </div>
+          </div>
+          <details class="pair-fold">
+            <summary>페어링 (카드 우측에 다른 프로젝트 묶기)</summary>
+            <div class="field">
+              <label>Right Name</label>
+              <input type="text" name="rightName" />
+            </div>
+            <div class="field-inline">
+              <div class="field">
+                <label>Right Folder</label>
+                <input type="text" name="rightFolder" />
+              </div>
+              <div class="field">
+                <label>Right Count</label>
+                <input type="number" name="rightCount" min="0" value="0" />
+              </div>
+            </div>
+          </details>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-close>취소</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmit">
+              저장
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script src="config.js"></script>
+    <script src="admin.js"></script>
+    <script src="portfolio.js"></script>
+  </body>
+</html>

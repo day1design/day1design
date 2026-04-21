@@ -1,0 +1,37 @@
+User-agent: *
+Allow: /
+
+# AI crawlers — allow for GEO (Generative Engine Optimization)
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+# Backup / internal resources should not be indexed
+Disallow: /admin/
+Disallow: /data/community/
+Disallow: /*-wireframe.html$
+Disallow: /motion-loading-concepts.html$
+Disallow: /review_row3.html$
+Disallow: /review-portfolio.html$
+
+Sitemap: https://day1design.vercel.app/sitemap.xml

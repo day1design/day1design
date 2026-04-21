@@ -1,0 +1,17 @@
+{
+  "name": "day1design-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "secret:airtable-token": "wrangler secret put AIRTABLE_TOKEN",
+    "secret:airtable-base": "wrangler secret put AIRTABLE_BASE_ID",
+    "secret:admin-token": "wrangler secret put ADMIN_TOKEN"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

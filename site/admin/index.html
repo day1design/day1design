@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>관리자 · DAYONE DESIGN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="stylesheet" href="../css/fonts.css" />
+    <link rel="stylesheet" href="../css/variables.css" />
+    <link rel="stylesheet" href="../css/reset.css" />
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body class="admin-body">
+    <header class="admin-header">
+      <div class="admin-header-inner">
+        <div class="admin-logo">DAYONE ADMIN</div>
+        <nav class="admin-nav">
+          <a href="index.html" data-nav="home" class="active">Dashboard</a>
+          <a href="hero-slides.html" data-nav="hero">Hero</a>
+          <a href="portfolio.html" data-nav="portfolio">Portfolio</a>
+          <a href="community.html" data-nav="community">Community</a>
+          <a href="estimates.html" data-nav="estimates">Estimates</a>
+          <a href="#" id="btnLogout" class="admin-nav-secondary">로그아웃</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="admin-main">
+      <section class="admin-section">
+        <div class="admin-section-head">
+          <div>
+            <h1>관리자 대시보드</h1>
+            <p class="admin-sub">콘텐츠를 관리할 영역을 선택하세요.</p>
+          </div>
+          <div class="admin-status" id="apiStatus" data-state="unknown">
+            <span class="dot"></span><span class="txt">API 확인 중</span>
+          </div>
+        </div>
+        <div class="dash-grid">
+          <a href="hero-slides.html" class="dash-card">
+            <div class="dash-card-head">
+              <h3>Hero Slides</h3>
+              <span id="statHero">—</span>
+            </div>
+            <p>메인 히어로 슬라이드 등록·정렬·삭제 (최대 10장)</p>
+          </a>
+          <a href="portfolio.html" class="dash-card">
+            <div class="dash-card-head">
+              <h3>Portfolio</h3>
+              <span id="statPortfolio">—</span>
+            </div>
+            <p>시공 포트폴리오 등록·편집·순서 조정</p>
+          </a>
+          <a href="community.html" class="dash-card">
+            <div class="dash-card-head">
+              <h3>Community</h3>
+              <span id="statCommunity">—</span>
+            </div>
+            <p>게시글 등록·수정 (본문 블록 에디터 포함)</p>
+          </a>
+          <a href="estimates.html" class="dash-card">
+            <div class="dash-card-head">
+              <h3>Estimates</h3>
+              <span id="statEstimates">—</span>
+            </div>
+            <p>상담신청 내역 조회·상태/담당자 변경</p>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast"></div>
+    <script src="config.js"></script>
+    <script src="admin.js"></script>
+    <script>
+      (async () => {
+        await adminUtil.ensureAuth();
+        adminUtil.pingApi();
+        document
+          .getElementById("btnLogout")
+          .addEventListener("click", async (e) => {
+            e.preventDefault();
+            try {
+              await adminUtil.api("/api/auth/logout", { method: "POST" });
+            } catch {}
+            adminUtil.clearToken();
+            location.href = "login.html";
+          });
+
+        async function loadCount(path, id, key = "records") {
+          try {
+            const d = await adminUtil.api(path);
+            const n = Array.isArray(d?.[key])
+              ? d[key].length
+              : Array.isArray(d?.posts)
+                ? d.posts.length
+                : Array.isArray(d?.slides)
+                  ? d.slides.length
+                  : "—";
+            document.getElementById(id).textContent =
+              n + (typeof n === "number" ? "건" : "");
+          } catch {
+            document.getElementById(id).textContent = "—";
+          }
+        }
+        loadCount("/api/hero/slides", "statHero");
+        loadCount("/api/portfolio", "statPortfolio");
+        loadCount("/api/community", "statCommunity", "posts");
+        loadCount("/api/estimates", "statEstimates");
+      })();
+    </script>
+  </body>
+</html>

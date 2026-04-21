@@ -15,8 +15,12 @@
       <div class="admin-header-inner">
         <div class="admin-logo">DAYONE ADMIN</div>
         <nav class="admin-nav">
-          <a href="hero-slides.html" class="active">Hero Slides</a>
-          <a href="../index.html" class="admin-nav-secondary">← 사이트로</a>
+          <a href="index.html" data-nav="home">Dashboard</a>
+          <a href="hero-slides.html" data-nav="hero" class="active">Hero</a>
+          <a href="portfolio.html" data-nav="portfolio">Portfolio</a>
+          <a href="community.html" data-nav="community">Community</a>
+          <a href="estimates.html" data-nav="estimates">Estimates</a>
+          <a href="#" id="btnLogout" class="admin-nav-secondary">로그아웃</a>
         </nav>
       </div>
     </header>
@@ -178,7 +182,20 @@
       </details>
     </main>
 
-    <script src="../js/common.js"></script>
+    <script src="config.js"></script>
+    <script src="admin.js"></script>
     <script src="hero-slides.js"></script>
+    <script>
+      document
+        .getElementById("btnLogout")
+        .addEventListener("click", async (e) => {
+          e.preventDefault();
+          try {
+            await adminUtil.api("/api/auth/logout", { method: "POST" });
+          } catch {}
+          adminUtil.clearToken();
+          location.href = "login.html";
+        });
+    </script>
   </body>
 </html>

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>관리자 로그인 · DAYONE DESIGN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="stylesheet" href="../css/fonts.css" />
+    <link rel="stylesheet" href="../css/variables.css" />
+    <link rel="stylesheet" href="../css/reset.css" />
+    <link rel="stylesheet" href="admin.css" />
+    <style>
+      .login-wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .login-card {
+        width: 100%;
+        max-width: 380px;
+        background: #fff;
+        border: 1px solid #e5e1d6;
+        border-radius: 8px;
+        padding: 32px 28px;
+      }
+      .login-logo {
+        font-weight: 700;
+        letter-spacing: 3px;
+        font-size: 13px;
+        color: var(--color-brand-beige);
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .login-card h1 {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0 0 24px;
+        text-align: center;
+      }
+      .login-card .field input[type="password"] {
+        width: 100%;
+        padding: 11px 12px;
+        border: 1px solid #e5e1d6;
+        border-radius: 4px;
+        font-size: 14px;
+        background: #fff;
+      }
+      .login-card .field input:focus {
+        outline: none;
+        border-color: var(--color-brand-beige);
+      }
+      .login-submit {
+        width: 100%;
+        margin-top: 8px;
+      }
+      .login-error {
+        margin-top: 12px;
+        font-size: 12px;
+        color: #c5371a;
+        min-height: 16px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body class="admin-body">
+    <div class="login-wrap">
+      <form class="login-card" id="loginForm">
+        <div class="login-logo">DAYONE ADMIN</div>
+        <h1>관리자 로그인</h1>
+        <div class="field">
+          <label for="token">관리자 토큰</label>
+          <input
+            type="password"
+            id="token"
+            autocomplete="current-password"
+            autofocus
+          />
+        </div>
+        <button type="submit" class="btn btn-primary login-submit">
+          로그인
+        </button>
+        <div class="login-error" id="err"></div>
+      </form>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script src="config.js"></script>
+    <script src="admin.js"></script>
+    <script>
+      const form = document.getElementById("loginForm");
+      const errEl = document.getElementById("err");
+      const params = new URLSearchParams(location.search);
+      const next = params.get("next") || "index.html";
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        errEl.textContent = "";
+        const token = document.getElementById("token").value.trim();
+        if (!token) return;
+        try {
+          const res = await adminUtil.api("/api/auth/login", {
+            method: "POST",
+            json: { token },
+          });
+          if (res && res.loggedIn) {
+            adminUtil.setToken(token);
+            location.href = next;
+          } else {
+            errEl.textContent = "로그인 실패";
+          }
+        } catch (e2) {
+          errEl.textContent = "인증 실패: " + (e2.message || "알 수 없는 오류");
+        }
+      });
+    </script>
+  </body>
+</html>
