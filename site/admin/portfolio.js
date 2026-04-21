@@ -6,7 +6,6 @@ let dirty = false;
 
 // 모달 상태
 let modalThumbAfter = "";
-let modalThumbBefore = "";
 let modalImages = [];
 let folderManuallyEdited = false;
 
@@ -205,16 +204,6 @@ bindThumbSlot({
     modalThumbAfter = u;
   },
 });
-bindThumbSlot({
-  previewId: "thumbBeforePreview",
-  clearBtnId: "btnClearThumbBefore",
-  pickBtnId: "btnPickThumbBefore",
-  fileInputId: "thumbBeforeFile",
-  folder: "portfolio-thumbs",
-  onChange: (u) => {
-    modalThumbBefore = u;
-  },
-});
 
 // ========== 갤러리 ==========
 function renderGallery() {
@@ -296,11 +285,9 @@ document.getElementById("btnNew").addEventListener("click", () => {
   form.reset();
   form.elements.category.value = "HOUSE";
   modalThumbAfter = "";
-  modalThumbBefore = "";
   modalImages = [];
   folderManuallyEdited = false;
   renderThumbPreview("thumbAfterPreview", "btnClearThumbAfter", "");
-  renderThumbPreview("thumbBeforePreview", "btnClearThumbBefore", "");
   renderGallery();
   openModal("새 프로젝트");
 });
@@ -317,18 +304,12 @@ function openEdit(id) {
   form.elements.rightFolder.value = r.rightFolder || "";
   form.elements.rightCount.value = r.rightCount || 0;
   modalThumbAfter = r.thumbAfter || "";
-  modalThumbBefore = r.thumbBefore || "";
   modalImages = Array.isArray(r.images) ? r.images.slice() : [];
   folderManuallyEdited = true; // 기존 folder 유지
   renderThumbPreview(
     "thumbAfterPreview",
     "btnClearThumbAfter",
     modalThumbAfter,
-  );
-  renderThumbPreview(
-    "thumbBeforePreview",
-    "btnClearThumbBefore",
-    modalThumbBefore,
   );
   renderGallery();
   openModal(`편집 · ${r.name}`);
@@ -348,7 +329,7 @@ async function doDelete(id) {
     records = records.filter((x) => x.id !== id);
     original = original.filter((x) => x.id !== id);
     render();
-    adminUtil.toast("삭제 완료 (R2 이미지 정리됨)");
+    adminUtil.toast("삭제 완료");
   } catch (e) {
     adminUtil.toast("삭제 실패: " + e.message, "error");
   }
@@ -372,7 +353,6 @@ form.addEventListener("submit", async (e) => {
     folder,
     category: form.elements.category.value,
     thumbAfter: modalThumbAfter,
-    thumbBefore: modalThumbBefore,
     images: modalImages,
     // Count는 Worker가 images.length로 자동 설정
     rightName: form.elements.rightName.value.trim(),

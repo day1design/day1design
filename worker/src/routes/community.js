@@ -18,7 +18,11 @@ function collectPostUrls(post) {
   if (post.thumb) out.add(post.thumb);
   (post.images || []).forEach((u) => u && out.add(u));
   (post.content_blocks || []).forEach((b) => {
-    if (b && b.type === "image" && b.src) out.add(b.src);
+    if (!b) return;
+    if (b.type === "image" && b.src) out.add(b.src);
+    else if (b.type === "gallery" && Array.isArray(b.images)) {
+      b.images.forEach((u) => u && out.add(u));
+    }
   });
   return [...out];
 }

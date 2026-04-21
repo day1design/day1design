@@ -405,3 +405,35 @@
     white-space: normal;
   }
 }
+
+/* ========== GALLERY BLOCK (2/3/4열 배치) ========== */
+.detail-gallery {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 20px;
+}
+.detail-gallery.grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+.detail-gallery.grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.detail-gallery.grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+.detail-gallery-item {
+  overflow: hidden;
+  border-radius: 4px;
+  background: #f3f4f6;
+}
+.detail-gallery-item img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+@media (max-width: 768px) {
+  .detail-gallery.grid-3,
+  .detail-gallery.grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

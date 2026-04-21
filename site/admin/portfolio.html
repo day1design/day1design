@@ -24,10 +24,8 @@
       <main class="admin-content" id="adminContent">
         <section class="admin-section">
           <p class="admin-sub" style="margin-bottom: 16px">
-            시공 프로젝트를 등록·편집합니다. 이미지는 업로드 시
-            <strong>WebP 자동 압축</strong>되며, 삭제 시 R2 파일도 함께
-            정리됩니다. 카드 드래그로 순서 변경, 카드에 이미지 드롭으로 대표
-            썸네일 교체 가능.
+            시공 프로젝트를 등록·편집합니다. 카드 드래그로 순서를 변경하거나
+            이미지를 카드에 드롭해 대표 썸네일을 교체할 수 있습니다.
           </p>
 
           <div class="admin-toolbar">
@@ -97,7 +95,7 @@
           </div>
 
           <div class="field">
-            <label>대표 이미지 (After)</label>
+            <label>대표 이미지</label>
             <div class="thumb-upload">
               <div class="thumb-preview empty" id="thumbAfterPreview"></div>
               <div class="thumb-actions">
@@ -122,39 +120,6 @@
                 >
                   제거
                 </button>
-                <p class="hint">
-                  WebP 자동 변환 후 업로드됩니다. 그리드 썸네일로 사용됩니다.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div class="field">
-            <label>리모델링 전 (Before, 선택)</label>
-            <div class="thumb-upload">
-              <div class="thumb-preview empty" id="thumbBeforePreview"></div>
-              <div class="thumb-actions">
-                <input
-                  type="file"
-                  id="thumbBeforeFile"
-                  accept="image/*"
-                  hidden
-                />
-                <button
-                  type="button"
-                  class="btn btn-ghost"
-                  id="btnPickThumbBefore"
-                >
-                  📤 이미지 업로드
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost"
-                  id="btnClearThumbBefore"
-                  hidden
-                >
-                  제거
-                </button>
               </div>
             </div>
           </div>
@@ -162,8 +127,7 @@
           <div class="field">
             <label>상세 갤러리 이미지</label>
             <p class="hint" style="margin-top: 0; margin-bottom: 8px">
-              프로젝트 상세 화면에 표시될 이미지들. 여러 장 한번에 선택 가능,
-              드래그로 순서 변경.
+              여러 장 선택 가능. 드래그로 순서 변경.
             </p>
             <div class="gallery-grid" id="galleryGrid"></div>
             <input
@@ -184,31 +148,23 @@
           </div>
 
           <details class="pair-fold">
-            <summary>고급 옵션 (URL 경로, 페어링)</summary>
-            <div class="field">
-              <label>URL 경로 (Folder)</label>
-              <input
-                type="text"
-                name="folder"
-                placeholder="프로젝트 이름에서 자동 생성됨"
-              />
-              <p class="hint">수동 수정 가능. 공백은 대시(-)로 변환됩니다.</p>
-            </div>
+            <summary>고급 옵션</summary>
+            <input type="hidden" name="folder" />
             <div class="field">
               <label>페어링 - 우측 프로젝트 이름</label>
               <input
                 type="text"
                 name="rightName"
-                placeholder="카드에 함께 표시할 프로젝트"
+                placeholder="카드에 함께 표시할 프로젝트 (선택)"
               />
             </div>
             <div class="field-inline">
               <div class="field">
-                <label>페어링 Folder</label>
+                <label>페어링 경로</label>
                 <input type="text" name="rightFolder" />
               </div>
               <div class="field">
-                <label>페어링 Count</label>
+                <label>페어링 사진수</label>
                 <input type="number" name="rightCount" min="0" value="0" />
               </div>
             </div>

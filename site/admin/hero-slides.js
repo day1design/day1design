@@ -54,12 +54,7 @@ function render() {
       `;
       card.querySelector('[data-act="del"]').addEventListener("click", (e) => {
         e.stopPropagation();
-        if (
-          !confirm(
-            `슬라이드 ${i + 1}을(를) 삭제할까요?\n(저장 시 R2 이미지도 함께 삭제됩니다)`,
-          )
-        )
-          return;
+        if (!confirm(`슬라이드 ${i + 1}을(를) 삭제할까요?`)) return;
         slides.splice(i, 1);
         setDirty(true);
         render();
@@ -213,10 +208,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
     });
     original = JSON.parse(JSON.stringify(slides));
     setDirty(false);
-    const cleaned = res?.cleaned || 0;
-    adminUtil.toast(
-      `저장 완료` + (cleaned ? ` (R2 고아 이미지 ${cleaned}장 정리)` : ""),
-    );
+    adminUtil.toast("저장 완료");
   } catch (e) {
     adminUtil.toast("저장 실패: " + e.message, "error");
   } finally {
