@@ -3,43 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>게시글 편집 · DAYONE DESIGN</title>
+    <title>게시글 편집 · DAYONE ADMIN</title>
     <meta name="robots" content="noindex,nofollow" />
     <link rel="stylesheet" href="https://day1design.vercel.app/css/fonts.css" />
-    <link
-      rel="stylesheet"
-      href="https://day1design.vercel.app/css/variables.css"
-    />
     <link rel="stylesheet" href="https://day1design.vercel.app/css/reset.css" />
     <link rel="stylesheet" href="admin.css" />
+    <script>
+      window.ADMIN_PAGE = { title: "게시글 편집", nav: "community" };
+    </script>
   </head>
   <body class="admin-body">
-    <header class="admin-header">
-      <div class="admin-header-inner">
-        <div class="admin-logo">DAYONE ADMIN</div>
-        <nav class="admin-nav">
-          <a href="index.html" data-nav="home">Dashboard</a>
-          <a href="hero-slides.html" data-nav="hero">Hero</a>
-          <a href="portfolio.html" data-nav="portfolio">Portfolio</a>
-          <a href="community.html" data-nav="community" class="active"
-            >Community</a
-          >
-          <a href="estimates.html" data-nav="estimates">Estimates</a>
-          <a href="#" id="btnLogout" class="admin-nav-secondary">로그아웃</a>
-        </nav>
-      </div>
-    </header>
-
-    <main class="admin-main">
-      <section class="admin-section">
-        <div class="admin-section-head">
-          <div>
-            <h1 id="pageTitle">게시글 편집</h1>
-            <p class="admin-sub">
-              <a href="community.html">← 목록</a> · 본문은 블록 에디터에서
-              텍스트/이미지 블록을 추가·정렬하세요.
-            </p>
-          </div>
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <div class="admin-toolbar">
+          <a href="community" class="btn btn-ghost">← 목록</a>
           <div class="save-actions">
             <button type="button" class="btn btn-ghost" id="btnCancel">
               취소
@@ -114,13 +98,13 @@
               name="excerpt"
               rows="2"
               maxlength="300"
-              placeholder="자동으로 생성 가능 (비우면 본문 앞 80자)"
+              placeholder="비우면 본문 앞 80자 자동 생성"
             ></textarea>
           </div>
         </form>
 
         <div class="block-editor">
-          <h2 class="be-title">본문 블록</h2>
+          <h3 class="be-title">본문 블록</h3>
           <p class="admin-sub" style="margin-bottom: 16px">
             블록 순서가 곧 본문 순서입니다. 텍스트/이미지를 섞어서 작성하세요.
           </p>
@@ -134,9 +118,8 @@
             </button>
           </div>
         </div>
-      </section>
-    </main>
-
+      </main>
+    </div>
     <div class="toast" id="toast"></div>
     <script src="config.js"></script>
     <script src="admin.js"></script>
