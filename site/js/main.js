@@ -425,3 +425,98 @@ function closeLightbox() {
   const lb = document.getElementById("lightbox");
   if (lb) lb.classList.remove("open");
 }
+
+// ========== HERO SLIDER ==========
+(async function initHeroSlider() {
+  const track = document.getElementById("heroTrack");
+  if (!track) return;
+
+  const DEFAULTS = { maxSlides: 10, autoPlayMs: 6000 };
+  const prefix = typeof IMG_PREFIX !== "undefined" ? IMG_PREFIX : "";
+
+  let slides = [];
+  let config = { ...DEFAULTS };
+
+  try {
+    const res = await fetch(`${prefix}data/hero-slides.json`);
+    const data = await res.json();
+    if (data.config) Object.assign(config, data.config);
+    slides = (data.slides || []).slice(0, config.maxSlides);
+  } catch (e) {
+    console.warn("[hero-slider] load failed:", e);
+    return;
+  }
+
+  if (slides.length === 0) return;
+
+  const slider = track.closest(".hero-slider");
+  if (slides.length === 1) slider.classList.add("single");
+
+  track.innerHTML = slides
+    .map((s, i) => {
+      const style = `background-image:url('${s.image}');`;
+      const alt = (s.alt || "").replace(/"/g, "&quot;");
+      const activeClass = i === 0 ? " active" : "";
+      if (s.href) {
+        return `<a href="${s.href}" class="hero-slide${activeClass}" style="${style}" aria-label="${alt}"></a>`;
+      }
+      return `<div class="hero-slide${activeClass}" style="${style}" role="img" aria-label="${alt}"></div>`;
+    })
+    .join("");
+
+  const dotsEl = document.getElementById("heroDots");
+  if (dotsEl) {
+    dotsEl.innerHTML = slides
+      .map(
+        (_, i) =>
+          `<button class="hero-dot${i === 0 ? " active" : ""}" data-idx="${i}" aria-label="슬라이드 ${i + 1}"></button>`,
+      )
+      .join("");
+  }
+
+  const slideEls = track.querySelectorAll(".hero-slide");
+  const dotEls = dotsEl ? dotsEl.querySelectorAll(".hero-dot") : [];
+  let current = 0;
+  let timer = null;
+
+  function goTo(idx) {
+    current = (idx + slides.length) % slides.length;
+    slideEls.forEach((el, i) => el.classList.toggle("active", i === current));
+    dotEls.forEach((el, i) => el.classList.toggle("active", i === current));
+  }
+  function next() {
+    goTo(current + 1);
+  }
+  function prev() {
+    goTo(current - 1);
+  }
+  function resetTimer() {
+    if (timer) clearInterval(timer);
+    if (slides.length > 1) timer = setInterval(next, config.autoPlayMs);
+  }
+
+  const prevBtn = document.getElementById("heroPrev");
+  const nextBtn = document.getElementById("heroNext");
+  if (prevBtn)
+    prevBtn.addEventListener("click", () => {
+      prev();
+      resetTimer();
+    });
+  if (nextBtn)
+    nextBtn.addEventListener("click", () => {
+      next();
+      resetTimer();
+    });
+  dotEls.forEach((dot) =>
+    dot.addEventListener("click", (e) => {
+      goTo(parseInt(e.currentTarget.dataset.idx, 10));
+      resetTimer();
+    }),
+  );
+
+  // pause on hover
+  slider.addEventListener("mouseenter", () => timer && clearInterval(timer));
+  slider.addEventListener("mouseleave", resetTimer);
+
+  resetTimer();
+})();

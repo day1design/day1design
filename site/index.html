@@ -81,19 +81,35 @@
       </div>
     </div>
 
-    <!-- ========== HERO ========== -->
-    <section class="hero">
-      <div
-        class="hero-bg"
-        style="
-          background-image: url(&quot;https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/hero/hero-main-bg.webp&quot;);
-        "
-      ></div>
+    <!-- ========== HERO SLIDER ========== -->
+    <section class="hero hero-slider">
+      <div class="hero-track" id="heroTrack">
+        <!-- 슬라이드는 JS가 data/hero-slides.json 기반으로 렌더 -->
+      </div>
       <div class="hero-overlay"></div>
       <div class="hero-text">
         <h1>FIRST SPACE WITH DAYONE</h1>
         <p>고객이 맞이하는 공간의 첫 날을 함께 합니다.</p>
       </div>
+      <button
+        class="hero-nav hero-prev"
+        id="heroPrev"
+        aria-label="이전 슬라이드"
+      >
+        ‹
+      </button>
+      <button
+        class="hero-nav hero-next"
+        id="heroNext"
+        aria-label="다음 슬라이드"
+      >
+        ›
+      </button>
+      <div
+        class="hero-dots"
+        id="heroDots"
+        aria-label="슬라이드 인디케이터"
+      ></div>
     </section>
 
     <!-- ========== DAYONE PROJECT ========== -->

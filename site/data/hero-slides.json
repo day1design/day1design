@@ -1,0 +1,14 @@
+{
+  "config": {
+    "maxSlides": 10,
+    "autoPlayMs": 6000,
+    "note": "관리자: 이미지를 R2(images/hero/slides/)에 업로드 후 slides 배열에 항목 추가. 최대 10장. href는 선택(링크 불필요 시 빈 문자열). alt는 접근성/SEO용."
+  },
+  "slides": [
+    {
+      "image": "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/hero/hero-main-bg.webp",
+      "href": "",
+      "alt": "데이원디자인 메인 히어로"
+    }
+  ]
+}
