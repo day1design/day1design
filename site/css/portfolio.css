@@ -32,29 +32,22 @@
   position: relative;
   font-size: 13px;
   letter-spacing: 3px;
-  color: #9a9488;
+  color: #b8b1a2;
   padding: 14px 22px;
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: color 180ms ease;
+  transition:
+    color 180ms ease,
+    background 180ms ease;
 }
 .filter-tabs button:hover {
-  color: var(--color-text-heading);
+  color: var(--color-brand-beige);
 }
 .filter-tabs button.active {
-  color: var(--color-text-heading);
+  color: var(--color-brand-beige);
   font-weight: 600;
-}
-.filter-tabs button.active::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -1px;
-  width: 32px;
-  height: 2px;
-  background: var(--color-text-heading);
-  transform: translateX(-50%);
+  background: #faf7f0;
 }
 
 /* Sub Filter — 텍스트 링크 + "|" 구분자 */

@@ -15,27 +15,19 @@
   position: relative;
   font-size: 13px;
   letter-spacing: 3px;
-  color: #9a9488;
+  color: #b8b1a2;
   padding: 14px 22px;
-  transition: color 180ms ease;
+  transition:
+    color 180ms ease,
+    background 180ms ease;
 }
 .sub-tabs a:hover {
-  color: var(--color-text-heading);
+  color: var(--color-brand-beige);
 }
 .sub-tabs a.active {
-  color: var(--color-text-heading);
+  color: var(--color-brand-beige);
   font-weight: 600;
-  border-bottom: none;
-}
-.sub-tabs a.active::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -1px;
-  width: 32px;
-  height: 2px;
-  background: var(--color-text-heading);
-  transform: translateX(-50%);
+  background: #faf7f0;
 }
 
 /* ========== HERO SECTION ========== */

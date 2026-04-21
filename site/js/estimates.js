@@ -1,5 +1,5 @@
 // ========== WIZARD FORM ==========
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 4;
 let currentStep = 1;
 const selections = {};
 
@@ -206,7 +206,11 @@ btnNext.addEventListener("click", () => {
     // Submit
     const privacyCheck = form.querySelector('input[name="privacy"]');
     if (!privacyCheck.checked) {
-      privacyCheck.focus();
+      goToStep(1);
+      requestAnimationFrame(() => {
+        privacyCheck.scrollIntoView({ behavior: "smooth", block: "center" });
+        privacyCheck.focus();
+      });
       return;
     }
     // Hide form, show completion
