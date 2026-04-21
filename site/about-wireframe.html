@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About Us 레이아웃 확인</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: sans-serif;
+        background: #fff;
+      }
+      .wrap {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .label {
+        text-align: center;
+        font-size: 11px;
+        color: #999;
+        letter-spacing: 3px;
+        padding: 20px 0 10px;
+        text-transform: uppercase;
+      }
+
+      /* 첫 행: 2컬럼 */
+      .row-two {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 40px;
+        align-items: center;
+      }
+      .row-two img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .row-full img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .check {
+        border: 2px dashed red;
+        position: relative;
+      }
+      .check::after {
+        content: attr(data-label);
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        background: red;
+        color: #fff;
+        font-size: 11px;
+        padding: 2px 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="label">레이아웃 확인 — 분리 위치가 맞는지 확인해주세요</p>
+
+    <div class="wrap">
+      <!-- 1번: 좌(뱃지+텍스트) + 우(사진+소재) 나란히 -->
+      <div class="row-two">
+        <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/about-badges.jpg" />
+        <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/about-photos.jpg" />
+      </div>
+
+      <!-- 2번: 브랜드 -->
+      <div class="row-full check" data-label="2번: about-image-2.jpg">
+        <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/about-image-2.jpg" />
+      </div>
+
+      <!-- 5번: about-icon-3.webp -->
+      <div class="row-full check" data-label="5번: about-icon-3.webp">
+        <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/about-icon-3.webp" />
+      </div>
+    </div>
+  </body>
+</html>

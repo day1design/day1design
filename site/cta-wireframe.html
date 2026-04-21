@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CTA Wireframe - 데이원디자인</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          "Century Gothic", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+        background: #f5f3ef;
+        padding: 40px 20px;
+      }
+      h2.section-title {
+        text-align: center;
+        font-size: 14px;
+        color: #999;
+        margin-bottom: 40px;
+        letter-spacing: 2px;
+      }
+
+      .options {
+        display: flex;
+        gap: 32px;
+        max-width: 1100px;
+        margin: 0 auto;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .option-box {
+        background: #fff;
+        border: 1px solid #e0dcd4;
+        border-radius: 8px;
+        padding: 20px;
+        width: 500px;
+      }
+      .option-box h3 {
+        font-size: 12px;
+        color: #5a5448;
+        margin-bottom: 16px;
+        letter-spacing: 1px;
+        border-bottom: 1px solid #e0dcd4;
+        padding-bottom: 8px;
+      }
+
+      /* ===== OPTION A: 미니멀 라인 CTA ===== */
+      .cta-a {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 48px 0;
+        border-top: 1px solid #e0dcd4;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .cta-a .cta-text h3 {
+        font-size: 18px;
+        font-weight: 400;
+        color: #3c3733;
+        letter-spacing: 2px;
+        margin-bottom: 6px;
+      }
+      .cta-a .cta-text p {
+        font-size: 13px;
+        color: #999;
+        line-height: 1.6;
+      }
+      .cta-a .cta-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 36px;
+        border: 1px solid #5a5448;
+        color: #5a5448;
+        font-size: 13px;
+        letter-spacing: 2px;
+        text-decoration: none;
+        transition: 0.3s;
+        white-space: nowrap;
+      }
+      .cta-a .cta-btn:hover {
+        background: #5a5448;
+        color: #fff;
+      }
+      .cta-a .cta-btn .arrow {
+        font-size: 16px;
+      }
+
+      /* ===== OPTION B: 풀 배너 CTA ===== */
+      .cta-b {
+        background: #5a5448;
+        padding: 56px 48px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-radius: 0;
+        margin: 48px -20px 0;
+      }
+      .cta-b .cta-left h3 {
+        font-size: 20px;
+        font-weight: 300;
+        color: #fff;
+        letter-spacing: 3px;
+        margin-bottom: 8px;
+      }
+      .cta-b .cta-left p {
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.6);
+        line-height: 1.6;
+        white-space: nowrap;
+      }
+      .cta-b .cta-btn {
+        padding: 14px 40px;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        color: #fff;
+        font-size: 13px;
+        letter-spacing: 2px;
+        text-decoration: none;
+        transition: 0.3s;
+        white-space: nowrap;
+      }
+      .cta-b .cta-btn:hover {
+        background: #fff;
+        color: #5a5448;
+        border-color: #fff;
+      }
+
+      /* ===== OPTION C: 카드형 CTA ===== */
+      .cta-c {
+        max-width: 800px;
+        margin: 48px auto 0;
+        background: #faf9f7;
+        border: 1px solid #e0dcd4;
+        border-radius: 8px;
+        padding: 40px;
+        text-align: center;
+      }
+      .cta-c .cta-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: #5a5448;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 16px;
+        font-size: 20px;
+      }
+      .cta-c h3 {
+        font-size: 17px;
+        font-weight: 400;
+        color: #3c3733;
+        letter-spacing: 1px;
+        margin-bottom: 8px;
+      }
+      .cta-c p {
+        font-size: 13px;
+        color: #999;
+        line-height: 1.7;
+        margin-bottom: 24px;
+      }
+      .cta-c .cta-row {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+      }
+      .cta-c .cta-btn {
+        padding: 12px 32px;
+        font-size: 13px;
+        letter-spacing: 1px;
+        text-decoration: none;
+        transition: 0.3s;
+      }
+      .cta-c .cta-btn.primary {
+        background: #5a5448;
+        color: #fff;
+        border: 1px solid #5a5448;
+      }
+      .cta-c .cta-btn.primary:hover {
+        opacity: 0.85;
+      }
+      .cta-c .cta-btn.secondary {
+        background: transparent;
+        color: #5a5448;
+        border: 1px solid #5a5448;
+      }
+      .cta-c .cta-btn.secondary:hover {
+        background: #5a5448;
+        color: #fff;
+      }
+      .cta-c .cta-contact {
+        margin-top: 16px;
+        font-size: 12px;
+        color: #bbb;
+      }
+
+      @media (max-width: 600px) {
+        .cta-a {
+          flex-direction: column;
+          text-align: center;
+          gap: 20px;
+        }
+        .cta-b {
+          flex-direction: column;
+          text-align: center;
+          gap: 24px;
+          padding: 40px 24px;
+        }
+        .cta-c .cta-row {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h2 class="section-title">CTA WIREFRAME OPTIONS</h2>
+
+    <div class="options">
+      <!-- OPTION A -->
+      <div class="option-box">
+        <h3>A. 미니멀 라인</h3>
+        <div class="cta-a">
+          <div class="cta-text">
+            <h3>FIRST SPACE WITH DAYONE</h3>
+            <p>나만의 공간, 데이원과 함께 시작하세요.</p>
+          </div>
+          <a href="#" class="cta-btn">상담 문의 <span class="arrow">→</span></a>
+        </div>
+      </div>
+
+      <!-- OPTION B -->
+      <div class="option-box">
+        <h3>B. 풀 배너</h3>
+        <div class="cta-b">
+          <div class="cta-left">
+            <h3>INTERIOR CONSULTATION</h3>
+            <p>프리미엄 인테리어, 무료 상담을 신청하세요.</p>
+          </div>
+          <a href="#" class="cta-btn">견적 문의하기</a>
+        </div>
+      </div>
+
+      <!-- OPTION C -->
+      <div class="option-box">
+        <h3>C. 카드형 (전화 + 온라인)</h3>
+        <div class="cta-c">
+          <div class="cta-icon">✦</div>
+          <h3>이 공간이 마음에 드셨나요?</h3>
+          <p>
+            데이원디자인이 고객님의 첫 공간을 함께 만들어 드립니다.<br />부담
+            없이 상담을 신청해주세요.
+          </p>
+          <div class="cta-row">
+            <a href="#" class="cta-btn primary">온라인 견적문의</a>
+            <a href="#" class="cta-btn secondary">전화 상담 070-7717-0030</a>
+          </div>
+          <p class="cta-contact">평일 09:00 - 18:00 · 토요일 10:00 - 15:00</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

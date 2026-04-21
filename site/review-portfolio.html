@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Portfolio Review - Rows 11~35</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Pretendard', sans-serif; background: #1a1a1a; color: #fff; padding: 20px; }
+h1 { text-align: center; margin-bottom: 30px; font-size: 24px; }
+.project { margin-bottom: 40px; border: 1px solid #333; border-radius: 8px; overflow: hidden; }
+.project-header { background: #2a2a2a; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+.project-header h2 { font-size: 16px; }
+.project-header .count { color: #888; font-size: 14px; }
+.project-header .count.low { color: #ff4444; font-weight: bold; }
+.images { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; background: #111; }
+.images img { height: 120px; object-fit: cover; cursor: pointer; border: 2px solid transparent; }
+.images img:hover { border-color: #fff; }
+.images img.error { border-color: #ff4444; opacity: 0.5; }
+</style>
+</head>
+<body>
+<h1>Portfolio Image Review (Rows 11~35)</h1>
+<div id="projects"></div>
+<script>
+const projects = [
+  { row: 11, name: "성남 연꽃마을4단지 50py", folder: "성남-연꽃마을4단지-50py", note: "재수집 필요 (인물사진 혼입)" },
+  { row: 12, name: "용인 신봉마을 4단지 동일하이빌 58py", folder: "용인-신봉마을-4단지-동일하이빌-58py" },
+  { row: 13, name: "판교 푸르지오그랑블 38py", folder: "판교-푸르지오그랑블-38py" },
+  { row: 14, name: "동천마을 현대홈타운 37py", folder: "동천마을-현대홈타운-37py" },
+  { row: 15, name: "신반포 2차 34py", folder: "신반포-2차-34py" },
+  { row: 16, name: "잠실리센츠 33py", folder: "잠실리센츠-33py" },
+  { row: 17, name: "용인 대지마을 중앙하이츠빌 68py", folder: "용인-대지마을-중앙하이츠빌-68py" },
+  { row: 18, name: "판교산운마을 14단지 44py", folder: "판교산운마을-14단지-44py" },
+  { row: 19, name: "송도 웰카운티 3단지 45py", folder: "송도-웰카운티-3단지-45py" },
+  { row: 20, name: "분당 아펠바움 112py", folder: "분당-아펠바움-112py" },
+  { row: 21, name: "용산 효창베네스아파트 47py", folder: "용산-효창베네스아파트-47py" },
+  { row: 22, name: "마포 카이저팰리스 49py", folder: "마포-카이저팰리스-49py" },
+  { row: 23, name: "용인 성복자이1차 39py", folder: "용인-성복자이1차-39py" },
+  { row: 24, name: "분당 백현마을 6단지 34py", folder: "분당-백현마을-6단지-34py" },
+  { row: 25, name: "서울숲 푸르지오 41py", folder: "서울숲-푸르지오-41py" },
+  { row: 26, name: "부천 아이파크 34py", folder: "부천-아이파크-34py" },
+  { row: 27, name: "송도 힐스테이트 더스카이 34py", folder: "송도-힐스테이트-더스카이-34py" },
+  { row: 28, name: "청담 이편한세상 2차 41py", folder: "청담-이편한세상-2차-41py" },
+  { row: 29, name: "송파 위례 24단지 25py", folder: "송파-위례-24단지-25py" },
+  { row: 30, name: "성남 센트럴타운 33py", folder: "성남-센트럴타운-33py" },
+  { row: 31, name: "서울역 센트럴자이 34py", folder: "서울역-센트럴자이-34py" },
+  { row: 32, name: "안양 박달벽산 40py", folder: "안양-박달벽산-40py" },
+  { row: 33, name: "성남 센트럴타운 34py", folder: "성남-센트럴타운-34py" },
+  { row: 34, name: "송도 더샵 퍼스트월드 56py", folder: "송도-더샵-퍼스트월드-56py" },
+  { row: 35, name: "송도 더샵 퍼스트월드 65py", folder: "송도-더샵-퍼스트월드-65py" },
+];
+
+const container = document.getElementById('projects');
+
+projects.forEach(proj => {
+  const div = document.createElement('div');
+  div.className = 'project';
+  
+  // Try to load images - we'll count from 001 to 200
+  const imgContainer = document.createElement('div');
+  imgContainer.className = 'images';
+  
+  let loadedCount = 0;
+  const maxTry = 200;
+  
+  for (let i = 1; i <= maxTry; i++) {
+    const num = String(i).padStart(3, '0');
+    const img = document.createElement('img');
+    img.src = `https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/${proj.folder}/${num}.webp`;
+    img.loading = 'lazy';
+    img.title = `${num}.webp`;
+    img.onerror = function() { this.remove(); };
+    img.onload = function() {
+      loadedCount++;
+      // Update count display
+      const countEl = div.querySelector('.count');
+      if (countEl) {
+        countEl.textContent = loadedCount + '장';
+        if (loadedCount < 10) countEl.className = 'count low';
+      }
+    };
+    imgContainer.appendChild(img);
+  }
+  
+  const header = document.createElement('div');
+  header.className = 'project-header';
+  header.innerHTML = `<h2>Row ${proj.row}: ${proj.name} ${proj.note ? '⚠️ ' + proj.note : ''}</h2><span class="count">loading...</span>`;
+  
+  div.appendChild(header);
+  div.appendChild(imgContainer);
+  container.appendChild(div);
+});
+</script>
+</body>
+</html>

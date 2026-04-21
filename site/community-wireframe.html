@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Community Wireframe - 데이원디자인</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500&display=swap");
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Century Gothic", "Noto Sans KR", sans-serif;
+        background: #fff;
+        color: #3c3733;
+      }
+      .section-label {
+        text-align: center;
+        font-size: 11px;
+        color: #999;
+        letter-spacing: 3px;
+        padding: 32px 0 24px;
+        text-transform: uppercase;
+        border-bottom: 1px solid #e0dcd4;
+        margin: 0 40px;
+      }
+
+      /* ===== OPTION A: 매거진 스타일 (3컬럼, 대형 썸네일) ===== */
+      .opt-a {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 40px;
+      }
+      .opt-a .header {
+        text-align: center;
+        margin-bottom: 48px;
+      }
+      .opt-a .header h1 {
+        font-size: 28px;
+        font-weight: 300;
+        letter-spacing: 6px;
+        color: #3c3733;
+        margin-bottom: 8px;
+      }
+      .opt-a .header p {
+        font-size: 13px;
+        color: #aaa;
+        letter-spacing: 1.5px;
+      }
+      .opt-a .tabs {
+        display: flex;
+        justify-content: center;
+        gap: 36px;
+        margin-bottom: 48px;
+      }
+      .opt-a .tabs span {
+        font-size: 11px;
+        letter-spacing: 3px;
+        color: #bbb;
+        padding-bottom: 6px;
+        cursor: pointer;
+      }
+      .opt-a .tabs span.active {
+        color: #3c3733;
+        border-bottom: 1.5px solid #3c3733;
+      }
+      .opt-a .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 40px 28px;
+      }
+      .opt-a .card {
+        text-decoration: none;
+        color: inherit;
+      }
+      .opt-a .card .thumb {
+        aspect-ratio: 16/10;
+        background: #f0ede8;
+        margin-bottom: 18px;
+        overflow: hidden;
+        position: relative;
+      }
+      .opt-a .card .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .opt-a .card .cate {
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        color: #8a7560;
+        margin-bottom: 6px;
+        display: block;
+      }
+      .opt-a .card .title {
+        font-size: 15px;
+        font-weight: 400;
+        line-height: 1.55;
+        margin-bottom: 8px;
+        color: #3c3733;
+      }
+      .opt-a .card .excerpt {
+        font-size: 12px;
+        color: #b0b0b0;
+        line-height: 1.65;
+        margin-bottom: 12px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .opt-a .card .meta {
+        font-size: 10px;
+        color: #ccc;
+        letter-spacing: 0.5px;
+      }
+
+      /* ===== OPTION B: 리스트 하이브리드 (좌 이미지 + 우 정보) ===== */
+      .opt-b {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 40px;
+      }
+      .opt-b .header {
+        text-align: center;
+        margin-bottom: 48px;
+      }
+      .opt-b .header h1 {
+        font-size: 28px;
+        font-weight: 300;
+        letter-spacing: 6px;
+        color: #3c3733;
+        margin-bottom: 8px;
+      }
+      .opt-b .header p {
+        font-size: 13px;
+        color: #aaa;
+        letter-spacing: 1.5px;
+      }
+      .opt-b .tabs {
+        display: flex;
+        justify-content: center;
+        gap: 36px;
+        margin-bottom: 40px;
+      }
+      .opt-b .tabs span {
+        font-size: 11px;
+        letter-spacing: 3px;
+        color: #bbb;
+        padding-bottom: 6px;
+      }
+      .opt-b .tabs span.active {
+        color: #3c3733;
+        border-bottom: 1.5px solid #3c3733;
+      }
+      .opt-b .list {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+      .opt-b .list-item {
+        display: flex;
+        gap: 28px;
+        padding: 28px 0;
+        border-bottom: 1px solid #f0ede8;
+        align-items: flex-start;
+      }
+      .opt-b .list-item .thumb {
+        width: 240px;
+        flex-shrink: 0;
+        aspect-ratio: 16/10;
+        background: #f0ede8;
+        overflow: hidden;
+      }
+      .opt-b .list-item .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .opt-b .list-item .info {
+        flex: 1;
+        padding-top: 4px;
+      }
+      .opt-b .list-item .cate {
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        color: #8a7560;
+        margin-bottom: 8px;
+        display: block;
+      }
+      .opt-b .list-item .title {
+        font-size: 16px;
+        font-weight: 400;
+        line-height: 1.5;
+        margin-bottom: 8px;
+        color: #3c3733;
+      }
+      .opt-b .list-item .excerpt {
+        font-size: 12px;
+        color: #aaa;
+        line-height: 1.7;
+        margin-bottom: 12px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .opt-b .list-item .meta {
+        font-size: 10px;
+        color: #ccc;
+      }
+
+      /* ===== OPTION C: 피처드 + 그리드 혼합 ===== */
+      .opt-c {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 40px;
+      }
+      .opt-c .header {
+        text-align: center;
+        margin-bottom: 48px;
+      }
+      .opt-c .header h1 {
+        font-size: 28px;
+        font-weight: 300;
+        letter-spacing: 6px;
+        color: #3c3733;
+        margin-bottom: 8px;
+      }
+      .opt-c .header p {
+        font-size: 13px;
+        color: #aaa;
+        letter-spacing: 1.5px;
+      }
+      .opt-c .tabs {
+        display: flex;
+        justify-content: center;
+        gap: 36px;
+        margin-bottom: 48px;
+      }
+      .opt-c .tabs span {
+        font-size: 11px;
+        letter-spacing: 3px;
+        color: #bbb;
+        padding-bottom: 6px;
+      }
+      .opt-c .tabs span.active {
+        color: #3c3733;
+        border-bottom: 1.5px solid #3c3733;
+      }
+      /* Featured: first post large */
+      .opt-c .featured {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 32px;
+        margin-bottom: 48px;
+        padding-bottom: 48px;
+        border-bottom: 1px solid #f0ede8;
+      }
+      .opt-c .featured .thumb {
+        aspect-ratio: 16/10;
+        background: #f0ede8;
+        overflow: hidden;
+      }
+      .opt-c .featured .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .opt-c .featured .info {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 16px 0;
+      }
+      .opt-c .featured .cate {
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: #8a7560;
+        margin-bottom: 12px;
+      }
+      .opt-c .featured .title {
+        font-size: 22px;
+        font-weight: 300;
+        line-height: 1.5;
+        margin-bottom: 16px;
+        color: #3c3733;
+        letter-spacing: 0.5px;
+      }
+      .opt-c .featured .excerpt {
+        font-size: 13px;
+        color: #aaa;
+        line-height: 1.8;
+        margin-bottom: 20px;
+      }
+      .opt-c .featured .meta {
+        font-size: 11px;
+        color: #ccc;
+      }
+      /* Rest grid */
+      .opt-c .grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 32px 24px;
+      }
+      .opt-c .grid .card .thumb {
+        aspect-ratio: 4/3;
+        background: #f0ede8;
+        margin-bottom: 14px;
+        overflow: hidden;
+      }
+      .opt-c .grid .card .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .opt-c .grid .card .cate {
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        color: #8a7560;
+        margin-bottom: 6px;
+        display: block;
+      }
+      .opt-c .grid .card .title {
+        font-size: 14px;
+        font-weight: 400;
+        line-height: 1.5;
+        color: #3c3733;
+        margin-bottom: 6px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .opt-c .grid .card .meta {
+        font-size: 10px;
+        color: #ccc;
+      }
+
+      /* ===== CTA BANNER (공통) ===== */
+      .cta-banner {
+        background: #5a5448;
+        padding: 56px 48px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 40px;
+      }
+      .cta-banner h3 {
+        font-size: 20px;
+        font-weight: 300;
+        color: #fff;
+        letter-spacing: 3px;
+        margin-bottom: 6px;
+      }
+      .cta-banner p {
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.55);
+        white-space: nowrap;
+      }
+      .cta-banner .btn {
+        padding: 13px 36px;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        color: #fff;
+        text-decoration: none;
+        font-size: 13px;
+        letter-spacing: 2px;
+        transition: 0.3s;
+      }
+      .cta-banner .btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.6);
+      }
+
+      /* Sample images */
+      .thumb img {
+        background: #e8e4de;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="section-label">A. MAGAZINE GRID — 3컬럼 매거진 스타일</p>
+    <div class="opt-a">
+      <div class="header">
+        <h1>Our Community</h1>
+        <p>We connect with our customers from the heart.</p>
+      </div>
+      <div class="tabs">
+        <span class="active">ALL</span><span>RESIDENTIAL</span
+        ><span>COMMERCIAL</span>
+      </div>
+      <div class="grid">
+        <a class="card"
+          ><div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/74ee4f5e37297.jpg"
+              alt=""
+            />
+          </div>
+          <span class="cate">주거·디자인제안</span>
+          <p class="title">
+            판교 인테리어, 분당 판교동 원마을2단지 30평대 아파트 컨셉제안
+          </p>
+          <p class="excerpt">
+            안녕하세요, 데이원디자인입니다. 오늘 소개해 드릴 공간은 성남시
+            분당구 판교동에 위치한...
+          </p>
+          <p class="meta">2026-02-27 · 조회 33</p></a
+        >
+        <a class="card"
+          ><div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/c2560fcba9d45.jpg"
+              alt=""
+            />
+          </div>
+          <span class="cate">주거·포트폴리오</span>
+          <p class="title">
+            분당 인테리어, 정자동 미켈란쉐르빌 50평대 아파트 시공리뷰
+          </p>
+          <p class="excerpt">
+            안녕하세요, 데이원디자인 입니다. 오늘은 분당인테리어를 정자동
+            미켈란쉐르빌 55평형...
+          </p>
+          <p class="meta">2026-02-09 · 조회 366</p></a
+        >
+        <a class="card"
+          ><div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/ff16f4fe1b0db.jpg"
+              alt=""
+            />
+          </div>
+          <span class="cate">주거·디자인제안</span>
+          <p class="title">
+            분당 정자동 인테리어, 미켈란쉐르빌 50평대 아파트 컨셉제안
+          </p>
+          <p class="excerpt">
+            오늘 소개드릴 현장은 분당 정자동에 위치한 미켈란쉐르빌 58평형
+            아파트입니다...
+          </p>
+          <p class="meta">2026-01-21 · 조회 408</p></a
+        >
+      </div>
+      <div class="cta-banner">
+        <div>
+          <h3>INTERIOR CONSULTATION</h3>
+          <p>프리미엄 인테리어, 무료 상담을 신청하세요.</p>
+        </div>
+        <a class="btn">견적 문의하기</a>
+      </div>
+    </div>
+
+    <p class="section-label">B. LIST HYBRID — 좌 이미지 + 우 정보 리스트</p>
+    <div class="opt-b">
+      <div class="header">
+        <h1>Our Community</h1>
+        <p>We connect with our customers from the heart.</p>
+      </div>
+      <div class="tabs">
+        <span class="active">ALL</span><span>RESIDENTIAL</span
+        ><span>COMMERCIAL</span>
+      </div>
+      <div class="list">
+        <div class="list-item">
+          <div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/74ee4f5e37297.jpg"
+              alt=""
+            />
+          </div>
+          <div class="info">
+            <span class="cate">주거·디자인제안</span>
+            <p class="title">
+              판교 인테리어, 분당 판교동 원마을2단지 30평대 아파트 컨셉제안
+            </p>
+            <p class="excerpt">
+              안녕하세요, 데이원디자인입니다. 오늘 소개해 드릴 공간은 성남시
+              분당구 판교동에 위치한 판교원마을 2단지 38평형 아파트입니다.
+            </p>
+            <p class="meta">2026-02-27 · 조회 33</p>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/c2560fcba9d45.jpg"
+              alt=""
+            />
+          </div>
+          <div class="info">
+            <span class="cate">주거·포트폴리오</span>
+            <p class="title">
+              분당 인테리어, 정자동 미켈란쉐르빌 50평대 아파트 시공리뷰
+            </p>
+            <p class="excerpt">
+              안녕하세요, 데이원디자인 입니다. 오늘은 분당인테리어를 정자동
+              미켈란쉐르빌 55평형 아파트 인테리어 시공후기를 보여드리겠습니다.
+            </p>
+            <p class="meta">2026-02-09 · 조회 366</p>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/ff16f4fe1b0db.jpg"
+              alt=""
+            />
+          </div>
+          <div class="info">
+            <span class="cate">주거·디자인제안</span>
+            <p class="title">
+              분당 정자동 인테리어, 미켈란쉐르빌 50평대 아파트 컨셉제안
+            </p>
+            <p class="excerpt">
+              오늘 소개드릴 현장은 분당 정자동에 위치한 미켈란쉐르빌 58평형
+              아파트입니다.
+            </p>
+            <p class="meta">2026-01-21 · 조회 408</p>
+          </div>
+        </div>
+      </div>
+      <div class="cta-banner">
+        <div>
+          <h3>INTERIOR CONSULTATION</h3>
+          <p>프리미엄 인테리어, 무료 상담을 신청하세요.</p>
+        </div>
+        <a class="btn">견적 문의하기</a>
+      </div>
+    </div>
+
+    <p class="section-label">C. FEATURED + GRID — 최신글 대형 + 나머지 4컬럼</p>
+    <div class="opt-c">
+      <div class="header">
+        <h1>Our Community</h1>
+        <p>We connect with our customers from the heart.</p>
+      </div>
+      <div class="tabs">
+        <span class="active">ALL</span><span>RESIDENTIAL</span
+        ><span>COMMERCIAL</span>
+      </div>
+      <div class="featured">
+        <div class="thumb">
+          <img
+            src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/74ee4f5e37297.jpg"
+            alt=""
+          />
+        </div>
+        <div class="info">
+          <span class="cate">주거·디자인제안</span>
+          <p class="title">
+            판교 인테리어, 분당 판교동 원마을2단지 30평대 아파트 컨셉제안
+          </p>
+          <p class="excerpt">
+            안녕하세요, 데이원디자인입니다. 오늘 소개해 드릴 공간은 성남시
+            분당구 판교동에 위치한 판교원마을 2단지 38평형 아파트입니다.
+            조용하고 쾌적한 주거 환경을 갖춘 이곳은, 은퇴 후 여유로운 일상을
+            준비하시는 고객님의 새로운 보금자리입니다.
+          </p>
+          <p class="meta">2026-02-27 · 조회 33</p>
+        </div>
+      </div>
+      <div class="grid">
+        <a class="card"
+          ><div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/c2560fcba9d45.jpg"
+              alt=""
+            />
+          </div>
+          <span class="cate">주거·포트폴리오</span>
+          <p class="title">
+            분당 인테리어, 정자동 미켈란쉐르빌 50평대 아파트 시공리뷰
+          </p>
+          <p class="meta">2026-02-09 · 조회 366</p></a
+        >
+        <a class="card"
+          ><div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/ff16f4fe1b0db.jpg"
+              alt=""
+            />
+          </div>
+          <span class="cate">주거·디자인제안</span>
+          <p class="title">
+            분당 정자동 인테리어, 미켈란쉐르빌 50평대 컨셉제안
+          </p>
+          <p class="meta">2026-01-21 · 조회 408</p></a
+        >
+        <a class="card"
+          ><div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/a4806e7fb44cc.jpg"
+              alt=""
+            />
+          </div>
+          <span class="cate">주거·포트폴리오</span>
+          <p class="title">동탄 시범더샵센트럴시티 38평 아파트 시공 리뷰</p>
+          <p class="meta">2026-01-05 · 조회 434</p></a
+        >
+        <a class="card"
+          ><div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/c3b22a0ccf39a.jpg"
+              alt=""
+            />
+          </div>
+          <span class="cate">주거·디자인제안</span>
+          <p class="title">동탄 시범더샵센트럴시티 30평대 컨셉 제안</p>
+          <p class="meta">2026-01-05 · 조회 445</p></a
+        >
+      </div>
+      <div class="cta-banner">
+        <div>
+          <h3>INTERIOR CONSULTATION</h3>
+          <p>프리미엄 인테리어, 무료 상담을 신청하세요.</p>
+        </div>
+        <a class="btn">견적 문의하기</a>
+      </div>
+    </div>
+
+    <p class="section-label">
+      D. 상세페이지 — 텍스트·이미지 교차 배치 + 프로젝트 정보 카드
+    </p>
+    <style>
+      .detail {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 40px 20px 0;
+      }
+      .detail .back {
+        font-size: 12px;
+        color: #bbb;
+        letter-spacing: 1px;
+        margin-bottom: 32px;
+        display: inline-block;
+      }
+      .detail .back:hover {
+        color: #999;
+      }
+
+      /* 프로젝트 정보 헤더 */
+      .detail .project-header {
+        margin-bottom: 40px;
+      }
+      .detail .project-cate {
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: #8a7560;
+        margin-bottom: 12px;
+        display: block;
+        text-transform: uppercase;
+      }
+      .detail .project-title {
+        font-size: 26px;
+        font-weight: 300;
+        color: #3c3733;
+        line-height: 1.45;
+        letter-spacing: 0.5px;
+        margin-bottom: 16px;
+      }
+      .detail .project-meta {
+        display: flex;
+        gap: 16px;
+        font-size: 11px;
+        color: #bbb;
+        letter-spacing: 0.5px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid #f0ede8;
+      }
+
+      /* 프로젝트 스펙 카드 */
+      .detail .spec-card {
+        background: #faf9f7;
+        border: 1px solid #f0ede8;
+        padding: 24px 28px;
+        margin-bottom: 40px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px 32px;
+      }
+      .detail .spec-item dt {
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        color: #aaa;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+      }
+      .detail .spec-item dd {
+        font-size: 13px;
+        color: #3c3733;
+        font-weight: 400;
+      }
+
+      /* 본문: 텍스트-이미지 교차 */
+      .detail .content-block {
+        margin-bottom: 32px;
+      }
+      .detail .content-block .text {
+        font-size: 14px;
+        color: #555;
+        line-height: 2;
+        margin-bottom: 24px;
+        letter-spacing: 0.3px;
+      }
+      .detail .content-block .image {
+        margin-bottom: 8px;
+      }
+      .detail .content-block .image img {
+        width: 100%;
+        display: block;
+      }
+      .detail .content-block .caption {
+        font-size: 11px;
+        color: #bbb;
+        text-align: center;
+        margin-top: 8px;
+        margin-bottom: 24px;
+      }
+
+      /* 2컬럼 이미지 */
+      .detail .image-pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        margin-bottom: 32px;
+      }
+      .detail .image-pair img {
+        width: 100%;
+        aspect-ratio: 4/3;
+        object-fit: cover;
+      }
+
+      /* 이전/다음 네비 */
+      .detail .post-nav {
+        display: flex;
+        justify-content: space-between;
+        padding: 24px 0;
+        border-top: 1px solid #f0ede8;
+        border-bottom: 1px solid #f0ede8;
+        margin-top: 48px;
+      }
+      .detail .post-nav a {
+        font-size: 12px;
+        color: #aaa;
+        letter-spacing: 0.5px;
+      }
+      .detail .post-nav a:hover {
+        color: #3c3733;
+      }
+    </style>
+
+    <div class="detail">
+      <a class="back">← 목록으로 돌아가기</a>
+
+      <div class="project-header">
+        <span class="project-cate">주거 · 포트폴리오</span>
+        <h1 class="project-title">
+          분당 인테리어, 정자동 미켈란쉐르빌 50평대 아파트 시공리뷰
+        </h1>
+        <div class="project-meta">
+          <span>2026.02.09</span>
+          <span>조회 366</span>
+          <span>이미지 12장</span>
+        </div>
+      </div>
+
+      <!-- 프로젝트 스펙 카드 -->
+      <dl class="spec-card">
+        <div class="spec-item">
+          <dt>위치</dt>
+          <dd>분당 정자동 미켈란쉐르빌</dd>
+        </div>
+        <div class="spec-item">
+          <dt>평형</dt>
+          <dd>55평형 (50평대)</dd>
+        </div>
+        <div class="spec-item">
+          <dt>컨셉</dt>
+          <dd>모던 내추럴</dd>
+        </div>
+        <div class="spec-item">
+          <dt>시공 범위</dt>
+          <dd>전체 리모델링</dd>
+        </div>
+        <div class="spec-item">
+          <dt>시공 기간</dt>
+          <dd>약 8주</dd>
+        </div>
+        <div class="spec-item">
+          <dt>시공사</dt>
+          <dd>데이원디자인</dd>
+        </div>
+      </dl>
+
+      <!-- 본문: 텍스트 → 이미지 → 텍스트 → 이미지 교차 -->
+      <div class="content-block">
+        <div class="text">
+          안녕하세요, 데이원디자인 입니다.<br /><br />
+          오늘은 분당인테리어를 정자동 미켈란쉐르빌 55평형 아파트 인테리어
+          시공후기를 보여드리겠습니다. 분당 정자동 미켈란쉐르빌 55평은 기본
+          구조적 특성의 독특한 구조적 장점이 돋보이는 아파트입니다.
+        </div>
+      </div>
+
+      <div class="content-block">
+        <div class="image">
+          <img
+            src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/c2560fcba9d45.jpg"
+            alt="외관"
+          />
+        </div>
+        <p class="caption">미켈란쉐르빌 외관</p>
+      </div>
+
+      <div class="content-block">
+        <div class="text">
+          이번 사례가 하나의 좋은 레퍼런스가 되기를 바랍니다.<br /><br />
+          앞으로도 데이원디자인은 공간이 가진 장점을 존중하며, 생활에 자연스럽게
+          스며드는 인테리어를 제안드리겠습니다.
+        </div>
+      </div>
+
+      <!-- 2컬럼 이미지 그리드 -->
+      <div class="image-pair">
+        <img
+          src="https://cdn.imweb.me/upload/S2023020886df2eb988d31/c5d16e8bab26a.jpg"
+          alt=""
+        />
+        <img
+          src="https://cdn.imweb.me/upload/S2023020886df2eb988d31/0f1e0a2fa4d89.jpg"
+          alt=""
+        />
+      </div>
+      <div class="image-pair">
+        <img
+          src="https://cdn.imweb.me/upload/S2023020886df2eb988d31/c0b4b30b31cf7.jpg"
+          alt=""
+        />
+        <img
+          src="https://cdn.imweb.me/upload/S2023020886df2eb988d31/ee8bb1cbcec3e.jpg"
+          alt=""
+        />
+      </div>
+
+      <div class="content-block">
+        <div class="text">끝까지 읽어주셔서 감사합니다.</div>
+      </div>
+
+      <!-- 이전/다음 -->
+      <div class="post-nav">
+        <a>← 이전 글</a>
+        <a>다음 글 →</a>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="cta-banner" style="margin-top: 0">
+      <div>
+        <h3>INTERIOR CONSULTATION</h3>
+        <p>프리미엄 인테리어, 무료 상담을 신청하세요.</p>
+      </div>
+      <a class="btn">견적 문의하기</a>
+    </div>
+  </body>
+</html>

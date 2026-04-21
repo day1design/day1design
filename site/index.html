@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>데이원디자인</title>
+    <meta property="og:title" content="데이원디자인 | DAYONE DESIGN" />
+    <meta
+      property="og:description"
+      content="감각적인 공간 디자인, 데이원디자인"
+    />
+    <meta property="og:image" content="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/og-image.png" />
+    <meta property="og:type" content="website" />
+    <link rel="stylesheet" href="css/fonts.css" />
+    <link rel="stylesheet" href="css/variables.css" />
+    <link rel="stylesheet" href="css/reset.css" />
+    <link rel="stylesheet" href="css/common.css" />
+    <link rel="stylesheet" href="css/main.css" />
+  </head>
+  <body>
+    <!-- ========== HEADER ========== -->
+    <header class="header" id="header">
+      <div class="header-inner">
+        <div class="logo"><a href="index.html">DAYONE DESIGN</a></div>
+        <nav>
+          <ul class="nav-list">
+            <li><a href="pages/about.html">ABOUT US</a></li>
+            <li><a href="pages/portfolio.html">PROJECT</a></li>
+            <li><a href="pages/community.html">COMMUNITY</a></li>
+            <li><a href="pages/estimates.html">ESTIMATES</a></li>
+          </ul>
+        </nav>
+        <button class="hamburger" id="hamburger" aria-label="메뉴">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </header>
+    <div class="mobile-nav" id="mobileNav">
+      <a href="pages/about.html">ABOUT US</a>
+      <a href="pages/portfolio.html">PROJECT</a>
+      <a href="pages/community.html">COMMUNITY</a>
+      <a href="pages/estimates.html">ESTIMATES</a>
+    </div>
+
+    <!-- ========== POPUP (이미지 기반) ========== -->
+    <div class="popup-overlay" id="popupOverlay">
+      <div class="popup">
+        <span class="popup-close" id="popupClose">&times;</span>
+        <img
+          src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/hero/popup-banner.webp"
+          alt="데이원디자인 지점 확장 안내"
+          style="width: 100%; display: block"
+        />
+        <div class="popup-footer">
+          <button id="popupDismiss">1일 동안 보지 않음</button>
+          <button id="popupCloseBtn">닫기</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== HERO ========== -->
+    <section class="hero">
+      <div
+        class="hero-bg"
+        style="background-image: url(&quot;https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/hero/hero-main-bg.webp&quot;)"
+      ></div>
+      <div class="hero-overlay"></div>
+      <div class="hero-text">
+        <h1>FIRST SPACE WITH DAYONE</h1>
+        <p>고객이 맞이하는 공간의 첫 날을 함께 합니다.</p>
+      </div>
+    </section>
+
+    <!-- ========== 3-COLUMN IMAGE GRID ========== -->
+    <section class="image-grid">
+      <div class="container">
+        <div class="grid-item">
+          <img
+            src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/misc/section-image-1.webp"
+            alt="인테리어 시공사례"
+            loading="lazy"
+          />
+        </div>
+        <div class="grid-item">
+          <img
+            src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/misc/section-image-2.webp"
+            alt="인테리어 시공사례"
+            loading="lazy"
+          />
+        </div>
+        <div class="grid-item">
+          <img
+            src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/misc/section-image-3.webp"
+            alt="인테리어 시공사례"
+            loading="lazy"
+          />
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== ABOUT US SECTION ========== -->
+    <section class="about-section section">
+      <div class="container">
+        <h2>About Us</h2>
+        <p class="about-text">
+          주거공간의 가치를 높이는 전문 인테리어 서비스로<br />
+          가족 구성원의 라이프스타일에 맞게 다채로운 공간을 제안드립니다
+        </p>
+        <a href="pages/estimates.html" class="btn-primary">인테리어 문의</a>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ========== DAYONE PROJECT ========== -->
+    <section class="project-section section">
+      <div class="container">
+        <h2 class="section-title">DAYONE PROJECT</h2>
+        <p class="section-subtitle">We makes first feeling in your space</p>
+      </div>
+
+      <div class="project-grid" id="projectGrid">
+        <!-- JS로 포트폴리오 데이터 렌더링 -->
+      </div>
+
+      <div class="container">
+        <div class="project-more">
+          <a href="pages/portfolio.html" class="btn-primary">더보기</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== PROJECT MODAL ========== -->
+    <div class="project-modal-overlay" id="projectModal">
+      <div class="project-modal">
+        <div class="project-modal-header">
+          <h2 id="projectModalTitle"></h2>
+          <span class="project-modal-close" id="projectModalClose"
+            >&times;</span
+          >
+        </div>
+        <div class="project-modal-grid" id="projectModalGrid"></div>
+      </div>
+    </div>
+
+    <!-- ========== FOOTER ========== -->
+    <footer class="footer">
+      <div class="footer-inner">
+        <div class="footer-top">
+          <div class="footer-logo">DAYONE DESIGN</div>
+          <div class="footer-nav">
+            <a href="pages/about.html">ABOUT US</a>
+            <a href="pages/portfolio.html">PROJECT</a>
+            <a href="pages/community.html">COMMUNITY</a>
+            <a href="pages/estimates.html">ESTIMATES</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div class="footer-info">
+            <p>Tel. 070-7717-0030 | Email. day1design.co@gmail.com</p>
+            <p>데이원디자인</p>
+            <p>강남 본점 | 서울특별시 강남구 논현로 562 동극빌딩 2층</p>
+            <p>판교점 | 경기도 성남시 분당구 운중로 242 리버스토리 108호</p>
+            <p class="footer-credit">Made by Pola</p>
+          </div>
+          <div class="footer-social">
+            <a
+              href="https://www.youtube.com/@day1_design"
+              target="_blank"
+              rel="noopener"
+              aria-label="YouTube"
+            >
+              <img
+                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/icons/youtube.svg"
+                alt="YouTube"
+                width="40"
+                height="40"
+              />
+            </a>
+            <a
+              href="https://www.instagram.com/day1design_official"
+              target="_blank"
+              rel="noopener"
+              aria-label="Instagram"
+            >
+              <img
+                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/icons/instagram.svg"
+                alt="Instagram"
+                width="40"
+                height="40"
+              />
+            </a>
+            <a
+              href="https://blog.naver.com/day1_design"
+              target="_blank"
+              rel="noopener"
+              aria-label="Blog"
+            >
+              <img
+                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/icons/naver-blog.png"
+                alt="Naver Blog"
+                width="40"
+                height="40"
+              />
+            </a>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <script src="js/common.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>

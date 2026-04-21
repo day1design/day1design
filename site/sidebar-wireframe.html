@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>사이드바 관련 케이스 - 데이원디자인</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@200;300;400;500&display=swap");
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Century Gothic", "Noto Sans KR", sans-serif;
+        background: #f5f3ef;
+        color: #3c3733;
+        padding: 40px;
+        display: flex;
+        gap: 48px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .option {
+        width: 300px;
+      }
+      .label {
+        font-size: 10px;
+        color: #5a5448;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        font-weight: 500;
+        margin-bottom: 6px;
+      }
+      .label-desc {
+        font-size: 11px;
+        color: #aaa;
+        margin-bottom: 20px;
+        line-height: 1.5;
+      }
+
+      /* 공통: Project Info 카드 */
+      .side-card {
+        background: #faf9f7;
+        border: 1px solid #f0ede8;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      .side-card h4 {
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: #8a7560;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        font-weight: 500;
+      }
+      .side-card dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 12px;
+        font-size: 11px;
+      }
+      .side-card dt {
+        color: #aaa;
+      }
+      .side-card dd {
+        color: #3c3733;
+      }
+      .side-cta {
+        display: block;
+        text-align: center;
+        padding: 12px;
+        background: #5a5448;
+        color: #fff;
+        font-size: 11px;
+        letter-spacing: 2px;
+        text-decoration: none;
+        margin-bottom: 16px;
+      }
+
+      /* ===== A: 세로 카드 슬라이더 ===== */
+      .a-related {
+        background: #fff;
+        border: 1px solid #f0ede8;
+        overflow: hidden;
+      }
+      .a-related .header {
+        padding: 14px 16px 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .a-related .header h4 {
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: #8a7560;
+        text-transform: uppercase;
+        font-weight: 500;
+      }
+      .a-related .header .dots {
+        display: flex;
+        gap: 4px;
+      }
+      .a-related .header .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #e0dcd4;
+      }
+      .a-related .header .dot.on {
+        background: #5a5448;
+      }
+      .a-slide {
+        padding: 0 16px 16px;
+      }
+      .a-slide .thumb {
+        width: 100%;
+        aspect-ratio: 16/10;
+        overflow: hidden;
+        margin-bottom: 10px;
+        background: #f0ede8;
+      }
+      .a-slide .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .a-slide .cate {
+        font-size: 9px;
+        color: #8a7560;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+        display: block;
+      }
+      .a-slide .title {
+        font-size: 12px;
+        color: #3c3733;
+        line-height: 1.45;
+        margin-bottom: 4px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .a-slide .meta {
+        font-size: 10px;
+        color: #ccc;
+      }
+
+      /* ===== B: 미니 카드 리스트 (썸네일 좌 + 텍스트 우) ===== */
+      .b-related {
+        background: #fff;
+        border: 1px solid #f0ede8;
+        padding: 14px 16px;
+      }
+      .b-related h4 {
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: #8a7560;
+        text-transform: uppercase;
+        font-weight: 500;
+        margin-bottom: 12px;
+      }
+      .b-item {
+        display: flex;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid #f8f6f2;
+        cursor: pointer;
+      }
+      .b-item:last-child {
+        border-bottom: none;
+      }
+      .b-item .thumb {
+        width: 64px;
+        height: 48px;
+        flex-shrink: 0;
+        overflow: hidden;
+        background: #f0ede8;
+      }
+      .b-item .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .b-item .info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .b-item .title {
+        font-size: 11px;
+        color: #3c3733;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        margin-bottom: 2px;
+      }
+      .b-item .meta {
+        font-size: 9px;
+        color: #ccc;
+      }
+      .b-more {
+        display: block;
+        text-align: center;
+        font-size: 10px;
+        color: #8a7560;
+        letter-spacing: 1px;
+        padding: 10px 0 2px;
+        text-decoration: none;
+      }
+
+      /* ===== C: 오버레이 배너 슬라이더 ===== */
+      .c-related {
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 16px;
+      }
+      .c-related .header {
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: #8a7560;
+        text-transform: uppercase;
+        font-weight: 500;
+        margin-bottom: 8px;
+      }
+      .c-banner {
+        position: relative;
+        aspect-ratio: 3/4;
+        overflow: hidden;
+        cursor: pointer;
+      }
+      .c-banner img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .c-banner .overlay {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(transparent 40%, rgba(0, 0, 0, 0.6));
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: 20px;
+      }
+      .c-banner .cate {
+        font-size: 9px;
+        color: rgba(255, 255, 255, 0.6);
+        letter-spacing: 1.5px;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+      .c-banner .title {
+        font-size: 13px;
+        color: #fff;
+        font-weight: 300;
+        line-height: 1.4;
+        margin-bottom: 6px;
+      }
+      .c-banner .meta {
+        font-size: 9px;
+        color: rgba(255, 255, 255, 0.45);
+      }
+      .c-nav {
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .c-nav .dot {
+        width: 20px;
+        height: 2px;
+        background: #ddd;
+        cursor: pointer;
+      }
+      .c-nav .dot.on {
+        background: #5a5448;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ===== A ===== -->
+    <div class="option">
+      <p class="label">A. Card Slider</p>
+      <p class="label-desc">
+        세로 카드 형태, 이미지 + 제목, 도트 인디케이터로 롤링
+      </p>
+
+      <div class="side-card">
+        <h4>Project Info</h4>
+        <dl>
+          <dt>분류</dt>
+          <dd>주거·디자인제안</dd>
+          <dt>유형</dt>
+          <dd>아파트</dd>
+          <dt>규모</dt>
+          <dd>30평대</dd>
+          <dt>시공사</dt>
+          <dd>데이원디자인</dd>
+        </dl>
+      </div>
+      <a class="side-cta">견적 문의하기 →</a>
+
+      <div class="a-related">
+        <div class="header">
+          <h4>Related Cases</h4>
+          <div class="dots">
+            <span class="dot on"></span><span class="dot"></span
+            ><span class="dot"></span>
+          </div>
+        </div>
+        <div class="a-slide">
+          <div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/c2560fcba9d45.jpg"
+            />
+          </div>
+          <span class="cate">주거·포트폴리오</span>
+          <p class="title">
+            분당 인테리어, 정자동 미켈란쉐르빌 50평대 아파트 시공리뷰
+          </p>
+          <span class="meta">2026.02.09 · 조회 366</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== B ===== -->
+    <div class="option">
+      <p class="label">B. Mini List</p>
+      <p class="label-desc">소형 썸네일 + 제목 리스트, 3개 고정, 하단 더보기</p>
+
+      <div class="side-card">
+        <h4>Project Info</h4>
+        <dl>
+          <dt>분류</dt>
+          <dd>주거·디자인제안</dd>
+          <dt>유형</dt>
+          <dd>아파트</dd>
+          <dt>규모</dt>
+          <dd>30평대</dd>
+          <dt>시공사</dt>
+          <dd>데이원디자인</dd>
+        </dl>
+      </div>
+      <a class="side-cta">견적 문의하기 →</a>
+
+      <div class="b-related">
+        <h4>Related Cases</h4>
+        <div class="b-item">
+          <div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/c2560fcba9d45.jpg"
+            />
+          </div>
+          <div class="info">
+            <p class="title">
+              분당 인테리어, 정자동 미켈란쉐르빌 50평대 시공리뷰
+            </p>
+            <span class="meta">조회 366</span>
+          </div>
+        </div>
+        <div class="b-item">
+          <div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/ff16f4fe1b0db.jpg"
+            />
+          </div>
+          <div class="info">
+            <p class="title">분당 정자동 미켈란쉐르빌 50평대 컨셉제안</p>
+            <span class="meta">조회 408</span>
+          </div>
+        </div>
+        <div class="b-item">
+          <div class="thumb">
+            <img
+              src="https://cdn.imweb.me/thumbnail/S2023020886df2eb988d31/a4806e7fb44cc.jpg"
+            />
+          </div>
+          <div class="info">
+            <p class="title">동탄 시범더샵센트럴시티 38평 시공 리뷰</p>
+            <span class="meta">조회 434</span>
+          </div>
+        </div>
+        <a class="b-more">더 많은 케이스 보기 →</a>
+      </div>
+    </div>
+
+    <!-- ===== C ===== -->
+    <div class="option">
+      <p class="label">C. Overlay Banner</p>
+      <p class="label-desc">
+        세로 이미지 배너, 오버레이 텍스트, 바 인디케이터로 롤링
+      </p>
+
+      <div class="side-card">
+        <h4>Project Info</h4>
+        <dl>
+          <dt>분류</dt>
+          <dd>주거·디자인제안</dd>
+          <dt>유형</dt>
+          <dd>아파트</dd>
+          <dt>규모</dt>
+          <dd>30평대</dd>
+          <dt>시공사</dt>
+          <dd>데이원디자인</dd>
+        </dl>
+      </div>
+      <a class="side-cta">견적 문의하기 →</a>
+
+      <p class="c-related header">Related Cases</p>
+      <div class="c-banner">
+        <img
+          src="https://cdn.imweb.me/upload/S2023020886df2eb988d31/c5d16e8bab26a.jpg"
+        />
+        <div class="overlay">
+          <span class="cate">주거·포트폴리오</span>
+          <p class="title">
+            분당 인테리어, 정자동 미켈란쉐르빌 50평대 시공리뷰
+          </p>
+          <span class="meta">2026.02.09 · 조회 366</span>
+        </div>
+      </div>
+      <div class="c-nav">
+        <span class="dot on"></span><span class="dot"></span
+        ><span class="dot"></span>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,301 @@
+/* ========== SUB TABS ========== */
+.sub-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  padding: calc(var(--header-height) + 40px) 0 40px;
+}
+.sub-tabs a {
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: var(--color-text-light);
+  padding-bottom: 4px;
+}
+.sub-tabs a.active {
+  color: var(--color-text-heading);
+  border-bottom: 1px solid var(--color-text-heading);
+}
+
+/* ========== HERO SECTION ========== */
+.about-hero {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 20px 40px 80px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: start;
+}
+.keywords {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 40px;
+}
+.keywords img {
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+}
+.hero-title-en {
+  font-size: 16px;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  color: var(--color-text-heading);
+}
+.hero-title-en strong {
+  font-weight: 700;
+}
+.hero-title-kr {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--color-text-heading);
+  margin-bottom: 28px;
+  line-height: 1.5;
+}
+.hero-desc {
+  font-size: 13px;
+  color: #666;
+  line-height: 2;
+}
+.hero-right img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ========== SIGNATURE (BRAND IDENTITY) ========== */
+.brand-section {
+  background: var(--color-bg-cream);
+  padding: 80px 40px;
+}
+.brand-inner {
+  max-width: 900px;
+  margin: 0 auto;
+}
+.brand-logos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 40px;
+  margin-bottom: 48px;
+}
+.brand-logo-item {
+  text-align: center;
+}
+.brand-logo-item .logo-label {
+  font-size: 11px;
+  color: var(--color-text-light);
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+.brand-logo-item .logo-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 0;
+}
+.brand-logo-item .logo-display img {
+  max-width: 240px;
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.brand-logo-item .logo-display.symbol img {
+  max-width: 140px;
+}
+.brand-desc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+}
+.brand-desc-grid p {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.9;
+  text-align: center;
+}
+
+/* ========== COLOR SECTION ========== */
+.color-section {
+  padding: 80px 0;
+}
+.color-bands {
+  margin-bottom: 32px;
+}
+.color-band {
+  text-align: center;
+  padding: 28px 20px;
+}
+.color-band.beige {
+  background: var(--color-bg-cream);
+  color: var(--color-text-primary);
+}
+.color-band.grey {
+  background: var(--color-brand-beige);
+  color: #fff;
+}
+.color-label {
+  font-size: 10px;
+  letter-spacing: 3px;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+.color-name {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 2px;
+}
+.color-desc {
+  text-align: center;
+  font-size: 13px;
+  color: #666;
+  line-height: 2;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+/* ========== BRANCHES ========== */
+.branches-section {
+  background: var(--color-bg-cream);
+  padding: 80px 40px;
+}
+.branches-grid {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+}
+.branch-item {
+  text-align: center;
+}
+.branch-item h3 {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--color-brand-beige);
+  margin-bottom: 24px;
+}
+.branch-address {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-brand-beige);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.branch-sub {
+  font-size: 13px;
+  color: var(--color-brand-beige);
+  margin-bottom: 24px;
+}
+.branch-map {
+  display: block;
+  margin: 0 auto 24px;
+}
+.branch-map img {
+  height: 400px;
+  width: auto;
+  display: block;
+  margin: 0 auto;
+}
+.branch-hours {
+  font-size: 13px;
+  color: var(--color-brand-beige);
+  line-height: 1.8;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+.branch-info {
+  font-size: 12px;
+  color: var(--color-brand-beige);
+  line-height: 1.8;
+  font-weight: 600;
+}
+
+/* ========== CTA SECTION ========== */
+.cta-section {
+  background: #fff;
+  padding: 60px 40px;
+  text-align: center;
+}
+.cta-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+.cta-label {
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: var(--color-brand-beige);
+}
+.cta-divider {
+  width: 1px;
+  height: 12px;
+  background: var(--color-divider);
+}
+.cta-desc {
+  font-size: 12px;
+  color: #999;
+}
+.cta-btn {
+  display: inline-block;
+  padding: 7px 16px;
+  background: var(--color-brand-beige);
+  color: #fff;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.3s;
+}
+.cta-btn:hover {
+  opacity: 0.85;
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 991px) {
+  .about-hero {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .brand-logos {
+    grid-template-columns: 1fr 1fr;
+  }
+  .brand-desc-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 767px) {
+  .about-hero {
+    padding: 20px 20px 60px;
+  }
+  .brand-section,
+  .color-section,
+  .branches-section,
+  .cta-section {
+    padding: 60px 20px;
+  }
+  .branches-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .brand-logos {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .keywords {
+    justify-content: center;
+  }
+  .keywords img {
+    width: 70px;
+    height: 70px;
+  }
+  .branch-map img {
+    height: 280px;
+  }
+  .cta-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+}

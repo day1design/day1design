@@ -1,0 +1,37 @@
+:root {
+  /* Brand Colors */
+  --color-brand-beige: #5a5448;
+  --color-brand-grey: #5a5448;
+  --color-text-primary: #3c3733;
+  --color-text-heading: #212121;
+  --color-text-light: #999;
+  --color-bg-cream: #f1ede4;
+  --color-bg-white: #fff;
+  --color-accent: #00b8ff;
+  --color-divider: #e0dcd4;
+  --color-overlay: rgba(0, 0, 0, 0.3);
+
+  /* Typography */
+  --font-kr: "S-Core Dream", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-en: "Century Gothic", "CenturyGothic", "AppleGothic", sans-serif;
+  --font-primary: var(--font-en), var(--font-kr);
+  --font-size-base: 15px;
+  --font-size-sm: 13px;
+  --font-size-lg: 18px;
+  --font-size-xl: 24px;
+  --font-size-2xl: 32px;
+  --font-size-hero: 42px;
+  --line-height: 1.6;
+  --letter-spacing-logo: 6px;
+  --letter-spacing-heading: 3px;
+
+  /* Layout */
+  --max-width: 1200px;
+  --max-width-wide: 1200px;
+  --header-height: 70px;
+  --section-padding: 80px;
+  --grid-gap: 20px;
+
+  /* Transitions */
+  --transition: 0.3s ease;
+}

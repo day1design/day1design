@@ -1,0 +1,139 @@
+{
+  "site": {
+    "name": "DAYONE DESIGN",
+    "logo_text": "DAYONE DESIGN",
+    "tel": "070-7717-0030",
+    "email": "day1design.co@gmail.com",
+    "hours": {
+      "weekday": "09:00 ~ 18:00",
+      "saturday": "10:00 ~ 15:00"
+    }
+  },
+  "branches": [
+    {
+      "name": "강남 본점",
+      "label": "NEW",
+      "address": "서울특별시 강남구 논현로 562, 동극빌딩 2층",
+      "address_detail": "언주역 6번 출구",
+      "parking": "건물 뒤편 기계식 주차장 이용바랍니다."
+    },
+    {
+      "name": "판교점",
+      "address": "경기도 성남시 분당구 운중로 242, 리버스토리 1층",
+      "address_detail": "NH농협은행 서판교지점 1층",
+      "parking": "상가 지하주차장 이용 바랍니다."
+    }
+  ],
+  "hero": {
+    "title": "FIRST SPACE WITH DAYONE",
+    "subtitle": "고객이 맞이하는 공간의 첫 날을 함께 합니다."
+  },
+  "about_intro": {
+    "title": "About Us",
+    "text": "주거공간의 가치를 높이는 전문 인테리어 서비스로\n가족 구성원의 라이프스타일에 맞게 다채로운 공간을 제안드립니다",
+    "cta": "인테리어 문의"
+  },
+  "project_section": {
+    "title": "DAYONE PROJECT",
+    "subtitle": "We makes first feeling in your space"
+  },
+  "about_page": {
+    "keywords": ["Modern", "Neat", "Warm"],
+    "intro_title": "FIRST SPACE WITH DAYONE",
+    "intro_subtitle": "당신의 첫 공간을 데이원과 함께하세요.",
+    "intro_text": "\"시간의 흐름에도 변치 않는 공간\" 이라는 철학을 바탕으로 품격있고 정돈된 디자인을 제안합니다.\n앞으로도 당신의 공간에 따뜻한 감성을 더해,\n매일을 특별한 경험으로 만드는 품격있는 디자인으로 보답하겠습니다.",
+    "brand_identity": {
+      "horizontal": "SIGNATURE Horizontal ver.",
+      "vertical": "SIGNATURE Vertical ver.",
+      "symbol": "SYMBOL Basic ver.",
+      "logo_desc": "산세리프 형태의 로고 폰트는 모던하면서도 정제된 브랜드 이미지를 표현함과 동시에 고급스러운 분위기를 보여줍니다.",
+      "symbol_desc": "Day 의 D와 One을 의미하는 1을 결합해 디자인하였으며, 로고 안의 선은 공간을 입체적으로 디자인해 브랜드가 갖는 정체성을 표현하였습니다."
+    },
+    "brand_color": {
+      "beige_label": "DAYONE BEIGE - MAIN COLOR",
+      "grey_label": "BACKGROUND COLOR - DAYONE GREY",
+      "desc": "브랜드 컬러는 실제 데이원이 진행하는 프로젝트와 이질감없이 자연스럽게 어우러지도록 고려하였습니다.\n고급스러운 브랜드 이미지를 전달하기 위해, 차분한 파스텔 베이지톤과 따뜻하고 세련된 웜그레이톤의 컬러를 사용하였습니다."
+    }
+  },
+  "project_flow": {
+    "title": "인테리어 디자인의 시작과 마무리",
+    "subtitle": "8STEP FLOW",
+    "desc": "고객의 인테리어 디자인 의뢰가 착수되면 데이원디자인은 고객과의 총 8단계의 과정을 거쳐 프로젝트를 진행합니다.",
+    "steps": [
+      {
+        "step": 1,
+        "title": "내방미팅",
+        "highlight": "가계약 : 예약금 100만원",
+        "desc": "전반적인 디자인 컨셉과 공사범위를 정하고 서비스에 대한 설명이 진행됩니다.\n상담 후 견적에 대한 설명이 진행되며, 가계약 여부를 결정합니다.\n예약금 100만원으로 가계약을 진행한 후 실측일정을 정합니다."
+      },
+      {
+        "step": 2,
+        "title": "현장점검 및 실측",
+        "desc": "내방상담 내용을 기반으로 꼼꼼하게 실측 후 실측 도면을 제작합니다.\n실측일정 기준 7일전까지 예약금 환불이 가능합니다."
+      },
+      {
+        "step": 3,
+        "title": "디자인 미팅",
+        "desc": "실측도면을 바탕으로 제작된 3D 시뮬레이션이 제공됩니다.\n전체적인 자재배송을 직접 확인하러 갑니다.\n디자인 미팅은 1차, 2차에 거쳐 진행됩니다."
+      },
+      {
+        "step": 4,
+        "title": "최종 견적 안내",
+        "desc": "내방상담과 디자인 미팅 내용을 종합하여 수정사항을 반영한 최종견적서를 안내드립니다.\n고객의 단순변심에 의한 대규모 변경, 공사비를 변경이 발생하지 않으면 추가공적인 발생하지 않습니다."
+      },
+      {
+        "step": 5,
+        "title": "최종 계약서 작성 / 공사일정 안내",
+        "desc": "최종 견적서에 안내된 금액으로 계약을 진행합니다.\n착수금 50%, 중도금 30%, 잔금 20% 비율로 진행됩니다.\n착수금은 자재 발주 기간을 고려한 절차가 진행됩니다."
+      },
+      {
+        "step": 6,
+        "title": "인테리어 시공",
+        "desc": "공사일정표가 미리 제공되며, 철거를 시작으로 리모델링 공사가 진행됩니다.\n매일 현장관리사진을 보내드리며, 진행중인 작업내용에 대해 공유합니다."
+      },
+      {
+        "step": 7,
+        "title": "준공 마감미팅",
+        "desc": "준공청소 완료 후 고객님과 담당매니저가 현장에서 마감미팅을 진행합니다.\n마감미팅 후 잔금 20% 결제가 진행됩니다."
+      },
+      {
+        "step": 8,
+        "title": "포트폴리오 촬영",
+        "desc": "현장 마감 후 포트폴리오 촬영이 진행됩니다."
+      }
+    ]
+  },
+  "estimates": {
+    "title_text": "데이원을 방문해주셔서 진심으로 감사드립니다.\n아래의 입력폼에 맞춰 내용을 입력해주세요.\n담당 매니저가 확인 후 바로 연락드리도록 하겠습니다. 감사합니다",
+    "notice1": "공사 시작일 기준 최소 3개월 이전에 문의 주셔야 원활한 진행이 가능하오니 참고바랍니다.",
+    "notice2": "데이원디자인 본사 특성상 모든 프로젝트는 서울 및 경기 일부지역에 한해 진행 가능하오니 양해부탁드립니다.",
+    "space_types": ["아파트", "빌라", "주택", "상가", "기타"],
+    "space_sizes": ["20~30평", "30~40평", "40~50평", "50평 이상", "기타"],
+    "referral_sources": [
+      "인스타그램",
+      "네이버 블로그 또는 카페",
+      "포털검색(네이버, 다음, 구글 등)",
+      "유튜브",
+      "지인소개",
+      "기타"
+    ],
+    "branch_options": ["강남점", "판교점", "지점 무관"]
+  },
+  "community": {
+    "title": "Our Community",
+    "subtitle": "We connect with our customers from the heart.",
+    "tabs": ["RESIDENTIAL", "COMMERCIAL"]
+  },
+  "popup": {
+    "title": "데이원디자인 지점 확장",
+    "subtitle": "3월 3일 데이원디자인은 강남점 오픈",
+    "body": "데이원이 서울 및 인근 수도권까지 서비스권역을 넓혀갑니다.\n이제 강남점과 판교점 2개의 지점에서 데이원을 만날 수 있습니다.",
+    "consultation_text": "[ 인테리어 상담예약 ]",
+    "consultation_note": "※ 상담 예약 시 강남점 또는 판교점 중 방문이 편리한 지점을 선택해 주세요"
+  },
+  "footer": {
+    "nav": ["ABOUT US", "PROJECT", "COMMUNITY", "ESTIMATES"],
+    "social": ["youtube", "instagram", "blog"],
+    "credit": "Made by Pola"
+  }
+}

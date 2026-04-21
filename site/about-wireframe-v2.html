@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About Us 와이어프레임 V2 - 데이원디자인</title>
+    <link rel="stylesheet" href="css/fonts.css" />
+    <style>
+      :root {
+        --color-brand-beige: #5a5448;
+        --color-bg-cream: #f1ede4;
+        --color-text-heading: #212121;
+        --color-text-primary: #3c3733;
+        --color-text-light: #999;
+        --color-divider: #e0dcd4;
+        --max-width: 1200px;
+        --header-height: 70px;
+        --font-kr:
+          "S-Core Dream", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+        --font-en: "Century Gothic", "CenturyGothic", "AppleGothic", sans-serif;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      a {
+        text-decoration: none;
+        color: inherit;
+      }
+      ul {
+        list-style: none;
+      }
+      body {
+        font-family: var(--font-kr);
+        color: var(--color-text-primary);
+        background: #fff;
+        line-height: 1.6;
+      }
+
+      /* ========== HEADER ========== */
+      .header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: var(--header-height);
+        z-index: 100;
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+      }
+      .header-inner {
+        max-width: var(--max-width);
+        margin: 0 auto;
+        padding: 0 20px;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .logo a {
+        font-family: var(--font-en);
+        font-size: 20px;
+        font-weight: 300;
+        letter-spacing: 6px;
+        color: var(--color-text-heading);
+      }
+      .nav-list {
+        display: flex;
+        gap: 40px;
+      }
+      .nav-list a {
+        font-family: var(--font-en);
+        font-size: 14px;
+        letter-spacing: 1px;
+        color: var(--color-text-heading);
+      }
+      .nav-list a.active {
+        color: var(--color-brand-beige);
+      }
+
+      /* ========== SUB TABS ========== */
+      .sub-tabs {
+        display: flex;
+        justify-content: center;
+        gap: 32px;
+        padding: calc(var(--header-height) + 40px) 0 40px;
+      }
+      .sub-tabs a {
+        font-family: var(--font-en);
+        font-size: 14px;
+        letter-spacing: 1px;
+        color: var(--color-text-light);
+        padding-bottom: 4px;
+      }
+      .sub-tabs a.active {
+        color: var(--color-text-heading);
+        border-bottom: 1px solid var(--color-text-heading);
+      }
+
+      /* ========== HERO SECTION ========== */
+      .about-hero {
+        max-width: var(--max-width);
+        margin: 0 auto;
+        padding: 20px 40px 80px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 60px;
+        align-items: start;
+      }
+      .hero-left {
+      }
+      .keywords {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 40px;
+      }
+      .keywords img {
+        width: 90px;
+        height: 90px;
+        object-fit: contain;
+      }
+
+      .hero-title-en {
+        font-family: var(--font-en);
+        font-size: 16px;
+        letter-spacing: 1px;
+        margin-bottom: 8px;
+        color: var(--color-text-heading);
+      }
+      .hero-title-en strong {
+        font-weight: 700;
+      }
+      .hero-title-kr {
+        font-size: 20px;
+        font-weight: 500;
+        color: var(--color-text-heading);
+        margin-bottom: 28px;
+        line-height: 1.5;
+      }
+      .hero-desc {
+        font-size: 13px;
+        color: #666;
+        line-height: 2;
+      }
+
+      /* 히어로 우측 사진 */
+      .hero-right img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      /* ========== SIGNATURE (BRAND IDENTITY) ========== */
+      .brand-section {
+        background: var(--color-bg-cream);
+        padding: 80px 40px;
+      }
+      .brand-inner {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      .brand-logos {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 40px;
+        margin-bottom: 48px;
+      }
+      .brand-logo-item {
+        text-align: center;
+      }
+      .brand-logo-item .logo-label {
+        font-family: var(--font-en);
+        font-size: 11px;
+        color: var(--color-text-light);
+        letter-spacing: 2px;
+        margin-bottom: 16px;
+        line-height: 1.5;
+      }
+      .brand-logo-item .logo-display {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px 0;
+      }
+      .brand-logo-item .logo-display img {
+        max-width: 240px;
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .brand-logo-item .logo-display.symbol img {
+        max-width: 140px;
+      }
+
+      .brand-desc-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 40px;
+      }
+      .brand-desc-grid p {
+        font-size: 12px;
+        color: #888;
+        line-height: 1.9;
+        text-align: center;
+      }
+
+      /* ========== COLOR SECTION ========== */
+      .color-section {
+        padding: 80px 40px;
+      }
+      .color-bands {
+        margin: 0 -40px 32px;
+      }
+      .color-band {
+        text-align: center;
+        padding: 28px 20px;
+      }
+      .color-band.beige {
+        background: var(--color-bg-cream);
+        color: var(--color-text-primary);
+      }
+      .color-band.grey {
+        background: var(--color-brand-beige);
+        color: #fff;
+      }
+      .color-label {
+        font-family: var(--font-en);
+        font-size: 10px;
+        letter-spacing: 3px;
+        opacity: 0.6;
+        margin-bottom: 4px;
+      }
+      .color-name {
+        font-family: var(--font-en);
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 2px;
+      }
+      .color-desc {
+        text-align: center;
+        font-size: 13px;
+        color: #666;
+        line-height: 2;
+        max-width: 700px;
+        margin: 0 auto;
+      }
+
+      /* ========== BRANCHES ========== */
+      .branches-section {
+        background: var(--color-bg-cream);
+        padding: 80px 40px;
+      }
+      .branches-grid {
+        max-width: var(--max-width);
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 60px;
+      }
+      .branch-item {
+        text-align: center;
+      }
+      .branch-item h3 {
+        font-size: 18px;
+        font-weight: 500;
+        color: var(--color-brand-beige);
+        margin-bottom: 24px;
+      }
+      .branch-address {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--color-brand-beige);
+        margin-bottom: 8px;
+        line-height: 1.5;
+      }
+      .branch-sub {
+        font-size: 13px;
+        color: var(--color-brand-beige);
+        margin-bottom: 24px;
+      }
+      .branch-map {
+        display: block;
+        margin: 0 auto 24px;
+      }
+      .branch-map img {
+        height: 400px;
+        width: auto;
+        display: block;
+        margin: 0 auto;
+      }
+      .branch-hours {
+        font-size: 13px;
+        color: var(--color-brand-beige);
+        line-height: 1.8;
+        margin-bottom: 8px;
+        font-weight: 500;
+      }
+      .branch-info {
+        font-size: 12px;
+        color: var(--color-brand-beige);
+        line-height: 1.8;
+        font-weight: 600;
+      }
+
+      /* ========== CTA SECTION (흰배경) ========== */
+      .cta-section {
+        background: #fff;
+        padding: 60px 40px;
+        text-align: center;
+      }
+      .cta-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+      }
+      .cta-label {
+        font-family: var(--font-en);
+        font-size: 11px;
+        letter-spacing: 3px;
+        color: var(--color-brand-beige);
+      }
+      .cta-divider {
+        width: 1px;
+        height: 12px;
+        background: var(--color-divider);
+      }
+      .cta-desc {
+        font-size: 12px;
+        color: #999;
+      }
+      .cta-btn {
+        display: inline-block;
+        padding: 7px 16px;
+        background: var(--color-brand-beige);
+        color: #fff;
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        border: none;
+        cursor: pointer;
+        transition: opacity 0.3s;
+      }
+      .cta-btn:hover {
+        opacity: 0.85;
+      }
+
+      /* ========== FOOTER ========== */
+      .footer {
+        background: var(--color-brand-beige);
+        color: #fff;
+        padding: 60px 40px 40px;
+      }
+      .footer-inner {
+        max-width: var(--max-width);
+        margin: 0 auto;
+      }
+      .footer-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 40px;
+      }
+      .footer-logo {
+        font-family: var(--font-en);
+        font-size: 20px;
+        font-weight: 300;
+        letter-spacing: 6px;
+      }
+      .footer-nav {
+        display: flex;
+        gap: 40px;
+      }
+      .footer-nav a {
+        font-size: 13px;
+        letter-spacing: 1px;
+        opacity: 0.9;
+        text-decoration: underline;
+        text-underline-offset: 4px;
+      }
+      .footer-bottom {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+      .footer-info {
+        font-size: 12px;
+        line-height: 2;
+        opacity: 0.7;
+      }
+      .footer-credit {
+        margin-top: 24px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.15);
+        font-size: 11px;
+        opacity: 0.5;
+      }
+
+      /* ========== WIREFRAME LABELS ========== */
+      .wf-label {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        background: #e74c3c;
+        color: #fff;
+        font-size: 10px;
+        padding: 2px 8px;
+        z-index: 10;
+        letter-spacing: 0;
+        font-family: monospace;
+      }
+      .wf-section {
+        position: relative;
+        border: 1px dashed rgba(231, 76, 60, 0.3);
+      }
+
+      /* ========== RESPONSIVE ========== */
+      @media (max-width: 991px) {
+        .about-hero {
+          grid-template-columns: 1fr;
+          gap: 40px;
+        }
+        .hero-right {
+          max-width: 500px;
+        }
+        .brand-logos {
+          grid-template-columns: 1fr 1fr;
+        }
+        .brand-desc-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 767px) {
+        .about-hero {
+          padding: 20px 20px 60px;
+        }
+        .brand-section,
+        .color-section,
+        .branches-section,
+        .cta-section {
+          padding: 60px 20px;
+        }
+        .branches-grid {
+          grid-template-columns: 1fr;
+          gap: 32px;
+        }
+        .brand-logos {
+          grid-template-columns: 1fr;
+          gap: 32px;
+        }
+        .keywords {
+          justify-content: center;
+        }
+        .keywords img {
+          width: 70px;
+          height: 70px;
+        }
+        .footer-top,
+        .footer-bottom {
+          flex-direction: column;
+          gap: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- HEADER -->
+    <header class="header">
+      <div class="header-inner">
+        <div class="logo"><a href="#">DAYONE DESIGN</a></div>
+        <nav>
+          <ul class="nav-list">
+            <li><a href="#" class="active">ABOUT US</a></li>
+            <li><a href="#">PROJECT</a></li>
+            <li><a href="#">COMMUNITY</a></li>
+            <li><a href="#">ESTIMATES</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <!-- SUB TABS -->
+    <div class="sub-tabs">
+      <a href="#" class="active">ABOUT US</a>
+      <a href="#">PROJECT FLOW</a>
+    </div>
+
+    <!-- ① HERO SECTION -->
+    <section class="about-hero wf-section">
+      <span class="wf-label">① Hero Section</span>
+      <div class="hero-left">
+        <div class="keywords">
+          <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/badge-modern.png" alt="Modern" />
+          <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/badge-neat.png" alt="Neat" />
+          <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/badge-warm.png" alt="Warm" />
+        </div>
+        <p class="hero-title-en">"FIRST SPACE WITH <strong>DAYONE</strong>"</p>
+        <h1 class="hero-title-kr">당신의 첫 공간을 데이원과 함께하세요.</h1>
+        <div class="hero-desc">
+          <p>
+            "시간의 흐름에도 변치 않는 공간" 이라는 철학을 바탕으로 품격있고
+            정돈된 디자인을 제안합니다.
+          </p>
+          <p>앞으로도 당신의 공간에 따뜻한 감성을 더해,</p>
+          <p>
+            매일을 특별한 경험으로 만드는 독자적인 디자인으로 보답하겠습니다.
+          </p>
+        </div>
+      </div>
+      <div class="hero-right">
+        <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/hero-photos.png" alt="데이원디자인 포트폴리오" />
+      </div>
+    </section>
+
+    <!-- ② SIGNATURE / BRAND IDENTITY -->
+    <section class="brand-section wf-section">
+      <span class="wf-label">② Signature Section</span>
+      <div class="brand-inner">
+        <div class="brand-logos">
+          <div class="brand-logo-item">
+            <div class="logo-label">SIGNATURE<br />Horizontal ver.</div>
+            <div class="logo-display">
+              <img
+                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/logo-horizontal.png"
+                alt="DAYONE DESIGN 가로형"
+              />
+            </div>
+          </div>
+          <div class="brand-logo-item">
+            <div class="logo-label">SIGNATURE<br />Vertical ver.</div>
+            <div class="logo-display">
+              <img
+                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/logo-vertical.png"
+                alt="DAYONE DESIGN 세로형"
+              />
+            </div>
+          </div>
+          <div class="brand-logo-item">
+            <div class="logo-label">SYMBOL<br />Basic ver.</div>
+            <div class="logo-display symbol">
+              <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/logo-symbol.png" alt="1D 심볼" />
+            </div>
+          </div>
+        </div>
+        <div class="brand-desc-grid">
+          <p>
+            산세리프 형태의 곧고 분명한 모던하면서도 절제된 브랜드 이미지를
+            표현함과 동시에 고급스러운 분위기를 보여줍니다.
+          </p>
+          <p>
+            Day 의 D와 One을 의미하는 1을 결합해 디자인하였으며,<br />곧고
+            반듯한 선과 공간을 입체적으로 디자인해 브랜드가 갖는 정체성을
+            표현하였습니다.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ③ COLOR SECTION -->
+    <section class="color-section wf-section">
+      <span class="wf-label">③ Color Section</span>
+      <div class="color-bands">
+        <div class="color-band beige">
+          <div class="color-label">DAYONE BEIGE</div>
+          <div class="color-name">MAIN COLOR</div>
+        </div>
+        <div class="color-band grey">
+          <div class="color-label">BACKGROUND COLOR</div>
+          <div class="color-name">DAYONE GRAY</div>
+        </div>
+      </div>
+      <div class="color-desc">
+        <p>
+          브랜드 컬러는 실제 데이원이 진행하는 톤&매핑의 따뜻한 질감이
+          자연스럽게 어우러지도록 고려하였습니다.
+        </p>
+        <p>
+          고급스러운 브랜드 이미지를 전달하기 위해, 차분한 웜톤 베이지톤과
+          잔잔하고 세련된 톤의 그레이톤 컬러를 사용하였습니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ④ BRANCHES -->
+    <section class="branches-section wf-section">
+      <span class="wf-label">④ Branches Section</span>
+      <div class="branches-grid">
+        <!-- 강남 본점 -->
+        <div class="branch-item">
+          <h3>&lt;강남 본점&gt;</h3>
+          <p class="branch-address">
+            서울특별시 강남구 역삼동 659, 동국역삼빌딩 2층
+          </p>
+          <p class="branch-sub">언주역 6번 출구 방향에 있습니다.</p>
+          <a
+            href="https://map.naver.com/p/search/%EC%84%9C%EC%9A%B8%ED%8A%B9%EB%B3%84%EC%8B%9C%20%EA%B0%95%EB%82%A8%EA%B5%AC%20%EC%97%AD%EC%82%BC%EB%8F%99%20659"
+            target="_blank"
+            rel="noopener"
+            class="branch-map"
+          >
+            <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/map-gangnam.png" alt="강남 본점 약도" />
+          </a>
+          <div class="branch-hours">
+            <p>평일 : 09:00 ~ 18:00</p>
+            <p>토요일 : 10:00 ~ 15:00</p>
+          </div>
+          <div class="branch-info">
+            <p>주차가능 : 건물 뒷편 기계식 주차장 이용바랍니다</p>
+            <p>Email : day1design.co@gmail.com</p>
+          </div>
+        </div>
+        <!-- 판교점 -->
+        <div class="branch-item">
+          <h3>&lt;판교점&gt;</h3>
+          <p class="branch-address">
+            경기도 성남시 분당구 운중로 242, 리버스토리 1층 108호
+          </p>
+          <p class="branch-sub">NH농협은행 서판교지점 1층에 위치해 있습니다.</p>
+          <a
+            href="https://map.naver.com/p/search/%EA%B2%BD%EA%B8%B0%EB%8F%84%20%EC%84%B1%EB%82%A8%EC%8B%9C%20%EB%B6%84%EB%8B%B9%EA%B5%AC%20%EC%9A%B4%EC%A4%91%EB%A1%9C%20242"
+            target="_blank"
+            rel="noopener"
+            class="branch-map"
+          >
+            <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/about/map-pangyo.png" alt="판교점 약도" />
+          </a>
+          <div class="branch-hours">
+            <p>평일 : 09:00 ~ 18:00</p>
+            <p>토요일 : 10:00 ~ 15:00</p>
+          </div>
+          <div class="branch-info">
+            <p>주차가능 : 상가 지하주차장 이용바랍니다</p>
+            <p>Email : day1design.co@gmail.com</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ⑤ CTA SECTION (흰배경 - 푸터와 분리) -->
+    <section class="cta-section wf-section">
+      <span class="wf-label">⑤ CTA Section (흰배경)</span>
+      <div class="cta-row">
+        <span class="cta-label">Address</span>
+        <span class="cta-divider"></span>
+        <span class="cta-desc">데이원디자인은 방문예약제로 운영됩니다.</span>
+        <a href="estimates.html" class="cta-btn">견적문의</a>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div class="footer-inner">
+        <div class="footer-top">
+          <div class="footer-logo">DAYONE DESIGN</div>
+          <div class="footer-nav">
+            <a href="#">ABOUT US</a>
+            <a href="#">PROJECT</a>
+            <a href="#">COMMUNITY</a>
+            <a href="#">ESTIMATES</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div class="footer-info">
+            <p>Tel. 070-7717-0030 | Email. day1design.co@gmail.com</p>
+            <p>데이원디자인</p>
+            <p>강남 본점 | 서울특별시 강남구 논현로 562 동극빌딩 2층</p>
+            <p>판교점 | 경기도 성남시 분당구 운중로 242 리버스토리 108호</p>
+            <p class="footer-credit">Made by Pola</p>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
