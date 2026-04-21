@@ -264,7 +264,18 @@ function openOfficeLightbox(index) {
 // Filter tabs (HOUSE / OFFICE)
 const filterBtns = document.querySelectorAll(".filter-tabs button");
 const sizeSubFilter = document.getElementById("sizeSubFilter");
-const sizeBtns = sizeSubFilter ? sizeSubFilter.querySelectorAll("button") : [];
+const houseSubGroup = sizeSubFilter?.querySelector('[data-group="house"]');
+const officeSubGroup = sizeSubFilter?.querySelector('[data-group="office"]');
+const sizeBtns = houseSubGroup ? houseSubGroup.querySelectorAll("button") : [];
+
+function showHouseSubGroup() {
+  houseSubGroup?.classList.remove("hidden");
+  officeSubGroup?.classList.add("hidden");
+}
+function showOfficeSubGroup() {
+  officeSubGroup?.classList.remove("hidden");
+  houseSubGroup?.classList.add("hidden");
+}
 
 filterBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -272,13 +283,13 @@ filterBtns.forEach((btn) => {
     btn.classList.add("active");
     const filter = btn.dataset.filter;
     if (filter === "office") {
-      if (sizeSubFilter) sizeSubFilter.classList.add("hidden");
+      showOfficeSubGroup();
       renderOffice();
     } else {
-      if (sizeSubFilter) sizeSubFilter.classList.remove("hidden");
+      showHouseSubGroup();
       // reset 평수 필터 to 전체
       sizeBtns.forEach((b) => b.classList.remove("active"));
-      const allBtn = sizeSubFilter?.querySelector('button[data-size="all"]');
+      const allBtn = houseSubGroup?.querySelector('button[data-size="all"]');
       if (allBtn) allBtn.classList.add("active");
       currentSize = "all";
       renderHouse("all");
@@ -305,13 +316,13 @@ if (grid) {
     filterBtns.forEach((b) =>
       b.classList.toggle("active", b.dataset.filter === "office"),
     );
-    if (sizeSubFilter) sizeSubFilter.classList.add("hidden");
+    showOfficeSubGroup();
     renderOffice();
   } else if (urlSize) {
     filterBtns.forEach((b) =>
       b.classList.toggle("active", b.dataset.filter === "house"),
     );
-    if (sizeSubFilter) sizeSubFilter.classList.remove("hidden");
+    showHouseSubGroup();
     sizeBtns.forEach((b) =>
       b.classList.toggle("active", b.dataset.size === urlSize),
     );

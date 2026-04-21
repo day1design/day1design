@@ -57,33 +57,42 @@
   transform: translateX(-50%);
 }
 
-/* Sub Filter (HOUSE 평수) */
+/* Sub Filter — 텍스트 링크 + "|" 구분자 */
 .sub-filter {
   display: flex;
   justify-content: center;
-  gap: 8px;
   padding: 28px 0 32px;
+}
+.sub-filter .sub-group {
+  display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.sub-filter .sub-group.hidden {
+  display: none;
 }
 .sub-filter button {
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 1px;
   color: var(--color-text-light);
-  padding: 6px 16px;
-  border: 1px solid #d9d4c7;
-  border-radius: 999px;
+  padding: 4px 2px;
+  border: none;
   background: transparent;
-  transition: var(--transition);
   cursor: pointer;
+  transition: color 0.2s;
 }
 .sub-filter button:hover {
   color: var(--color-text-heading);
-  border-color: var(--color-text-heading);
 }
 .sub-filter button.active {
-  color: #fff;
-  background: var(--color-brand-grey);
-  border-color: var(--color-brand-grey);
+  color: var(--color-text-heading);
+  font-weight: 600;
+}
+.sub-filter .sep {
+  color: #c9c3b4;
+  font-size: 12px;
+  user-select: none;
 }
 .sub-filter.hidden {
   display: none;

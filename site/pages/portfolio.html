@@ -79,13 +79,22 @@
         <button data-filter="office">OFFICE</button>
       </div>
 
-      <!-- SUB FILTER (HOUSE 평수) -->
+      <!-- SUB FILTER (카테고리별 텍스트 링크) -->
       <div class="sub-filter" id="sizeSubFilter">
-        <button class="active" data-size="all">전체</button>
-        <button data-size="20-30">20~30평</button>
-        <button data-size="30-40">30~40평</button>
-        <button data-size="40-50">40~50평</button>
-        <button data-size="50+">50평 이상</button>
+        <div class="sub-group" data-group="house">
+          <button class="active" data-size="all">전체</button>
+          <span class="sep" aria-hidden="true">|</span>
+          <button data-size="20-30">20~30평</button>
+          <span class="sep" aria-hidden="true">|</span>
+          <button data-size="30-40">30~40평</button>
+          <span class="sep" aria-hidden="true">|</span>
+          <button data-size="40-50">40~50평</button>
+          <span class="sep" aria-hidden="true">|</span>
+          <button data-size="50+">50평 이상~</button>
+        </div>
+        <div class="sub-group hidden" data-group="office">
+          <button class="active" data-size="all">전체</button>
+        </div>
       </div>
 
       <div class="project-grid" id="projectGrid">
