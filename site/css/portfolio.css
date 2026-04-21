@@ -16,24 +16,45 @@
   letter-spacing: 1px;
 }
 
-/* Filter Tabs */
+/* LNB — sticky category tabs (HOUSE / OFFICE) */
 .filter-tabs {
+  position: sticky;
+  top: var(--header-height);
+  z-index: 40;
   display: flex;
   justify-content: center;
-  gap: 24px;
-  padding: 24px 0 40px;
+  gap: 6px;
+  padding: 0;
+  background: #fff;
+  border-bottom: 1px solid #e5e1d6;
 }
 .filter-tabs button {
-  font-size: 14px;
-  letter-spacing: 1px;
-  color: var(--color-text-light);
-  padding: 4px 0;
-  border-bottom: 1px solid transparent;
-  transition: var(--transition);
+  position: relative;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: #9a9488;
+  padding: 14px 22px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+.filter-tabs button:hover {
+  color: var(--color-text-heading);
 }
 .filter-tabs button.active {
   color: var(--color-text-heading);
-  border-bottom-color: var(--color-text-heading);
+  font-weight: 600;
+}
+.filter-tabs button.active::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 32px;
+  height: 2px;
+  background: var(--color-text-heading);
+  transform: translateX(-50%);
 }
 
 /* Sub Filter (HOUSE 평수) */

@@ -1,19 +1,41 @@
-/* ========== SUB TABS ========== */
+/* ========== LNB (sticky sub tabs) ========== */
 .sub-tabs {
+  position: sticky;
+  top: var(--header-height);
+  z-index: 40;
   display: flex;
   justify-content: center;
-  gap: 32px;
-  padding: calc(var(--header-height) + 40px) 0 40px;
+  gap: 6px;
+  margin-top: var(--header-height);
+  padding: 0;
+  background: #fff;
+  border-bottom: 1px solid #e5e1d6;
 }
 .sub-tabs a {
-  font-size: 14px;
-  letter-spacing: 1px;
-  color: var(--color-text-light);
-  padding-bottom: 4px;
+  position: relative;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: #9a9488;
+  padding: 14px 22px;
+  transition: color 180ms ease;
+}
+.sub-tabs a:hover {
+  color: var(--color-text-heading);
 }
 .sub-tabs a.active {
   color: var(--color-text-heading);
-  border-bottom: 1px solid var(--color-text-heading);
+  font-weight: 600;
+  border-bottom: none;
+}
+.sub-tabs a.active::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 32px;
+  height: 2px;
+  background: var(--color-text-heading);
+  transform: translateX(-50%);
 }
 
 /* ========== HERO SECTION ========== */
