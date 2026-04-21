@@ -177,7 +177,7 @@ function renderOffice() {
     const num = String(i).padStart(3, "0");
     const card = document.createElement("div");
     card.className = "project-card";
-    card.innerHTML = `<img class="img-after" src="${_prefix}https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/office/${num}.webp" alt="Office ${i}">`;
+    card.innerHTML = `<img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/office/${num}.webp" alt="Office ${i}">`;
     card.addEventListener("click", () => openOfficeLightbox(i - 1));
     grid.appendChild(card);
   }
@@ -219,7 +219,7 @@ function openProjectModal(proj) {
   for (let i = 1; i <= proj.count; i++) {
     const num = String(i).padStart(3, "0");
     const img = document.createElement("img");
-    img.src = `${_prefix}https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/${proj.folder}/${num}.webp`;
+    img.src = `https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/${proj.folder}/${num}.webp`;
     img.alt = `${proj.name} ${i}`;
     img.loading = "lazy";
     img.onerror = function () {
