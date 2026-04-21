@@ -229,19 +229,30 @@ function renderHouse(size) {
   renderHouseMoreBtn(cards.length);
 }
 
-// Render OFFICE grid — 3열, 단순 이미지
+// Render OFFICE grid — 3 고정 컬럼 (round-robin 분배)
+// CSS columns로 하면 이미지 로드 시마다 리밸런싱되어 슬롯머신처럼 튐
 function renderOffice() {
   if (!grid) return;
   removeHouseMoreBtn();
   grid.innerHTML = "";
   grid.className = "project-grid office-grid";
+
+  const COL_COUNT = 3;
+  const cols = [];
+  for (let c = 0; c < COL_COUNT; c++) {
+    const col = document.createElement("div");
+    col.className = "office-col";
+    cols.push(col);
+    grid.appendChild(col);
+  }
+
   for (let i = 1; i <= OFFICE_TOTAL; i++) {
     const num = String(i).padStart(3, "0");
     const card = document.createElement("div");
     card.className = "project-card";
-    card.innerHTML = `<img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/office/${num}.webp" alt="Office ${i}">`;
+    card.innerHTML = `<img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/office/${num}.webp" alt="Office ${i}" loading="lazy" decoding="async">`;
     card.addEventListener("click", () => openOfficeLightbox(i - 1));
-    grid.appendChild(card);
+    cols[(i - 1) % COL_COUNT].appendChild(card);
   }
 }
 

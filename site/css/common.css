@@ -47,14 +47,9 @@
 .nav-list a.active {
   color: var(--color-brand-beige);
 }
-.nav-list a.active::after {
-  content: "";
-  position: absolute;
-  bottom: -4px;
-  left: 0;
-  width: 100%;
-  height: 1px;
-  background: var(--color-brand-beige);
+/* active 표시는 색상 + bold로 처리 (밑줄 제거) */
+.nav-list a.active {
+  font-weight: 700;
 }
 
 /* Menu EN ↔ KO crossfade (Option A) */

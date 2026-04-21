@@ -39,15 +39,23 @@
   cursor: pointer;
   transition:
     color 180ms ease,
-    background 180ms ease;
+    background 180ms ease,
+    font-size 180ms ease,
+    font-weight 180ms ease;
 }
 .filter-tabs button:hover {
   color: var(--color-brand-beige);
+  font-size: 15px;
+  font-weight: 700;
 }
 .filter-tabs button.active {
   color: var(--color-brand-beige);
   font-weight: 600;
-  background: #faf7f0;
+  background: #efe6d0;
+}
+.filter-tabs button.active:hover {
+  font-size: 15px;
+  font-weight: 700;
 }
 
 /* Sub Filter — 텍스트 링크 + "|" 구분자 */

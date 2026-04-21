@@ -19,15 +19,23 @@
   padding: 14px 22px;
   transition:
     color 180ms ease,
-    background 180ms ease;
+    background 180ms ease,
+    font-size 180ms ease,
+    font-weight 180ms ease;
 }
 .sub-tabs a:hover {
   color: var(--color-brand-beige);
+  font-size: 15px;
+  font-weight: 700;
 }
 .sub-tabs a.active {
   color: var(--color-brand-beige);
   font-weight: 600;
-  background: #faf7f0;
+  background: #efe6d0;
+}
+.sub-tabs a.active:hover {
+  font-size: 15px;
+  font-weight: 700;
 }
 
 /* ========== HERO SECTION ========== */
