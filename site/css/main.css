@@ -298,8 +298,8 @@
 }
 .brandfilm-inner {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: 64px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 56px;
   align-items: center;
 }
 .brandfilm-media {
@@ -309,7 +309,7 @@
 .brandfilm-video {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   background: #000;
 }
