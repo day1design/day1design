@@ -62,7 +62,7 @@
   display: flex;
   justify-content: center;
   gap: 8px;
-  padding: 0 0 32px;
+  padding: 28px 0 32px;
   flex-wrap: wrap;
 }
 .sub-filter button {
