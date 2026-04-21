@@ -1,0 +1,53 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "has": [{ "type": "host", "value": "admin.day1design.co.kr" }],
+      "source": "/",
+      "destination": "/admin/login.html"
+    },
+    {
+      "has": [{ "type": "host", "value": "admin.day1design.co.kr" }],
+      "source": "/:path((?!api|css|js|fonts|images|data|admin).*)",
+      "destination": "/admin/:path"
+    },
+    {
+      "has": [{ "type": "host", "value": "admin.day1design.vercel.app" }],
+      "source": "/",
+      "destination": "/admin/login.html"
+    },
+    {
+      "has": [{ "type": "host", "value": "admin.day1design.vercel.app" }],
+      "source": "/:path((?!api|css|js|fonts|images|data|admin).*)",
+      "destination": "/admin/:path"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/admin/:path*",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "admin.day1design.co.kr" }],
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "admin.day1design.vercel.app" }],
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
+    }
+  ]
+}
