@@ -30,5 +30,8 @@ build/
 __pycache__/
 *.pyc
 
+# Data backups
+*.json.bak
+
 # VS Code AI rules (legacy)
 .github/instructions/codacy.instructions.md
