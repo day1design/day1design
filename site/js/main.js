@@ -151,12 +151,14 @@ function sizeMatch(py, size) {
 
 let currentSize = "all";
 
-// Render HOUSE grid — 2열, 프로젝트당 2장 썸네일 (평수 필터 지원)
-function renderHouse(size) {
-  if (!grid) return;
-  if (typeof size === "string") currentSize = size;
-  grid.innerHTML = "";
-  grid.className = "project-grid";
+// Paging (portfolio page only): 2x10 initial, 2x5 per "…" click
+const HOUSE_INITIAL = 20;
+const HOUSE_INCREMENT = 10;
+const isPortfolioPage = !!document.querySelector(".filter-tabs");
+let houseVisible = HOUSE_INITIAL;
+
+function buildHouseCards() {
+  const cards = [];
   for (let i = 0; i < TOTAL_PROJECTS; i++) {
     const num = String(i + 1).padStart(2, "0");
     const proj = projectData[i];
@@ -173,23 +175,67 @@ function renderHouse(size) {
       const displayName = isRight ? proj.rightName : proj.name;
       const folderForSize = isRight ? proj.rightFolder : proj.folder;
       if (!sizeMatch(getPy(folderForSize), currentSize)) return;
-      const card = document.createElement("div");
-      card.className = "project-card";
-      card.innerHTML = `
-        <img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/${thumb}" alt="${displayName}">
-        <div class="project-overlay">
-          <span class="project-name">${displayName}</span>
-        </div>
-      `;
-      card.addEventListener("click", () => openProjectModal(modalProj));
-      grid.appendChild(card);
+      cards.push({ thumb, modalProj, displayName });
     });
   }
+  return cards;
+}
+
+function removeHouseMoreBtn() {
+  const btn = document.getElementById("projectMoreBtn");
+  if (btn) btn.remove();
+}
+
+function renderHouseMoreBtn(total) {
+  removeHouseMoreBtn();
+  if (!grid || !isPortfolioPage) return;
+  if (houseVisible >= total) return;
+  const btn = document.createElement("button");
+  btn.id = "projectMoreBtn";
+  btn.className = "project-more-btn";
+  btn.type = "button";
+  btn.setAttribute("aria-label", "더 보기");
+  btn.textContent = "…";
+  btn.addEventListener("click", () => {
+    houseVisible += HOUSE_INCREMENT;
+    renderHouse();
+  });
+  grid.insertAdjacentElement("afterend", btn);
+}
+
+// Render HOUSE grid — 2열, 프로젝트당 2장 썸네일 (평수 필터 + 페이징 지원)
+function renderHouse(size) {
+  if (!grid) return;
+  if (typeof size === "string") {
+    currentSize = size;
+    houseVisible = HOUSE_INITIAL;
+  }
+  grid.innerHTML = "";
+  grid.className = "project-grid";
+  const cards = buildHouseCards();
+  const limit = isPortfolioPage
+    ? Math.min(houseVisible, cards.length)
+    : cards.length;
+  for (let k = 0; k < limit; k++) {
+    const { thumb, modalProj, displayName } = cards[k];
+    const card = document.createElement("div");
+    card.className = "project-card";
+    card.innerHTML = `
+      <img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/${thumb}" alt="${displayName}">
+      <div class="project-overlay">
+        <span class="project-name">${displayName}</span>
+      </div>
+    `;
+    card.addEventListener("click", () => openProjectModal(modalProj));
+    grid.appendChild(card);
+  }
+  renderHouseMoreBtn(cards.length);
 }
 
 // Render OFFICE grid — 3열, 단순 이미지
 function renderOffice() {
   if (!grid) return;
+  removeHouseMoreBtn();
   grid.innerHTML = "";
   grid.className = "project-grid office-grid";
   for (let i = 1; i <= OFFICE_TOTAL; i++) {
