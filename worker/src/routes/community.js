@@ -18,7 +18,8 @@ export async function handleCommunity(request, env, ctx) {
   if (path === "/" && request.method === "GET")
     return listCommunity(request, env);
   if (path === "/" && request.method === "POST") {
-    if (!verifyAdmin(request, env)) return jsonError(401, "Unauthorized");
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
     return createPost(request, env);
   }
   // /:idx — idx는 숫자 문자열
@@ -26,7 +27,8 @@ export async function handleCommunity(request, env, ctx) {
   if (m) {
     const idx = m[1];
     if (request.method === "GET") return getPost(env, idx);
-    if (!verifyAdmin(request, env)) return jsonError(401, "Unauthorized");
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
     if (request.method === "PATCH") return patchPost(request, env, idx);
     if (request.method === "DELETE") return deletePost(env, idx);
   }

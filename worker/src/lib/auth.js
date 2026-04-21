@@ -1,3 +1,5 @@
+import { verify as verifyJwt } from "./jwt.js";
+
 const COOKIE_NAME = "day1_admin";
 const COOKIE_MAX_AGE = 60 * 60 * 12; // 12h
 
@@ -19,24 +21,38 @@ export function parseCookies(request) {
   return out;
 }
 
-export function verifyAdmin(request, env) {
-  if (!env.ADMIN_TOKEN) return false;
-  // Header 우선 (fetch)
-  const header = request.headers.get("x-admin-token");
-  if (header && timingSafeEqual(header, env.ADMIN_TOKEN)) return true;
-  // Cookie 세션
+/**
+ * 관리자 인증 검증. 아래 중 하나라도 통과하면 true.
+ *  1) day1_admin 쿠키에 유효한 JWT (HS256, JWT_SECRET 서명)
+ *  2) x-admin-token 헤더 = env.ADMIN_TOKEN (레거시/백도어)
+ * async 로 변경됨 — 호출부에 반드시 await.
+ */
+export async function verifyAdmin(request, env) {
+  // 1) JWT 쿠키
   const cookies = parseCookies(request);
-  const session = cookies[COOKIE_NAME];
-  if (session && timingSafeEqual(session, env.ADMIN_TOKEN)) return true;
+  const jwt = cookies[COOKIE_NAME];
+  if (jwt && env.JWT_SECRET) {
+    const payload = await verifyJwt(jwt, env.JWT_SECRET);
+    if (payload && payload.sub === "admin") return true;
+  }
+  // 2) x-admin-token 헤더 (레거시, 긴급 복구용)
+  if (env.ADMIN_TOKEN) {
+    const header = request.headers.get("x-admin-token");
+    if (header && timingSafeEqual(header, env.ADMIN_TOKEN)) return true;
+  }
   return false;
 }
 
-export function setAdminCookie(token) {
-  return `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=None`;
+export function setSessionCookie(jwt, maxAge = COOKIE_MAX_AGE) {
+  return `${COOKIE_NAME}=${encodeURIComponent(jwt)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=None`;
 }
 
-export function clearAdminCookie() {
+export function clearSessionCookie() {
   return `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None`;
 }
 
-export { COOKIE_NAME };
+// 레거시 이름 유지 (routes에서 쓰던 것)
+export const setAdminCookie = setSessionCookie;
+export const clearAdminCookie = clearSessionCookie;
+
+export { COOKIE_NAME, COOKIE_MAX_AGE, timingSafeEqual };

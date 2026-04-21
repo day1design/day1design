@@ -16,14 +16,16 @@ export async function handlePortfolio(request, env, ctx) {
 
   if (path === "/" && request.method === "GET") return listPortfolio(env);
   if (path === "/" && request.method === "POST") {
-    if (!verifyAdmin(request, env)) return jsonError(401, "Unauthorized");
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
     return createProject(request, env);
   }
   const m = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (m) {
     const id = m[1];
     if (request.method === "GET") return getProject(env, id);
-    if (!verifyAdmin(request, env)) return jsonError(401, "Unauthorized");
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
     if (request.method === "PATCH") return patchProject(request, env, id);
     if (request.method === "DELETE") return deleteProject(env, id);
   }

@@ -14,11 +14,13 @@ export async function handleHero(request, env, ctx) {
     return getSlides(env);
   }
   if (path === "/slides" && request.method === "PUT") {
-    if (!verifyAdmin(request, env)) return jsonError(401, "Unauthorized");
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
     return putSlides(request, env);
   }
   if (path === "/upload" && request.method === "POST") {
-    if (!verifyAdmin(request, env)) return jsonError(401, "Unauthorized");
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
     return uploadImage(request, env);
   }
   return jsonError(404, "Not Found");

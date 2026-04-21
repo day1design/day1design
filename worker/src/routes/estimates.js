@@ -34,12 +34,14 @@ export async function handleEstimates(request, env, ctx) {
     return submitEstimate(request, env, ctx);
   }
   if (path === "/" && request.method === "GET") {
-    if (!verifyAdmin(request, env)) return jsonError(401, "Unauthorized");
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
     return listEstimates(request, env);
   }
   const idMatch = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (idMatch) {
-    if (!verifyAdmin(request, env)) return jsonError(401, "Unauthorized");
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
     const id = idMatch[1];
     if (request.method === "PATCH") return patchEstimate(request, env, id);
   }

@@ -19,7 +19,7 @@
       }
       .login-card {
         width: 100%;
-        max-width: 380px;
+        max-width: 400px;
         background: #fff;
         border: 1px solid #e5e1d6;
         border-radius: 8px;
@@ -36,24 +36,50 @@
       .login-card h1 {
         font-size: 20px;
         font-weight: 600;
-        margin: 0 0 24px;
+        margin: 0 0 8px;
         text-align: center;
       }
-      .login-card .field input[type="password"] {
-        width: 100%;
-        padding: 11px 12px;
-        border: 1px solid #e5e1d6;
-        border-radius: 4px;
-        font-size: 14px;
-        background: #fff;
-      }
-      .login-card .field input:focus {
-        outline: none;
-        border-color: var(--color-brand-beige);
+      .login-sub {
+        font-size: 13px;
+        color: #8a8376;
+        text-align: center;
+        margin-bottom: 24px;
+        line-height: 1.6;
       }
       .login-submit {
         width: 100%;
         margin-top: 8px;
+      }
+      .code-input {
+        width: 100%;
+        padding: 14px 12px;
+        border: 1px solid #e5e1d6;
+        border-radius: 4px;
+        font-size: 22px;
+        letter-spacing: 8px;
+        text-align: center;
+        font-family: "Courier New", monospace;
+        font-weight: 600;
+        text-transform: uppercase;
+        background: #fff;
+      }
+      .code-input:focus {
+        outline: none;
+        border-color: var(--color-brand-beige);
+      }
+      .login-link {
+        display: inline-block;
+        margin-top: 12px;
+        font-size: 12px;
+        color: #8a8376;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px;
+      }
+      .login-link:hover {
+        color: var(--color-text-heading);
+        text-decoration: underline;
       }
       .login-error {
         margin-top: 12px;
@@ -62,57 +88,277 @@
         min-height: 16px;
         text-align: center;
       }
+      .login-info {
+        margin-top: 12px;
+        font-size: 12px;
+        color: #3ea876;
+        text-align: center;
+        min-height: 16px;
+      }
+      .fallback {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #f0ebdf;
+      }
+      .fallback summary {
+        font-size: 11px;
+        color: #b8b1a2;
+        cursor: pointer;
+        text-align: center;
+        letter-spacing: 0.5px;
+      }
+      .fallback[open] summary {
+        margin-bottom: 12px;
+        color: #8a8376;
+      }
+      .fallback input[type="password"] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #e5e1d6;
+        border-radius: 4px;
+        font-size: 13px;
+        background: #fff;
+        margin-bottom: 8px;
+      }
+      .fallback input:focus {
+        outline: none;
+        border-color: var(--color-brand-beige);
+      }
+      .fallback .btn {
+        width: 100%;
+      }
+      .step[hidden] {
+        display: none;
+      }
+      .timer {
+        font-size: 11px;
+        color: #8a8376;
+        text-align: center;
+        margin-top: 8px;
+      }
     </style>
   </head>
   <body class="admin-body">
     <div class="login-wrap">
-      <form class="login-card" id="loginForm">
+      <div class="login-card">
         <div class="login-logo">DAYONE ADMIN</div>
         <h1>관리자 로그인</h1>
-        <div class="field">
-          <label for="token">관리자 토큰</label>
+
+        <!-- Step 1: 코드 요청 -->
+        <div class="step" id="step1">
+          <p class="login-sub">
+            텔레그램 관리자 그룹으로<br />6자리 로그인 코드를 발송합니다.
+          </p>
+          <button
+            type="button"
+            class="btn btn-primary login-submit"
+            id="btnRequest"
+          >
+            텔레그램 코드 요청
+          </button>
+        </div>
+
+        <!-- Step 2: 코드 입력 -->
+        <div class="step" id="step2" hidden>
+          <p class="login-sub">
+            텔레그램에 도착한 <strong>6자리 코드</strong>를 입력하세요.
+          </p>
+          <input
+            type="text"
+            id="code"
+            class="code-input"
+            maxlength="6"
+            autocomplete="one-time-code"
+            inputmode="latin"
+            placeholder="A3X9P7"
+          />
+          <div class="timer" id="timer"></div>
+          <button
+            type="button"
+            class="btn btn-primary login-submit"
+            id="btnVerify"
+          >
+            로그인
+          </button>
+          <div style="text-align: center">
+            <button type="button" class="login-link" id="btnBack">
+              ← 코드 다시 요청
+            </button>
+          </div>
+        </div>
+
+        <div class="login-info" id="info"></div>
+        <div class="login-error" id="err"></div>
+
+        <!-- Fallback: 비상 토큰 -->
+        <details class="fallback" id="fallback">
+          <summary>비상 토큰으로 로그인</summary>
           <input
             type="password"
-            id="token"
-            autocomplete="current-password"
-            autofocus
+            id="legacyToken"
+            placeholder="ADMIN_TOKEN"
+            autocomplete="off"
           />
-        </div>
-        <button type="submit" class="btn btn-primary login-submit">
-          로그인
-        </button>
-        <div class="login-error" id="err"></div>
-      </form>
+          <button type="button" class="btn btn-ghost" id="btnLegacy">
+            토큰 로그인
+          </button>
+        </details>
+      </div>
     </div>
     <div class="toast" id="toast"></div>
     <script src="config.js"></script>
     <script src="admin.js"></script>
     <script>
-      const form = document.getElementById("loginForm");
-      const errEl = document.getElementById("err");
       const params = new URLSearchParams(location.search);
       const next = params.get("next") || "index.html";
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
+      const step1 = document.getElementById("step1");
+      const step2 = document.getElementById("step2");
+      const infoEl = document.getElementById("info");
+      const errEl = document.getElementById("err");
+      const timerEl = document.getElementById("timer");
+      const codeEl = document.getElementById("code");
+
+      let codeId = null;
+      let expiresAt = 0;
+      let timerHandle = null;
+
+      function showError(msg) {
+        errEl.textContent = msg;
+        infoEl.textContent = "";
+      }
+      function showInfo(msg) {
+        infoEl.textContent = msg;
         errEl.textContent = "";
-        const token = document.getElementById("token").value.trim();
-        if (!token) return;
-        try {
-          const res = await adminUtil.api("/api/auth/login", {
-            method: "POST",
-            json: { token },
-          });
-          if (res && res.loggedIn) {
-            adminUtil.setToken(token);
-            location.href = next;
-          } else {
-            errEl.textContent = "로그인 실패";
+      }
+
+      function startTimer(ttlSec) {
+        expiresAt = Date.now() + ttlSec * 1000;
+        clearInterval(timerHandle);
+        const tick = () => {
+          const remain = Math.max(
+            0,
+            Math.floor((expiresAt - Date.now()) / 1000),
+          );
+          const mm = String(Math.floor(remain / 60)).padStart(2, "0");
+          const ss = String(remain % 60).padStart(2, "0");
+          timerEl.textContent = `유효시간 ${mm}:${ss}`;
+          if (remain <= 0) {
+            clearInterval(timerHandle);
+            showError("코드가 만료되었습니다. 다시 요청해주세요.");
           }
-        } catch (e2) {
-          errEl.textContent = "인증 실패: " + (e2.message || "알 수 없는 오류");
-        }
+        };
+        tick();
+        timerHandle = setInterval(tick, 1000);
+      }
+
+      document
+        .getElementById("btnRequest")
+        .addEventListener("click", async () => {
+          const btn = document.getElementById("btnRequest");
+          btn.disabled = true;
+          btn.textContent = "요청 중...";
+          showInfo("");
+          showError("");
+          try {
+            const r = await adminUtil.api("/api/auth/request", {
+              method: "POST",
+              json: {},
+            });
+            codeId = r.codeId;
+            step1.hidden = true;
+            step2.hidden = false;
+            codeEl.focus();
+            showInfo("텔레그램 그룹에서 코드를 확인하세요.");
+            startTimer(r.ttl || 300);
+          } catch (e) {
+            showError("코드 요청 실패: " + e.message);
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "텔레그램 코드 요청";
+          }
+        });
+
+      document
+        .getElementById("btnVerify")
+        .addEventListener("click", async () => {
+          const code = codeEl.value.trim().toUpperCase();
+          if (!/^[A-Z0-9]{6}$/.test(code)) {
+            showError("6자리 코드를 입력하세요");
+            return;
+          }
+          const btn = document.getElementById("btnVerify");
+          btn.disabled = true;
+          btn.textContent = "확인 중...";
+          try {
+            const r = await adminUtil.api("/api/auth/verify", {
+              method: "POST",
+              json: { codeId, code },
+            });
+            if (r.loggedIn) {
+              clearInterval(timerHandle);
+              adminUtil.clearToken(); // 레거시 로컬 토큰 제거 (쿠키 세션으로 전환)
+              showInfo("로그인 성공 · 이동 중...");
+              setTimeout(() => (location.href = next), 400);
+            } else {
+              showError("인증 실패");
+            }
+          } catch (e) {
+            showError("실패: " + e.message);
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "로그인";
+          }
+        });
+
+      codeEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") document.getElementById("btnVerify").click();
       });
+      codeEl.addEventListener("input", () => {
+        codeEl.value = codeEl.value
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "")
+          .slice(0, 6);
+      });
+
+      document.getElementById("btnBack").addEventListener("click", () => {
+        clearInterval(timerHandle);
+        codeId = null;
+        codeEl.value = "";
+        step1.hidden = false;
+        step2.hidden = true;
+        showInfo("");
+        showError("");
+      });
+
+      document
+        .getElementById("btnLegacy")
+        .addEventListener("click", async () => {
+          const token = document.getElementById("legacyToken").value.trim();
+          if (!token) {
+            showError("토큰을 입력하세요");
+            return;
+          }
+          const btn = document.getElementById("btnLegacy");
+          btn.disabled = true;
+          try {
+            const r = await adminUtil.api("/api/auth/login", {
+              method: "POST",
+              json: { token },
+            });
+            if (r.loggedIn) {
+              adminUtil.clearToken();
+              showInfo("로그인 성공 · 이동 중...");
+              setTimeout(() => (location.href = next), 400);
+            } else {
+              showError("인증 실패");
+            }
+          } catch (e) {
+            showError("실패: " + e.message);
+          } finally {
+            btn.disabled = false;
+          }
+        });
     </script>
   </body>
 </html>

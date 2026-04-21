@@ -13,7 +13,7 @@ const MAX_BYTES = 10 * 1024 * 1024;
  * 응답: { url }
  */
 export async function handleUpload(request, env, ctx) {
-  if (!verifyAdmin(request, env)) return jsonError(401, "Unauthorized");
+  if (!(await verifyAdmin(request, env))) return jsonError(401, "Unauthorized");
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/upload/, "");
 
