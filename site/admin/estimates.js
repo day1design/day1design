@@ -227,7 +227,6 @@ async function openDetail(id) {
       </div>
       <div class="form-actions">
         <button class="btn btn-primary" id="btnPatch">상담 정보 저장</button>
-        <button class="btn btn-danger" id="btnDelete" type="button">삭제</button>
       </div>
     </div>
 
@@ -243,6 +242,17 @@ async function openDetail(id) {
           <button class="btn btn-primary" id="btnAddMemo" type="button">메모 추가</button>
         </div>
       </div>
+    </div>
+
+    <div class="admin-panel danger-zone">
+      <h3>접수 건 삭제</h3>
+      <p class="danger-zone-desc">
+        이 접수 고객의 모든 정보(연락처·상담 이력·메모·상태)를 영구 삭제합니다.
+        복구할 수 없으며, 목록에서도 즉시 제거됩니다.
+      </p>
+      <button class="btn btn-danger" id="btnDelete" type="button">
+        이 접수 건 삭제
+      </button>
     </div>
   `;
 

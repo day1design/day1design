@@ -1780,6 +1780,19 @@
   color: var(--c-text-sub);
   text-transform: uppercase;
 }
+.admin-panel.danger-zone {
+  background: var(--c-danger-soft);
+  border-color: #fecaca;
+}
+.admin-panel.danger-zone h3 {
+  color: var(--c-danger);
+}
+.danger-zone-desc {
+  font-size: 12px;
+  color: #7f1d1d;
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
 
 /* ========== TOAST ========== */
 .toast {
