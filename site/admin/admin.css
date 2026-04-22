@@ -486,6 +486,34 @@
 .dash-block .dash-grid {
   margin-bottom: 0;
 }
+/* 대시보드 내 top-table 여백 조정 */
+.dash-block .top-table {
+  margin-top: 2px;
+}
+.dash-block .top-table tbody td {
+  padding: 10px 10px;
+}
+.src-chip,
+.status-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  line-height: 1.6;
+}
+.src-chip.src-home {
+  background: #eef4ff;
+  color: #1e40af;
+}
+.src-chip.src-meta {
+  background: #fef4e6;
+  color: #b45309;
+}
+.status-chip {
+  background: #f3f4f6;
+  color: var(--c-text-sub);
+}
 
 /* ========== TOOLBAR ========== */
 .admin-toolbar {
