@@ -359,6 +359,19 @@
   }
 }
 @media (max-width: 767px) {
+  .sub-tabs {
+    /* 로고(헤더) 아래 공백 확보 — header-height(70) + 추가 여백 */
+    margin-top: calc(var(--header-height) + 20px);
+  }
+  .sub-tabs a {
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding: 10px 14px;
+  }
+  .sub-tabs a:hover,
+  .sub-tabs a.active:hover {
+    font-size: 12px;
+  }
   .about-hero {
     padding: 30px 20px 40px;
   }
