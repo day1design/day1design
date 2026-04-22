@@ -1,4 +1,8 @@
 /* ========== PORTFOLIO PAGE ========== */
+/* 포트폴리오 최상단 여백 — 커뮤니티(.community-header)와 동일 150px 통일 */
+.project-section {
+  padding-top: calc(var(--header-height) + 80px);
+}
 .portfolio-header {
   text-align: center;
   padding: calc(var(--header-height) + 60px) 0 20px;
