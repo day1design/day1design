@@ -531,6 +531,18 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
   const track = document.getElementById("heroTrack");
   if (!track) return;
 
+  // L4: fallback img 페이드인 셋업 — 디코드 전 사각형 튐 방지
+  const fallbackImg = document.querySelector(".hero-fallback");
+  if (fallbackImg) {
+    if (fallbackImg.complete && fallbackImg.naturalWidth > 0) {
+      fallbackImg.classList.add("loaded");
+    } else {
+      const markLoaded = () => fallbackImg.classList.add("loaded");
+      fallbackImg.addEventListener("load", markLoaded, { once: true });
+      fallbackImg.addEventListener("error", markLoaded, { once: true });
+    }
+  }
+
   // 로더가 히어로 첫 이미지 로드까지 기다릴 수 있게 이벤트 dispatch
   const signalHeroReady = () => {
     window.dispatchEvent(new CustomEvent("day1:hero-ready"));
@@ -574,23 +586,30 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
 
   // Only the first slide gets its background-image inline (LCP).
   // Other slides store the URL in data-bg and load it just before activation.
+  // 첫 슬라이드도 .active는 이미지 로드 완료 후에만 부여 → pop-in/섬광 방지.
+  // (로드 전엔 모든 슬라이드 opacity 0 → .hero의 inline bg(hero-main-bg)가 그대로 유지,
+  //  로드 후 .active 부여 시 800ms transition으로 부드럽게 페이드 전환)
   track.innerHTML = slides
     .map((s, i) => {
       const alt = (s.alt || "").replace(/"/g, "&quot;");
-      const activeClass = i === 0 ? " active" : "";
       const style = i === 0 ? `background-image:url('${s.image}');` : "";
       const dataBg = i === 0 ? "" : ` data-bg="${s.image}"`;
       if (s.href) {
-        return `<a href="${s.href}" class="hero-slide${activeClass}" style="${style}"${dataBg} aria-label="${alt}"></a>`;
+        return `<a href="${s.href}" class="hero-slide" style="${style}"${dataBg} aria-label="${alt}"></a>`;
       }
-      return `<div class="hero-slide${activeClass}" style="${style}"${dataBg} role="img" aria-label="${alt}"></div>`;
+      return `<div class="hero-slide" style="${style}"${dataBg} role="img" aria-label="${alt}"></div>`;
     })
     .join("");
 
-  // 첫 슬라이드 이미지 로드 완료 시 로더 신호
+  // 첫 슬라이드 이미지 로드 완료 시에만 .active 부여 + 로더 신호
+  const activateFirst = () => {
+    const el = track.querySelector(".hero-slide");
+    if (el && !el.classList.contains("active")) el.classList.add("active");
+    signalHeroReady();
+  };
   const firstSlideImg = new Image();
-  firstSlideImg.onload = signalHeroReady;
-  firstSlideImg.onerror = signalHeroReady;
+  firstSlideImg.onload = activateFirst;
+  firstSlideImg.onerror = activateFirst;
   firstSlideImg.src = slides[0].image;
 
   const dotsEl = document.getElementById("heroDots");
@@ -608,23 +627,50 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
   let current = 0;
   let timer = null;
 
-  // Load a slide's background-image on demand (lazy hero).
-  function ensureSlideBg(i) {
-    const el = slideEls[i];
-    if (!el) return;
+  // L2: 슬라이드 이미지 디코드 완료까지 대기 후 backgroundImage 세팅.
+  // URL만 세팅하고 바로 .active 부여하던 기존 방식은 느린 네트워크에서
+  // 투명 div가 페이드인 → pop-in 플래시 유발. Promise 기반으로 로드 보장.
+  function waitForSlideImage(el) {
+    if (!el) return Promise.resolve();
     const url = el.dataset.bg;
-    if (!url) return;
-    el.style.backgroundImage = `url('${url}')`;
-    el.removeAttribute("data-bg");
+    if (!url) return Promise.resolve(); // 이미 세팅된 슬라이드
+    return new Promise((resolve) => {
+      const img = new Image();
+      const done = () => {
+        el.style.backgroundImage = `url('${url}')`;
+        el.removeAttribute("data-bg");
+        resolve();
+      };
+      img.onload = done;
+      img.onerror = done;
+      img.src = url;
+    });
   }
 
+  // L2: z-index 스태킹 crossfade — 새 슬라이드를 이전 위에 얹어 opacity 0→1만 진행.
+  // 이전 슬라이드는 .active 해제되어 opacity 1→0. z-index 차이로 새가 위에 있어
+  // 합성 투명도 gap이 발생하지 않음 (뒤 fallback 노출 0).
   function goTo(idx) {
-    current = (idx + slides.length) % slides.length;
-    // Preload current + next slide so the next transition is instant.
-    ensureSlideBg(current);
-    ensureSlideBg((current + 1) % slides.length);
-    slideEls.forEach((el, i) => el.classList.toggle("active", i === current));
-    dotEls.forEach((el, i) => el.classList.toggle("active", i === current));
+    const target = (idx + slides.length) % slides.length;
+    if (target === current && slideEls[target]?.classList.contains("active"))
+      return;
+
+    waitForSlideImage(slideEls[target]).then(() => {
+      // 더블 rAF: backgroundImage 세팅 → 레이아웃 → 페인트 보장 후 transition 시작
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          slideEls.forEach((el, i) =>
+            el.classList.toggle("active", i === target),
+          );
+          dotEls.forEach((el, i) =>
+            el.classList.toggle("active", i === target),
+          );
+          current = target;
+          // 다음 슬라이드 백그라운드 preload
+          waitForSlideImage(slideEls[(target + 1) % slides.length]);
+        }),
+      );
+    });
   }
   function next() {
     goTo(current + 1);
@@ -633,9 +679,9 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
     goTo(current - 1);
   }
 
-  // Preload slide #2 once idle so the first auto-advance is smooth.
+  // 슬라이드 #2 idle 프리로드 — 첫 오토어드밴스가 즉시 부드럽게
   if (slides.length > 1) {
-    const preloadNext = () => ensureSlideBg(1);
+    const preloadNext = () => waitForSlideImage(slideEls[1]);
     if ("requestIdleCallback" in window) {
       requestIdleCallback(preloadNext, { timeout: 2000 });
     } else {
@@ -674,8 +720,8 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
 })();
 
 // ========== PORTFOLIO API 전환 (optional) ==========
-// window.DAY1_API_BASE 가 설정되어 있으면 Airtable에서 projectData를 덮어쓰고 재렌더.
-// 실패 시 기존 하드코딩 projectData 유지 (fallback).
+// window.DAY1_API_BASE 가 설정되어 있으면 Airtable에서 projectData를 덮어씀.
+// 하드코딩 데이터와 동일하면 재렌더 스킵(깜빡임 방지).
 (async function loadPortfolioFromApi() {
   const API_BASE =
     (typeof window !== "undefined" && window.DAY1_API_BASE) || "";
@@ -685,6 +731,15 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
     if (!res.ok) return;
     const d = await res.json();
     if (!Array.isArray(d.records) || !d.records.length) return;
+
+    // diff: 폴더 순서·개수가 동일하면 데이터 교체만 하고 재렌더 생략
+    const oldSig = projectData
+      .map((p) => `${p.folder}:${p.count}:${p.rightFolder || ""}`)
+      .join("|");
+    const newSig = d.records
+      .map((r) => `${r.folder}:${r.count}:${r.rightFolder || ""}`)
+      .join("|");
+
     projectData.length = 0;
     d.records.forEach((r) => {
       const o = { name: r.name, folder: r.folder, count: r.count };
@@ -696,6 +751,9 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
       projectData.push(o);
     });
     TOTAL_PROJECTS = projectData.length;
+
+    if (oldSig === newSig) return; // 변경 없음 → 재렌더 스킵
+
     // HOUSE 탭이 활성화된 상태에서만 재렌더 (OFFICE는 영향 없음)
     if (
       grid.classList.contains("project-grid") &&

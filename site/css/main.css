@@ -4,8 +4,24 @@
   width: 100%;
   height: 720px;
   overflow: hidden;
-  /* 슬라이드 이미지 로드 전에 흰 body 위로 .hero-overlay가 깔려 회색으로 보이는 깜빡임 방지 */
-  background-color: #1c1917;
+  /* L1 안전망: 모든 이미지 로드 실패/극저속 첫 프레임에서 검정/흰색 대신 브랜드 베이지 */
+  background-color: #5a5448;
+}
+.hero-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  display: block;
+  pointer-events: none;
+  /* L4: fallback 자체도 페이드인 — 디코드 전 사각형 튐 방지 */
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+.hero-fallback.loaded {
+  opacity: 1;
 }
 .hero-bg {
   position: absolute;
@@ -23,6 +39,7 @@
 .hero-track {
   position: absolute;
   inset: 0;
+  z-index: 1; /* hero-fallback(0) 위에 슬라이드가 올라오도록 */
 }
 .hero-slide {
   position: absolute;
@@ -33,12 +50,17 @@
   transition: opacity 800ms ease;
   display: block;
   cursor: default;
+  z-index: 1;
 }
 .hero-slide[href] {
   cursor: pointer;
 }
+/* L2: z-index 스태킹 crossfade — 새 슬라이드를 이전 위에 올려 opacity 1로 페이드인.
+   이전 슬라이드는 .active만 제거하여 opacity 1 유지, transitionend 후 opacity 0 리셋.
+   중간 지점 합성 투명도 = 1 → 뒤 fallback 노출 0. */
 .hero-slide.active {
   opacity: 1;
+  z-index: 2;
 }
 .hero-nav {
   position: absolute;
@@ -107,10 +129,13 @@
   left: 0;
   width: 100%;
   height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  /* L3: 상시 darkness 완화 (0.35 → 0.22). 텍스트 가독성은 h1/p text-shadow로 보상. */
   background: linear-gradient(
     to right,
-    rgba(0, 0, 0, 0.35) 0%,
-    rgba(0, 0, 0, 0.1) 60%,
+    rgba(0, 0, 0, 0.22) 0%,
+    rgba(0, 0, 0, 0.06) 60%,
     transparent 100%
   );
 }
@@ -130,12 +155,19 @@
   color: #fff;
   letter-spacing: 4px;
   margin-bottom: 12px;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+  /* overlay 완화 보상 — 밝은 배경 슬라이드에서도 텍스트 가독성 유지 */
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
 }
 .hero-text p {
   font-size: var(--font-size-base);
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.9);
   font-weight: 300;
   letter-spacing: 1px;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
 }
 
 /* ========== IMAGE GRID (3 columns) ========== */
