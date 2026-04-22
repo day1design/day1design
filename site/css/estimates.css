@@ -72,7 +72,9 @@
   font-size: 12px;
   color: var(--color-text-primary);
   font-weight: 500;
-  word-break: break-all;
+  /* 긴 이메일/URL만 강제 break (한글은 어절 단위 — 세로 텍스트 방지) */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 .summary-section dd.empty {
   color: var(--color-text-light);
@@ -556,7 +558,7 @@
 /* 560px 미만(모바일): 2컬럼 라벨 해제, 옵션카드 2열 */
 @media (max-width: 560px) {
   .wizard-step {
-    padding: 22px 20px;
+    padding: 22px 16px;
   }
   .form-group {
     grid-template-columns: 1fr;
@@ -578,6 +580,40 @@
   }
   .step-label {
     font-size: 9px;
+  }
+  /* 입력폼 텍스트 클리핑 방지 — 폰트·패딩 축소 */
+  .form-group input[type="text"],
+  .form-group input[type="email"],
+  .form-group input[type="tel"],
+  .form-group textarea {
+    font-size: 13px;
+    padding: 10px 10px;
+  }
+  .email-row {
+    grid-template-columns: 1.3fr 12px 1fr 1.2fr;
+    gap: 4px;
+  }
+  .email-row .at {
+    font-size: 13px;
+  }
+  .email-row select {
+    font-size: 11px;
+    padding: 10px 4px;
+  }
+  .phone-row {
+    grid-template-columns: 1fr 10px 1fr 10px 1fr;
+  }
+  .phone-row .dash {
+    font-size: 14px;
+  }
+  .address-row {
+    grid-template-columns: 90px 1fr auto;
+    gap: 6px;
+  }
+  .btn-address {
+    padding: 0 12px;
+    font-size: 11px;
+    height: 38px;
   }
 }
 
