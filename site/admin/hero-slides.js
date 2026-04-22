@@ -41,7 +41,6 @@ function render() {
           <span class="drag-card-badge">${i + 1}</span>
           <div class="drag-card-actions">
             <button type="button" class="drag-card-action" data-act="edit" title="편집">✎</button>
-            <button type="button" class="drag-card-action" data-act="replace" title="이미지 교체">⟳</button>
             <button type="button" class="drag-card-action danger" data-act="del" title="삭제">✕</button>
           </div>
         </div>
@@ -59,15 +58,9 @@ function render() {
         setDirty(true);
         render();
       });
-      card
-        .querySelector('[data-act="replace"]')
-        .addEventListener("click", (e) => {
-          e.stopPropagation();
-          triggerFilePick(i);
-        });
       card.querySelector('[data-act="edit"]').addEventListener("click", (e) => {
         e.stopPropagation();
-        editSlide(i);
+        openEditModal(i);
       });
       listEl.appendChild(card);
     });
@@ -77,34 +70,101 @@ function render() {
   document.getElementById("btnAdd").disabled = slides.length >= MAX_SLIDES;
 }
 
-// 편집 (제목/링크)
-function editSlide(index) {
+// ========== 편집 모달 (제목/링크/이미지 통합) ==========
+const slideModal = document.getElementById("slideModal");
+const editThumbPreview = document.getElementById("editThumbPreview");
+const editThumbFile = document.getElementById("editThumbFile");
+const editAltInput = document.getElementById("editAltInput");
+const editHrefInput = document.getElementById("editHrefInput");
+const btnPickEditThumb = document.getElementById("btnPickEditThumb");
+const btnReplaceEditThumb = document.getElementById("btnReplaceEditThumb");
+
+let editingIndex = -1;
+let editingImage = "";
+
+function openEditModal(index) {
   const s = slides[index];
-  const newAlt = prompt("제목 / Alt 텍스트", s.alt || "");
-  if (newAlt === null) return;
-  const newHref = prompt(
-    "링크 (비우면 클릭 불가)\n예: pages/portfolio.html",
-    s.href || "",
-  );
-  if (newHref === null) return;
-  slides[index].alt = newAlt.trim();
-  slides[index].href = newHref.trim();
+  if (!s) return;
+  editingIndex = index;
+  editingImage = s.image || "";
+  editAltInput.value = s.alt || "";
+  editHrefInput.value = s.href || "";
+  renderEditThumb(editingImage);
+  slideModal.hidden = false;
+  document.body.classList.add("modal-open");
+}
+
+function closeEditModal() {
+  slideModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  editingIndex = -1;
+  editingImage = "";
+  editThumbFile.value = "";
+}
+
+function renderEditThumb(url) {
+  if (url) {
+    editThumbPreview.style.backgroundImage = `url('${url}')`;
+    editThumbPreview.classList.remove("empty");
+    editThumbPreview.classList.add("has-image");
+    btnPickEditThumb.hidden = true;
+    btnReplaceEditThumb.hidden = false;
+  } else {
+    editThumbPreview.style.backgroundImage = "none";
+    editThumbPreview.classList.remove("has-image");
+    editThumbPreview.classList.add("empty");
+    btnPickEditThumb.hidden = false;
+    btnReplaceEditThumb.hidden = true;
+  }
+}
+
+btnPickEditThumb.addEventListener("click", () => editThumbFile.click());
+btnReplaceEditThumb.addEventListener("click", () => editThumbFile.click());
+
+editThumbFile.addEventListener("change", async () => {
+  const f = editThumbFile.files?.[0];
+  if (!f) return;
+  try {
+    adminUtil.toast("이미지 업로드 중...");
+    const res = await adminUtil.uploadImage(f, { folder: "hero" });
+    editingImage = res.url;
+    renderEditThumb(editingImage);
+    adminUtil.toast("업로드 완료");
+  } catch (e) {
+    adminUtil.toast("업로드 실패: " + e.message, "error");
+  } finally {
+    editThumbFile.value = "";
+  }
+});
+
+slideModal.querySelectorAll("[data-close]").forEach((el) => {
+  el.addEventListener("click", (e) => {
+    e.preventDefault();
+    closeEditModal();
+  });
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !slideModal.hidden) closeEditModal();
+});
+
+document.getElementById("slideEditForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (editingIndex < 0) return;
+  if (!editingImage) {
+    adminUtil.toast("이미지를 업로드해주세요", "error");
+    return;
+  }
+  const s = slides[editingIndex];
+  s.image = editingImage;
+  s.alt = editAltInput.value.trim();
+  s.href = editHrefInput.value.trim();
   setDirty(true);
+  closeEditModal();
   render();
-}
+});
 
-// 이미지 교체 파일 피커
-function triggerFilePick(index) {
-  const inp = document.createElement("input");
-  inp.type = "file";
-  inp.accept = "image/*";
-  inp.onchange = async () => {
-    if (!inp.files?.[0]) return;
-    await handleImageReplace(index, inp.files[0]);
-  };
-  inp.click();
-}
-
+// 카드에 이미지 drop → 즉시 교체 (빠른 UX, 편집 모달 우회)
 async function handleImageReplace(index, file) {
   try {
     adminUtil.toast("이미지 업로드 중...");
