@@ -238,11 +238,25 @@ async function patchEstimate(request, env, id, ctx) {
     return jsonError(400, "Invalid JSON");
   }
   const allowed = [
+    // 상담 관리
     "Status",
     "Assignee",
     "ContactedAt",
     "Memo",
     "EstimateAmount",
+    // 고객 정보 (관리자 확인 후 수정)
+    "Name",
+    "Phone",
+    "Email",
+    "SpaceType",
+    "SpaceSize",
+    "Postcode",
+    "Address",
+    "AddressDetail",
+    "Schedule",
+    "Detail",
+    "Referral",
+    "Branch",
   ];
   const fields = {};
   for (const k of allowed) if (k in body) fields[k] = body[k];

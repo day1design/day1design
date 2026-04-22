@@ -201,6 +201,84 @@ async function openDetail(id) {
     </dl>
 
     <div class="admin-panel">
+      <h3>고객 정보 수정</h3>
+      <p class="panel-hint">상담 후 확인된 실제 정보로 업데이트하세요. 저장 시 접수 내역에 즉시 반영됩니다.</p>
+      <div class="field-row-2">
+        <div class="field">
+          <label>이름</label>
+          <input type="text" id="cNamE" value="${escapeHtml(r.Name || "")}" />
+        </div>
+        <div class="field">
+          <label>연락처</label>
+          <input type="tel" id="cPhone" value="${escapeHtml(r.Phone || "")}" />
+        </div>
+      </div>
+      <div class="field">
+        <label>이메일</label>
+        <input type="email" id="cEmail" value="${escapeHtml(r.Email || "")}" />
+      </div>
+      <div class="field-row-2">
+        <div class="field">
+          <label>공간 유형</label>
+          <select id="cSpaceType">
+            ${["", "아파트", "빌라", "주택", "상가", "기타"]
+              .map(
+                (s) =>
+                  `<option value="${s}" ${r.SpaceType === s ? "selected" : ""}>${s || "— 선택 —"}</option>`,
+              )
+              .join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>공간 면적</label>
+          <select id="cSpaceSize">
+            ${["", "20~30평", "30~40평", "40~50평", "50평 이상", "기타"]
+              .map(
+                (s) =>
+                  `<option value="${s}" ${r.SpaceSize === s ? "selected" : ""}>${s || "— 선택 —"}</option>`,
+              )
+              .join("")}
+          </select>
+        </div>
+      </div>
+      <div class="field-row-3">
+        <div class="field" style="flex:0 0 110px">
+          <label>우편번호</label>
+          <input type="text" id="cPostcode" value="${escapeHtml(r.Postcode || "")}" />
+        </div>
+        <div class="field" style="flex:1">
+          <label>주소</label>
+          <input type="text" id="cAddress" value="${escapeHtml(r.Address || "")}" />
+        </div>
+      </div>
+      <div class="field">
+        <label>상세주소</label>
+        <input type="text" id="cAddressDetail" value="${escapeHtml(r.AddressDetail || "")}" />
+      </div>
+      <div class="field-row-2">
+        <div class="field">
+          <label>공사 희망 일정</label>
+          <input type="text" id="cSchedule" value="${escapeHtml(r.Schedule || "")}" placeholder="예: 00년 00월" />
+        </div>
+        <div class="field">
+          <label>지점</label>
+          <input type="text" id="cBranch" value="${escapeHtml(r.Branch || "")}" />
+        </div>
+      </div>
+      <div class="field">
+        <label>유입 경로</label>
+        <input type="text" id="cReferral" value="${escapeHtml(r.Referral || "")}" />
+      </div>
+      <div class="field">
+        <label>상세 내용</label>
+        <textarea id="cDetail" rows="4">${escapeHtml(r.Detail || "")}</textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="btnSaveCustomer" type="button">고객 정보 저장</button>
+      </div>
+    </div>
+
+    <div class="admin-panel">
       <h3>상담 관리</h3>
       <div class="field">
         <label>상태</label>
@@ -227,6 +305,9 @@ async function openDetail(id) {
       </div>
       <div class="form-actions">
         <button class="btn btn-primary" id="btnPatch">상담 정보 저장</button>
+        <button class="btn btn-danger" id="btnDelete" type="button">
+          고객 삭제
+        </button>
       </div>
     </div>
 
@@ -244,21 +325,14 @@ async function openDetail(id) {
       </div>
     </div>
 
-    <div class="admin-panel danger-zone">
-      <h3>접수 건 삭제</h3>
-      <p class="danger-zone-desc">
-        이 접수 고객의 모든 정보(연락처·상담 이력·메모·상태)를 영구 삭제합니다.
-        복구할 수 없으며, 목록에서도 즉시 제거됩니다.
-      </p>
-      <button class="btn btn-danger" id="btnDelete" type="button">
-        이 접수 건 삭제
-      </button>
-    </div>
   `;
 
   detail
     .querySelector("#btnPatch")
     .addEventListener("click", () => doPatch(id));
+  detail
+    .querySelector("#btnSaveCustomer")
+    .addEventListener("click", () => doSaveCustomer(id));
   detail
     .querySelector("#btnDelete")
     .addEventListener("click", () => doDelete(id, r.Name));
@@ -304,6 +378,51 @@ async function doPatch(id) {
       if (oldBadge) oldBadge.outerHTML = statusBadge(payload.Status);
     }
     adminUtil.toast("저장 완료");
+  } catch (e) {
+    adminUtil.toast("저장 실패: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function doSaveCustomer(id) {
+  const btn = detail.querySelector("#btnSaveCustomer");
+  btn.disabled = true;
+  const val = (sel) => detail.querySelector(sel)?.value?.trim() ?? "";
+  const name = val("#cNamE");
+  const phone = val("#cPhone");
+  if (!name || !phone) {
+    adminUtil.toast("이름·연락처는 필수입니다", "error");
+    btn.disabled = false;
+    return;
+  }
+  const payload = {
+    Name: name,
+    Phone: phone,
+    Email: val("#cEmail"),
+    SpaceType: val("#cSpaceType"),
+    SpaceSize: val("#cSpaceSize"),
+    Postcode: val("#cPostcode"),
+    Address: val("#cAddress"),
+    AddressDetail: val("#cAddressDetail"),
+    Schedule: val("#cSchedule"),
+    Branch: val("#cBranch"),
+    Referral: val("#cReferral"),
+    Detail: detail.querySelector("#cDetail")?.value ?? "",
+  };
+  try {
+    const d = await adminUtil.api(`/api/estimates/${id}`, {
+      method: "PATCH",
+      json: payload,
+    });
+    adminUtil.cacheInvalidate("/api/estimates");
+    const r = records.find((x) => x.id === id);
+    Object.assign(r, d.updated);
+    render();
+    // 상세 head 이름 업데이트
+    const head = detail.querySelector(".detail-head h2");
+    if (head) head.innerHTML = `${escapeHtml(r.Name)} ${sourceBadge(r.Source)}`;
+    adminUtil.toast("고객 정보 저장 완료");
   } catch (e) {
     adminUtil.toast("저장 실패: " + e.message, "error");
   } finally {

@@ -1780,18 +1780,32 @@
   color: var(--c-text-sub);
   text-transform: uppercase;
 }
-.admin-panel.danger-zone {
-  background: var(--c-danger-soft);
-  border-color: #fecaca;
-}
-.admin-panel.danger-zone h3 {
-  color: var(--c-danger);
-}
-.danger-zone-desc {
+.panel-hint {
   font-size: 12px;
-  color: #7f1d1d;
+  color: var(--c-text-muted);
   line-height: 1.6;
-  margin: 0 0 12px;
+  margin: -4px 0 12px;
+}
+.field-row-2,
+.field-row-3 {
+  display: flex;
+  gap: 12px;
+}
+.field-row-2 > .field,
+.field-row-3 > .field {
+  flex: 1;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .field-row-2,
+  .field-row-3 {
+    flex-direction: column;
+    gap: 0;
+  }
+  .field-row-3 > .field[style*="flex"] {
+    flex: 1 !important;
+  }
 }
 
 /* ========== TOAST ========== */
