@@ -26,6 +26,55 @@ function doughnutLegendPos() {
   return isNarrow() ? "bottom" : "right";
 }
 
+// 페이지 경로 → 한글 메뉴명 매핑 (사이트 헤더 네비 기준)
+const PAGE_LABELS = [
+  { match: (p) => p === "/" || p === "/index.html", label: "메인" },
+  { match: (p) => p.startsWith("/pages/about"), label: "회사소개" },
+  {
+    match: (p) => p.startsWith("/pages/project-flow"),
+    label: "프로젝트 플로우",
+  },
+  {
+    match: (p) => p.startsWith("/pages/portfolio") && /[?&]cat=office/.test(p),
+    label: "포트폴리오 · OFFICE",
+  },
+  {
+    match: (p) => p.startsWith("/pages/portfolio") && /[?&]size=20-30/.test(p),
+    label: "포트폴리오 · 20~30평",
+  },
+  {
+    match: (p) => p.startsWith("/pages/portfolio") && /[?&]size=30-40/.test(p),
+    label: "포트폴리오 · 30~40평",
+  },
+  {
+    match: (p) => p.startsWith("/pages/portfolio") && /[?&]size=40-50/.test(p),
+    label: "포트폴리오 · 40~50평",
+  },
+  {
+    match: (p) => p.startsWith("/pages/portfolio") && /[?&]size=50/.test(p),
+    label: "포트폴리오 · 50평 이상",
+  },
+  {
+    match: (p) => p.startsWith("/pages/portfolio-detail"),
+    label: "포트폴리오 상세",
+  },
+  { match: (p) => p.startsWith("/pages/portfolio"), label: "포트폴리오" },
+  {
+    match: (p) => p.startsWith("/pages/community-detail"),
+    label: "커뮤니티 · 상세",
+  },
+  { match: (p) => p.startsWith("/pages/community"), label: "커뮤니티" },
+  { match: (p) => p.startsWith("/pages/estimates"), label: "견적문의" },
+];
+
+function pageLabel(path) {
+  if (!path) return "";
+  for (const row of PAGE_LABELS) {
+    if (row.match(path)) return row.label;
+  }
+  return path;
+}
+
 // 7일 / 30일 기본 MOCK — 다른 기간은 30일 데이터를 일수에 맞게 스케일
 const MOCK_BASE = {
   7: {
@@ -41,11 +90,11 @@ const MOCK_BASE = {
       { path: "/pages/community.html", views: 94 },
       { path: "/pages/estimates.html", views: 72 },
       { path: "/pages/about.html", views: 58 },
-      { path: "/pages/residential.html", views: 44 },
-      { path: "/pages/commercial.html", views: 38 },
+      { path: "/pages/portfolio.html?cat=office", views: 44 },
+      { path: "/pages/portfolio.html?size=30-40", views: 38 },
       { path: "/pages/community-detail.html", views: 21 },
-      { path: "/pages/portfolio-detail.html", views: 12 },
-      { path: "/pages/process.html", views: 5 },
+      { path: "/pages/project-flow.html", views: 12 },
+      { path: "/pages/portfolio.html?size=20-30", views: 5 },
     ],
     sources: {
       "직접 유입": 41,
@@ -67,11 +116,11 @@ const MOCK_BASE = {
       { path: "/pages/community.html", views: 648 },
       { path: "/pages/estimates.html", views: 512 },
       { path: "/pages/about.html", views: 384 },
-      { path: "/pages/residential.html", views: 296 },
-      { path: "/pages/commercial.html", views: 248 },
+      { path: "/pages/portfolio.html?cat=office", views: 296 },
+      { path: "/pages/portfolio.html?size=30-40", views: 248 },
       { path: "/pages/community-detail.html", views: 156 },
-      { path: "/pages/portfolio-detail.html", views: 104 },
-      { path: "/pages/process.html", views: 68 },
+      { path: "/pages/project-flow.html", views: 104 },
+      { path: "/pages/portfolio.html?size=20-30", views: 68 },
     ],
     sources: {
       "직접 유입": 45,
@@ -391,7 +440,7 @@ function renderTopPages(data) {
       (p, i) => `
       <tr>
         <td class="num">${i + 1}</td>
-        <td class="path">${adminUtil.escapeHtml(p.path)}</td>
+        <td class="path" title="${adminUtil.escapeHtml(p.path)}">${adminUtil.escapeHtml(pageLabel(p.path))}</td>
         <td class="num" style="text-align:right">${fmtInt(p.views)}</td>
       </tr>`,
     )

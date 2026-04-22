@@ -28,43 +28,99 @@
     <div class="admin-layout">
       <header class="admin-topbar" id="adminTopbar"></header>
       <main class="admin-content" id="adminContent">
-        <div class="dash-grid">
-          <a href="hero-slides" class="dash-card">
-            <div class="dash-card-head">
-              <h3>히어로 슬라이드</h3>
-              <span class="dash-card-count" id="statHero">—</span>
+        <section class="dash-block">
+          <div class="dash-block-head">
+            <h3>
+              유입 요약 <span class="dash-block-sub">· 최근 30일 예시</span>
+            </h3>
+            <a href="analytics" class="dash-block-link">자세히 보기 →</a>
+          </div>
+          <div class="dash-kpi-grid">
+            <div class="dash-kpi">
+              <div class="dash-kpi-label">방문자</div>
+              <div class="dash-kpi-value" id="dashVisitors">—</div>
             </div>
-            <p>메인 페이지 상단 슬라이드 등록·정렬·삭제 (최대 10장)</p>
-          </a>
-          <a href="portfolio" class="dash-card">
-            <div class="dash-card-head">
-              <h3>포트폴리오</h3>
-              <span class="dash-card-count" id="statPortfolio">—</span>
+            <div class="dash-kpi">
+              <div class="dash-kpi-label">페이지뷰</div>
+              <div class="dash-kpi-value" id="dashPageviews">—</div>
             </div>
-            <p>시공 포트폴리오 등록·편집·순서 조정</p>
-          </a>
-          <a href="community" class="dash-card">
-            <div class="dash-card-head">
-              <h3>커뮤니티</h3>
-              <span class="dash-card-count" id="statCommunity">—</span>
+            <div class="dash-kpi">
+              <div class="dash-kpi-label">평균 체류</div>
+              <div class="dash-kpi-value" id="dashDuration">—</div>
             </div>
-            <p>게시글 등록·수정 (블록 에디터 포함)</p>
-          </a>
-          <a href="estimates" class="dash-card">
-            <div class="dash-card-head">
-              <h3>상담신청</h3>
-              <span class="dash-card-count" id="statEstimates">—</span>
+            <div class="dash-kpi">
+              <div class="dash-kpi-label">이탈률</div>
+              <div class="dash-kpi-value" id="dashBounce">—</div>
             </div>
-            <p>접수 내역 조회·상태/담당자 변경</p>
-          </a>
-          <a href="analytics" class="dash-card">
-            <div class="dash-card-head">
-              <h3>유입·접수 통계</h3>
-              <span class="dash-card-count" id="statAnalytics">—</span>
+          </div>
+        </section>
+
+        <section class="dash-block">
+          <div class="dash-block-head">
+            <h3>
+              상담 접수 <span class="dash-block-sub">· 최근 30일 실데이터</span>
+            </h3>
+            <a href="estimates" class="dash-block-link">목록 보기 →</a>
+          </div>
+          <div class="dash-kpi-grid">
+            <div class="dash-kpi">
+              <div class="dash-kpi-label">총 접수</div>
+              <div class="dash-kpi-value" id="dashSubTotal">—</div>
+              <div class="dash-kpi-foot" id="dashSubTotalAll">전체 —</div>
             </div>
-            <p>기간별 유입·접수 추이 · 출처별 · Meta 캠페인 분석</p>
-          </a>
-        </div>
+            <div class="dash-kpi">
+              <div class="dash-kpi-label">홈페이지</div>
+              <div class="dash-kpi-value" id="dashSubHomepage">—</div>
+              <div class="dash-kpi-foot" id="dashSubHomepageRatio">—</div>
+            </div>
+            <div class="dash-kpi">
+              <div class="dash-kpi-label">Meta 광고</div>
+              <div class="dash-kpi-value" id="dashSubMeta">—</div>
+              <div class="dash-kpi-foot" id="dashSubMetaRatio">—</div>
+            </div>
+            <div class="dash-kpi">
+              <div class="dash-kpi-label">접수대기</div>
+              <div class="dash-kpi-value" id="dashSubPending">—</div>
+              <div class="dash-kpi-foot">상태 확인 필요</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="dash-block">
+          <div class="dash-block-head">
+            <h3>관리 바로가기</h3>
+          </div>
+          <div class="dash-grid">
+            <a href="hero-slides" class="dash-card">
+              <div class="dash-card-head">
+                <h3>히어로 슬라이드</h3>
+                <span class="dash-card-count" id="statHero">—</span>
+              </div>
+              <p>메인 페이지 상단 슬라이드 등록·정렬·삭제 (최대 10장)</p>
+            </a>
+            <a href="portfolio" class="dash-card">
+              <div class="dash-card-head">
+                <h3>포트폴리오</h3>
+                <span class="dash-card-count" id="statPortfolio">—</span>
+              </div>
+              <p>시공 포트폴리오 등록·편집·순서 조정</p>
+            </a>
+            <a href="community" class="dash-card">
+              <div class="dash-card-head">
+                <h3>커뮤니티</h3>
+                <span class="dash-card-count" id="statCommunity">—</span>
+              </div>
+              <p>게시글 등록·수정 (블록 에디터 포함)</p>
+            </a>
+            <a href="estimates" class="dash-card">
+              <div class="dash-card-head">
+                <h3>상담신청</h3>
+                <span class="dash-card-count" id="statEstimates">—</span>
+              </div>
+              <p>접수 내역 조회·상태/담당자 변경</p>
+            </a>
+          </div>
+        </section>
       </main>
     </div>
     <div class="toast" id="toast"></div>
@@ -72,6 +128,8 @@
     <script defer src="admin.js"></script>
     <script>
       (async () => {
+        const $ = (id) => document.getElementById(id);
+
         async function loadCount(path, id, key = "records") {
           try {
             const d = await adminUtil.apiCached(path, { ttl: 60_000 });
@@ -82,35 +140,69 @@
                 : Array.isArray(d?.slides)
                   ? d.slides.length
                   : null;
-            document.getElementById(id).textContent = n !== null ? n : "—";
+            $(id).textContent = n !== null ? n : "—";
           } catch {
-            document.getElementById(id).textContent = "—";
+            $(id).textContent = "—";
           }
         }
-        async function loadEstimatesStats() {
+
+        // 유입 요약(예시) — analytics.js 30일 기준 MOCK 일치
+        function renderAnalyticsSummary() {
+          $("dashVisitors").textContent = (1234).toLocaleString("ko-KR");
+          $("dashPageviews").textContent = (5678).toLocaleString("ko-KR");
+          $("dashDuration").textContent = "2:34";
+          $("dashBounce").textContent = "42%";
+        }
+
+        async function loadSubmissionSummary() {
           try {
             const d = await adminUtil.apiCached("/api/estimates", {
               ttl: 60_000,
             });
             const all = d?.records || [];
-            document.getElementById("statEstimates").textContent = all.length;
+            $("statEstimates").textContent = all.length;
+
             const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
-            const recent = all.filter((r) => {
+            let total = 0,
+              meta = 0,
+              home = 0,
+              pending = 0;
+            for (const r of all) {
               const t = Date.parse(r.SubmittedAt || "");
-              return !isNaN(t) && t >= since;
-            }).length;
-            document.getElementById("statAnalytics").textContent =
-              `${recent} / 30일`;
+              if (isNaN(t) || t < since) continue;
+              total++;
+              if ((r.Source || "").toLowerCase() === "meta") meta++;
+              else home++;
+              if ((r.Status || "접수대기") === "접수대기") pending++;
+            }
+
+            $("dashSubTotal").textContent = total.toLocaleString("ko-KR");
+            $("dashSubTotalAll").textContent =
+              `전체 ${all.length.toLocaleString("ko-KR")}건`;
+            $("dashSubHomepage").textContent = home.toLocaleString("ko-KR");
+            $("dashSubHomepageRatio").textContent =
+              total > 0 ? `${Math.round((home / total) * 100)}%` : "—";
+            $("dashSubMeta").textContent = meta.toLocaleString("ko-KR");
+            $("dashSubMetaRatio").textContent =
+              total > 0 ? `${Math.round((meta / total) * 100)}%` : "—";
+            $("dashSubPending").textContent = pending.toLocaleString("ko-KR");
           } catch {
-            document.getElementById("statEstimates").textContent = "—";
-            document.getElementById("statAnalytics").textContent = "—";
+            [
+              "dashSubTotal",
+              "dashSubHomepage",
+              "dashSubMeta",
+              "dashSubPending",
+            ].forEach((id) => ($(id).textContent = "—"));
+            $("statEstimates").textContent = "—";
           }
         }
+
         // ensureAuth는 admin.js bootstrap이 이미 호출
+        renderAnalyticsSummary();
         loadCount("/api/hero/slides", "statHero");
         loadCount("/api/portfolio", "statPortfolio");
         loadCount("/api/community", "statCommunity", "posts");
-        loadEstimatesStats();
+        loadSubmissionSummary();
       })();
     </script>
   </body>

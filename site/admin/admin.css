@@ -409,6 +409,84 @@
   }
 }
 
+/* ========== DASHBOARD SUMMARY BLOCKS ========== */
+.dash-block {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 18px 20px 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-card);
+}
+.dash-block-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+.dash-block-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--c-text);
+  letter-spacing: -0.2px;
+}
+.dash-block-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--c-text-muted);
+  margin-left: 4px;
+}
+.dash-block-link {
+  font-size: 12px;
+  color: var(--c-brand);
+  text-decoration: none;
+  font-weight: 500;
+}
+.dash-block-link:hover {
+  text-decoration: underline;
+}
+.dash-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+@media (max-width: 860px) {
+  .dash-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.dash-kpi {
+  background: #fafbfc;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+.dash-kpi-label {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+}
+.dash-kpi-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--c-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+.dash-kpi-foot {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  margin-top: 6px;
+}
+/* 관리 바로가기 블록 안의 dash-grid는 margin-bottom 제거 */
+.dash-block .dash-grid {
+  margin-bottom: 0;
+}
+
 /* ========== TOOLBAR ========== */
 .admin-toolbar {
   display: flex;
@@ -1321,7 +1399,7 @@
     margin-left: 0 !important;
   }
   .admin-content {
-    padding-bottom: 74px; /* 58px nav + 16px breathing */
+    padding-bottom: 110px; /* 58px nav + 52px breathing */
   }
 
   /* 햄버거/백드롭 숨김 */
