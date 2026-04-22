@@ -25,7 +25,7 @@
         <section class="admin-section">
           <p class="admin-sub" style="margin-bottom: 20px">
             메인 페이지 상단 슬라이드 (최대 10장). 카드 드래그로 순서 교체, ✎
-            버튼으로 이미지·제목·링크를 함께 편집합니다.
+            버튼으로 이미지와 제목을 편집합니다.
           </p>
 
           <div class="slides-list" id="slidesList"></div>
@@ -45,14 +45,6 @@
                   id="preview"
                   style="background-image: none"
                 ></div>
-              </div>
-              <div class="field">
-                <label>링크 (선택)</label>
-                <input
-                  type="text"
-                  id="hrefInput"
-                  placeholder="예: pages/portfolio.html (비우면 클릭 불가)"
-                />
               </div>
               <div class="field">
                 <label>제목 / Alt 텍스트</label>
@@ -131,9 +123,6 @@
                 </button>
               </div>
             </div>
-            <p class="hint" style="margin-top: 6px">
-              새 이미지로 교체하면 기존 이미지는 저장 시 R2에서 자동 정리됩니다.
-            </p>
           </div>
           <div class="field">
             <label>제목 / Alt 텍스트</label>
@@ -141,14 +130,6 @@
               type="text"
               id="editAltInput"
               placeholder="접근성/SEO용 설명"
-            />
-          </div>
-          <div class="field">
-            <label>링크 (선택)</label>
-            <input
-              type="text"
-              id="editHrefInput"
-              placeholder="예: pages/portfolio.html (비우면 클릭 불가)"
             />
           </div>
           <div class="form-actions">

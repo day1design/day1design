@@ -10,7 +10,6 @@ const addFormEl = document.getElementById("addForm");
 const previewWrap = document.getElementById("previewWrap");
 const previewEl = document.getElementById("preview");
 const uploadInput = document.getElementById("uploadInput");
-const hrefInput = document.getElementById("hrefInput");
 const altInput = document.getElementById("altInput");
 const countEl = document.getElementById("slideCount");
 const dirtyEl = document.getElementById("dirtyLabel");
@@ -46,9 +45,6 @@ function render() {
         </div>
         <div class="drag-card-meta">
           <p class="drag-card-title">${adminUtil.escapeHtml(s.alt || "(제목 없음)")}</p>
-          <p class="drag-card-sub ${s.href ? "accent" : ""}">${
-            s.href ? "→ " + adminUtil.escapeHtml(s.href) : "클릭 불가"
-          }</p>
         </div>
       `;
       card.querySelector('[data-act="del"]').addEventListener("click", (e) => {
@@ -75,7 +71,6 @@ const slideModal = document.getElementById("slideModal");
 const editThumbPreview = document.getElementById("editThumbPreview");
 const editThumbFile = document.getElementById("editThumbFile");
 const editAltInput = document.getElementById("editAltInput");
-const editHrefInput = document.getElementById("editHrefInput");
 const btnPickEditThumb = document.getElementById("btnPickEditThumb");
 const btnReplaceEditThumb = document.getElementById("btnReplaceEditThumb");
 
@@ -88,7 +83,6 @@ function openEditModal(index) {
   editingIndex = index;
   editingImage = s.image || "";
   editAltInput.value = s.alt || "";
-  editHrefInput.value = s.href || "";
   renderEditThumb(editingImage);
   slideModal.hidden = false;
   document.body.classList.add("modal-open");
@@ -158,7 +152,7 @@ document.getElementById("slideEditForm").addEventListener("submit", (e) => {
   const s = slides[editingIndex];
   s.image = editingImage;
   s.alt = editAltInput.value.trim();
-  s.href = editHrefInput.value.trim();
+  s.href = "";
   setDirty(true);
   closeEditModal();
   render();
@@ -196,7 +190,6 @@ function showAddForm(show) {
   if (!show) resetAddForm();
 }
 function resetAddForm() {
-  hrefInput.value = "";
   altInput.value = "";
   if (uploadInput) uploadInput.value = "";
   previewWrap.classList.add("hidden");
@@ -242,7 +235,7 @@ document.getElementById("addForm").addEventListener("submit", (e) => {
   }
   slides.push({
     image: pendingAddUrl,
-    href: hrefInput.value.trim(),
+    href: "",
     alt: altInput.value.trim(),
   });
   setDirty(true);
@@ -281,9 +274,11 @@ document.getElementById("btnSave").addEventListener("click", async () => {
 (async () => {
   try {
     const d = await adminUtil.apiCached("/api/hero/slides", { ttl: 30_000 });
+    // href는 UI에서 제거됨 (모든 슬라이드 동일 이동처 아니므로 불필요).
+    // 기존 DB 값과 무관하게 빈 문자열로 고정하여 저장 시 정리.
     slides = (d.slides || []).map((s) => ({
       image: s.image,
-      href: s.href || "",
+      href: "",
       alt: s.alt || "",
     }));
     original = JSON.parse(JSON.stringify(slides));
