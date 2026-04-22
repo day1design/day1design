@@ -227,6 +227,7 @@ async function openDetail(id) {
       </div>
       <div class="form-actions">
         <button class="btn btn-primary" id="btnPatch">상담 정보 저장</button>
+        <button class="btn btn-danger" id="btnDelete" type="button">삭제</button>
       </div>
     </div>
 
@@ -248,6 +249,9 @@ async function openDetail(id) {
   detail
     .querySelector("#btnPatch")
     .addEventListener("click", () => doPatch(id));
+  detail
+    .querySelector("#btnDelete")
+    .addEventListener("click", () => doDelete(id, r.Name));
   detail
     .querySelector("#btnAddMemo")
     .addEventListener("click", () => addMemo(id));
@@ -294,6 +298,34 @@ async function doPatch(id) {
     adminUtil.toast("저장 실패: " + e.message, "error");
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function doDelete(id, name) {
+  const label = name ? `"${name}"` : "이 접수 건";
+  if (
+    !confirm(
+      `${label}을(를) 영구 삭제합니다.\n메모/이력/첨부파일 정보는 복구할 수 없습니다.\n계속할까요?`,
+    )
+  )
+    return;
+  const btn = detail.querySelector("#btnDelete");
+  const patchBtn = detail.querySelector("#btnPatch");
+  btn.disabled = true;
+  if (patchBtn) patchBtn.disabled = true;
+  try {
+    await adminUtil.api(`/api/estimates/${id}`, { method: "DELETE" });
+    adminUtil.cacheInvalidate("/api/estimates");
+    records = records.filter((x) => x.id !== id);
+    selectedId = null;
+    detail.innerHTML =
+      '<div class="empty-state">좌측 목록에서 접수 건을 선택하세요.</div>';
+    render();
+    adminUtil.toast("삭제 완료");
+  } catch (e) {
+    adminUtil.toast("삭제 실패: " + e.message, "error");
+    btn.disabled = false;
+    if (patchBtn) patchBtn.disabled = false;
   }
 }
 

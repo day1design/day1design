@@ -10,7 +10,7 @@ import {
 } from "../lib/security.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { r2Upload, safeFileName, datePrefix, randomId } from "../lib/r2.js";
-import { atCreate, atListAll, atUpdate } from "../lib/airtable.js";
+import { atCreate, atListAll, atUpdate, atDelete } from "../lib/airtable.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import {
   edgeCacheGet,
@@ -53,8 +53,37 @@ export async function handleEstimates(request, env, ctx) {
       return jsonError(401, "Unauthorized");
     const id = idMatch[1];
     if (request.method === "PATCH") return patchEstimate(request, env, id, ctx);
+    if (request.method === "DELETE") return deleteEstimate(env, id, ctx);
   }
   return jsonError(404, "Not Found");
+}
+
+async function deleteEstimate(env, id, ctx) {
+  if (!/^rec[a-zA-Z0-9]{14}$/.test(id)) {
+    return jsonError(400, "Invalid id");
+  }
+  try {
+    await atDelete(env, TABLE, id);
+  } catch (e) {
+    ctx.waitUntil(
+      notifyTelegram(
+        env,
+        `[day1design/estimates] DELETE 실패\nid: ${id}\n${(e.message || "").slice(0, 200)}`,
+      ),
+    );
+    return jsonError(500, "Delete failed");
+  }
+  await edgeCacheDeleteMany(
+    [
+      listCacheNs(null),
+      listCacheNs("New"),
+      listCacheNs("InProgress"),
+      listCacheNs("Done"),
+      listCacheNs("Cancelled"),
+    ],
+    ctx,
+  );
+  return jsonOk({ deleted: true, id });
 }
 
 async function submitEstimate(request, env, ctx) {
