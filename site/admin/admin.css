@@ -1199,19 +1199,31 @@
 
 /* 모바일 (≤640px): 테이블 → 카드 뷰 */
 @media (max-width: 640px) {
-  .est-list .data-table {
-    display: block;
+  /* wrapper 박스 제거 — 카드별로 독립 테두리만 */
+  .data-table-wrap.est-list {
+    overflow: visible;
     border: none;
     background: transparent;
+    border-radius: 0;
+  }
+  .est-list .data-table {
+    display: block;
+    width: 100%;
+    border: none;
+    background: transparent;
+    table-layout: auto;
   }
   .est-list .data-table thead {
     display: none;
   }
-  .est-list .data-table tbody,
-  .est-list .data-table tr {
+  .est-list .data-table tbody {
     display: block;
+    width: 100%;
   }
   .est-list .data-table tbody tr {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
     background: #fff;
     border: 1px solid var(--c-border);
     border-radius: 10px;
@@ -1219,52 +1231,212 @@
     margin-bottom: 10px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     position: relative;
+    overflow: hidden;
+  }
+  .est-list .data-table tbody td .badge,
+  .est-list .data-table tbody td .src-badge {
+    display: inline-block;
+    max-width: 100%;
   }
   .est-list .data-table tbody tr.is-selected {
     border-color: var(--c-text-sub, #64748b);
     box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.12);
   }
+  /* 기본 셀: grid 2컬럼 (라벨 고정폭, 값 1fr) — flex+anonymous text 이슈 회피 */
   .est-list .data-table tbody td {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-    padding: 4px 0;
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 8px;
+    align-items: baseline;
+    padding: 5px 0;
     border: none;
     font-size: 13px;
     color: var(--c-text);
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .est-list .data-table tbody td::before {
     content: attr(data-label);
     font-size: 11px;
     color: var(--c-text-sub, #64748b);
     font-weight: 500;
-    flex-shrink: 0;
-    min-width: 70px;
+    white-space: nowrap;
   }
-  /* 이름 셀은 블록으로 (큰 제목 + 부제) */
+  .est-list .data-table tbody td > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  /* 이름 셀은 상단 강조 블록 — 라벨 숨기고 큰 제목 + 부제 */
   .est-list .data-table tbody td[data-label="이름"] {
     display: block;
-    padding: 8px 0;
+    padding: 0 0 8px;
     border-bottom: 1px dashed var(--c-border);
-    margin-bottom: 4px;
+    margin: 0 0 8px;
   }
   .est-list .data-table tbody td[data-label="이름"]::before {
-    display: block;
-    margin-bottom: 2px;
+    display: none;
   }
   .est-list .data-table tbody td[data-label="이름"] .cell-title {
+    display: block;
     font-size: 15px;
     font-weight: 700;
+    color: var(--c-text);
+    word-break: break-word;
   }
   .est-list .data-table tbody td[data-label="이름"] .cell-sub {
+    display: block;
+    margin-top: 2px;
     color: var(--c-text-sub, #64748b);
     font-size: 11px;
+    word-break: break-all;
+    overflow-wrap: break-word;
+    line-height: 1.4;
   }
-  /* 출처/상태 뱃지는 우측 정렬 */
-  .est-list .data-table tbody td[data-label="출처"],
-  .est-list .data-table tbody td[data-label="상태"] {
-    justify-content: space-between;
+  /* 비어있는 값은 셀 자체 숨김 (라벨만 덩그러니 남는 문제 방지) */
+  .est-list .data-table tbody td:empty {
+    display: none;
+  }
+
+  /* 필터 바: 라벨 숨기고 입력요소 전폭 */
+  .filter-row {
+    gap: 8px;
+  }
+  .filter-row label {
+    display: none;
+  }
+  .filter-row select {
+    min-width: 0;
+    flex: 1 1 45%;
+    font-size: 13px;
+  }
+  .filter-row input[type="search"] {
+    min-width: 0;
+    flex: 1 1 100%;
+    font-size: 13px;
+  }
+
+  /* 상세 영역 - 여백 축소, overflow 방지, 헤더 줄바꿈, dl 블록 레이아웃 */
+  .est-detail {
+    padding: 14px;
+    min-height: auto;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+  }
+  .est-detail * {
+    max-width: 100%;
+  }
+  .est-detail .btn {
+    max-width: 100%;
+    white-space: normal;
+  }
+  .form-actions {
+    flex-wrap: wrap;
+  }
+  .form-actions .btn {
+    flex: 1 1 auto;
+  }
+  .detail-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .detail-head h2 {
+    font-size: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .detail-dl {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .detail-dl dt {
+    font-size: 11px;
+    margin-top: 10px;
+  }
+  .detail-dl dt:first-child {
+    margin-top: 0;
+  }
+  .detail-dl dd {
+    font-size: 13px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed var(--c-border-soft, #e5e7eb);
+    overflow-wrap: anywhere;
+  }
+  .detail-dl dd:last-of-type {
+    border-bottom: none;
+  }
+
+  /* admin-panel 여백 축소 */
+  .admin-panel {
+    padding: 12px 14px;
+  }
+
+  /* 쓰레드 메모 */
+  .memo-item {
+    padding: 10px;
+    overflow: hidden;
+  }
+  .memo-head {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font-size: 11px;
+    align-items: center;
+  }
+  .memo-head > span:first-child {
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .memo-actions {
+    flex: 0 0 auto;
+    display: inline-flex;
+    gap: 2px;
+  }
+  .memo-actions button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .memo-body {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .memo-editor-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .memo-editor-row input {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  /* 회차/히스토리 박스 */
+  .history-box {
+    padding: 10px 12px;
+  }
+  .history-item {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .history-item .h-meta {
+    width: 100%;
+    padding-left: 0;
+  }
+  .session-pill {
+    font-size: 12px;
+    padding: 3px 10px;
+  }
+
+  /* 출처뱃지 한 줄 유지 */
+  .src-badge {
+    white-space: nowrap;
   }
 }
 .est-detail {

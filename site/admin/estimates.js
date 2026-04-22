@@ -73,21 +73,23 @@ function render() {
     return;
   }
   body.innerHTML = list
-    .map(
-      (r) => `
+    .map((r) => {
+      const typeSize = [r.SpaceType, r.SpaceSize].filter(Boolean).join(" / ");
+      const sub = r.Email || r.Campaign || "";
+      return `
     <tr data-id="${r.id}" class="${r.id === selectedId ? "is-selected" : ""}">
       <td data-label="접수일">${escapeHtml((r.SubmittedAt || "").slice(0, 10))}</td>
       <td data-label="출처">${sourceBadge(r.Source)}</td>
       <td data-label="이름">
-        <div class="cell-title">${escapeHtml(r.Name)}</div>
-        <small class="cell-sub">${escapeHtml(r.Email || r.Campaign || "")}</small>
+        <div class="cell-title">${escapeHtml(r.Name || "")}</div>
+        ${sub ? `<small class="cell-sub">${escapeHtml(sub)}</small>` : ""}
       </td>
-      <td data-label="연락처">${escapeHtml(r.Phone)}</td>
-      <td data-label="유형/평수">${escapeHtml(r.SpaceType || "")} ${r.SpaceSize ? "/ " + escapeHtml(r.SpaceSize) : ""}</td>
+      <td data-label="연락처">${escapeHtml(r.Phone || "")}</td>
+      <td data-label="유형/평수">${escapeHtml(typeSize)}</td>
       <td data-label="지점">${escapeHtml(r.Branch || "")}</td>
       <td data-label="상태">${statusBadge(r.Status)}</td>
-    </tr>`,
-    )
+    </tr>`;
+    })
     .join("");
   body.querySelectorAll("tr").forEach((tr) => {
     tr.addEventListener("click", () => openDetail(tr.dataset.id));
