@@ -195,9 +195,9 @@
   .modal-overlay {
     padding: 20px;
   }
-  /* 로고 아래 공백 확보 — project-section 상단 여백 추가 */
+  /* 로고 아래 공백 — 커뮤니티 페이지와 동일(헤더 70 + 20 = 90px) */
   .project-section {
-    padding-top: calc(var(--section-padding) + 20px);
+    padding-top: calc(var(--header-height) + 20px);
   }
   /* LNB 크기 축소 */
   .filter-tabs button {
