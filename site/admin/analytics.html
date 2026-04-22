@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>유입통계 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="stylesheet" href="https://day1design.vercel.app/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.vercel.app/css/reset.css" />
+    <link rel="stylesheet" href="admin.css" />
+    <script>
+      window.ADMIN_PAGE = { title: "유입통계", nav: "analytics" };
+    </script>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <div class="notice-banner" role="note" aria-label="데이터 연결 안내">
+          <strong>⚠ 예시 데이터입니다.</strong>
+          도메인 연결 후 Google Analytics 4 · Search Console 연동을 진행하며,
+          실제 연결 전까지는 아래 값이 샘플로 표시됩니다.
+        </div>
+
+        <div class="analytics-toolbar">
+          <div class="seg" role="tablist" aria-label="기간">
+            <button type="button" class="seg-btn" data-range="7">7일</button>
+            <button
+              type="button"
+              class="seg-btn active"
+              data-range="30"
+              aria-pressed="true"
+            >
+              30일
+            </button>
+            <button type="button" class="seg-btn" data-range="90">90일</button>
+          </div>
+          <div class="analytics-compare">비교 기준: 이전 기간</div>
+        </div>
+
+        <section class="kpi-grid">
+          <article class="kpi-card">
+            <div class="kpi-label">방문자</div>
+            <div class="kpi-value" id="kpiVisitors">—</div>
+            <div class="kpi-delta" id="kpiVisitorsDelta">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">페이지뷰</div>
+            <div class="kpi-value" id="kpiPageviews">—</div>
+            <div class="kpi-delta" id="kpiPageviewsDelta">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">평균 체류</div>
+            <div class="kpi-value" id="kpiDuration">—</div>
+            <div class="kpi-delta" id="kpiDurationDelta">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">이탈률</div>
+            <div class="kpi-value" id="kpiBounce">—</div>
+            <div class="kpi-delta" id="kpiBounceDelta">—</div>
+          </article>
+        </section>
+
+        <section class="analytics-row">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>일별 방문 추이</h3>
+              <span class="panel-sub">방문자 · 페이지뷰</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="chartTrend" height="260"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section class="analytics-row two-col">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>인기 페이지 Top 10</h3>
+              <span class="panel-sub">페이지뷰 기준</span>
+            </div>
+            <table class="top-table" id="topPagesTable">
+              <thead>
+                <tr>
+                  <th style="width: 40px">#</th>
+                  <th>경로</th>
+                  <th style="width: 100px; text-align: right">페이지뷰</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h3>유입 경로</h3>
+              <span class="panel-sub">세션 비율</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="chartSources" height="260"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section class="analytics-row">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>연결 가이드</h3>
+            </div>
+            <ol class="connect-steps">
+              <li>도메인(day1design.co)을 Vercel 프로젝트에 연결합니다.</li>
+              <li>
+                Google Analytics 4 속성을 생성하고 측정 ID를 받아 HTML에
+                삽입합니다.
+              </li>
+              <li>
+                Search Console에서 동일 도메인을 등록하고 사이트맵을 제출합니다.
+              </li>
+              <li>
+                Google Cloud Console에서 서비스 계정을 생성하고, GA4 · Search
+                Console의 읽기 권한을 부여합니다.
+              </li>
+              <li>
+                서비스 계정 키를 Worker 시크릿에 저장하면 이 페이지에서 실제
+                값이 표시됩니다.
+              </li>
+            </ol>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="config.js"></script>
+    <script src="admin.js"></script>
+    <script src="analytics.js"></script>
+  </body>
+</html>

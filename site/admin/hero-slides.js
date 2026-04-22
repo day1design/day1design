@@ -206,6 +206,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
       method: "PUT",
       json: { slides, config: { maxSlides: 10, autoPlayMs: 6000 } },
     });
+    adminUtil.cacheInvalidate("/api/hero/slides");
     original = JSON.parse(JSON.stringify(slides));
     setDirty(false);
     adminUtil.toast("저장 완료");
@@ -219,7 +220,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
 // 초기 로드
 (async () => {
   try {
-    const d = await adminUtil.api("/api/hero/slides");
+    const d = await adminUtil.apiCached("/api/hero/slides", { ttl: 30_000 });
     slides = (d.slides || []).map((s) => ({
       image: s.image,
       href: s.href || "",

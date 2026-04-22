@@ -326,6 +326,7 @@ async function doDelete(id) {
     return;
   try {
     await adminUtil.api(`/api/portfolio/${id}`, { method: "DELETE" });
+    adminUtil.cacheInvalidate("/api/portfolio");
     records = records.filter((x) => x.id !== id);
     original = original.filter((x) => x.id !== id);
     render();
@@ -379,6 +380,7 @@ form.addEventListener("submit", async (e) => {
       original.push(JSON.parse(JSON.stringify(r.record)));
     }
     records.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    adminUtil.cacheInvalidate("/api/portfolio");
     render();
     closeModal();
     adminUtil.toast("저장 완료");
@@ -441,6 +443,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
   }
   btn.textContent = "순서 저장";
   btn.disabled = false;
+  adminUtil.cacheInvalidate("/api/portfolio");
   if (failed === 0) {
     setDirty(false);
     adminUtil.toast(`저장 완료 (${done}건)`);
@@ -452,7 +455,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
 // ========== 초기 로드 ==========
 (async () => {
   try {
-    const d = await adminUtil.api("/api/portfolio");
+    const d = await adminUtil.apiCached("/api/portfolio", { ttl: 30_000 });
     records = d.records || [];
     records.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     original = JSON.parse(JSON.stringify(records));

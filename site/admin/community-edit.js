@@ -6,7 +6,10 @@ const IDX_PARAM = params.get("idx") || "";
 const metaForm = document.getElementById("metaForm");
 const blocksList = document.getElementById("blocksList");
 
-let blocks = []; // [{id, type, content?, src?, images?, layout?}]
+// 통합 블록 모델:
+//   text  → { id, type: "text",  content }
+//   image → { id, type: "image", images: [url...], layout: "grid-2|grid-3|grid-4" }
+let blocks = [];
 let blockSeq = 0;
 let thumbUrl = "";
 
@@ -22,9 +25,9 @@ function generateIdx() {
 
 function addBlock(type, data = {}) {
   const b = { id: newId(), type };
-  if (type === "text") b.content = data.content || "";
-  else if (type === "image") b.src = data.src || "";
-  else if (type === "gallery") {
+  if (type === "text") {
+    b.content = data.content || "";
+  } else if (type === "image") {
     b.images = Array.isArray(data.images) ? data.images.slice() : [];
     b.layout = data.layout || "grid-2";
   }
@@ -71,54 +74,37 @@ function renderBlocks() {
           <textarea class="block-text" rows="5" placeholder="텍스트를 입력하세요...">${adminUtil.escapeHtml(b.content)}</textarea>
         </div>`;
       } else if (b.type === "image") {
-        const hasImg = !!b.src;
-        const preview = hasImg
-          ? `<img src="${adminUtil.escapeHtml(b.src)}" alt="">`
-          : '<span style="color:var(--c-text-muted);font-size:11px">미업로드</span>';
-        return `
-        <div class="block-item" data-id="${b.id}">
-          <div class="block-head">
-            <span class="block-tag">${i + 1}. 이미지 1장</span>
-            <div class="block-actions">
-              <button class="icon-btn" data-act="up" ${i === 0 ? "disabled" : ""}>↑</button>
-              <button class="icon-btn" data-act="down" ${i === blocks.length - 1 ? "disabled" : ""}>↓</button>
-              <button class="icon-btn danger" data-act="del">✕</button>
-            </div>
-          </div>
-          <div class="block-image-body">
-            <div class="block-image-preview" data-preview>${preview}</div>
-            <div class="block-image-fields">
-              <input type="file" class="block-file" accept="image/*" hidden />
-              <button type="button" class="btn btn-ghost block-upload-btn">
-                ${hasImg ? "🔄 이미지 교체" : "📤 이미지 업로드"}
-              </button>
-            </div>
-          </div>
-        </div>`;
-      } else if (b.type === "gallery") {
         const count = (b.images || []).length;
+        const showLayout = count > 1;
+        const label =
+          count === 0
+            ? "이미지"
+            : count === 1
+              ? "이미지 1장"
+              : `이미지 ${count}장`;
         return `
         <div class="block-item" data-id="${b.id}">
           <div class="block-head">
-            <span class="block-tag">${i + 1}. 갤러리 (${count}장)</span>
+            <span class="block-tag">${i + 1}. ${label}</span>
             <div class="block-actions">
               <button class="icon-btn" data-act="up" ${i === 0 ? "disabled" : ""}>↑</button>
               <button class="icon-btn" data-act="down" ${i === blocks.length - 1 ? "disabled" : ""}>↓</button>
               <button class="icon-btn danger" data-act="del">✕</button>
             </div>
           </div>
-          <div class="field" style="margin-bottom:10px">
+          <div class="field block-layout-row" style="margin-bottom:10px; ${showLayout ? "" : "display:none"}">
             <label style="display:inline-block;margin-right:8px">배치</label>
             <select class="block-layout">
               <option value="grid-2" ${b.layout === "grid-2" ? "selected" : ""}>2열 (나란히)</option>
               <option value="grid-3" ${b.layout === "grid-3" ? "selected" : ""}>3열</option>
               <option value="grid-4" ${b.layout === "grid-4" ? "selected" : ""}>4열</option>
             </select>
+            <span class="admin-sub" style="margin-left:8px;font-size:11px">2장 이상일 때 적용됩니다.</span>
           </div>
           <div class="gallery-grid block-gallery" data-gallery></div>
-          <input type="file" class="block-gallery-files" accept="image/*" multiple hidden />
+          <input type="file" class="block-files" accept="image/*" multiple hidden />
           <button type="button" class="btn btn-ghost block-add-images" style="margin-top:8px">
-            + 이미지 추가
+            ${count ? "+ 이미지 추가" : "📤 이미지 업로드"}
           </button>
         </div>`;
       }
@@ -129,6 +115,7 @@ function renderBlocks() {
   blocksList.querySelectorAll(".block-item").forEach((el) => {
     const id = el.dataset.id;
     const b = blocks.find((x) => x.id === id);
+    if (!b) return;
     el.querySelector('[data-act="up"]').addEventListener("click", () =>
       moveBlock(id, -1),
     );
@@ -143,39 +130,36 @@ function renderBlocks() {
       el.querySelector(".block-text").addEventListener("input", (e) => {
         b.content = e.target.value;
       });
-    } else if (b.type === "image") {
-      const uploadBtn = el.querySelector(".block-upload-btn");
-      const fileInput = el.querySelector(".block-file");
-      const preview = el.querySelector("[data-preview]");
-      uploadBtn.addEventListener("click", () => fileInput.click());
-      fileInput.addEventListener("change", async () => {
-        const f = fileInput.files?.[0];
-        if (!f) return;
-        try {
-          adminUtil.toast("업로드 중...");
-          const res = await adminUtil.uploadImage(f, {
-            folder: "community/posts",
-          });
-          b.src = res.url;
-          preview.innerHTML = `<img src="${adminUtil.escapeHtml(res.url)}" alt="">`;
-          uploadBtn.textContent = "🔄 이미지 교체";
-          adminUtil.toast("업로드 완료");
-        } catch (e) {
-          adminUtil.toast("업로드 실패: " + e.message, "error");
-        } finally {
-          fileInput.value = "";
-        }
-      });
-    } else if (b.type === "gallery") {
+      return;
+    }
+
+    if (b.type === "image") {
       const layoutSel = el.querySelector(".block-layout");
+      const layoutRow = el.querySelector(".block-layout-row");
       const galleryEl = el.querySelector("[data-gallery]");
       const addBtn = el.querySelector(".block-add-images");
-      const fileInput = el.querySelector(".block-gallery-files");
+      const fileInput = el.querySelector(".block-files");
 
       layoutSel.addEventListener("change", () => {
         b.layout = layoutSel.value;
-        renderGallery();
       });
+
+      function updateLabel() {
+        const tag = el.querySelector(".block-tag");
+        if (!tag) return;
+        const idx = blocks.findIndex((x) => x.id === b.id) + 1;
+        const n = b.images.length;
+        const label =
+          n === 0 ? "이미지" : n === 1 ? "이미지 1장" : `이미지 ${n}장`;
+        tag.textContent = `${idx}. ${label}`;
+      }
+
+      function updateLayoutVisibility() {
+        layoutRow.style.display = b.images.length > 1 ? "" : "none";
+        addBtn.textContent = b.images.length
+          ? "+ 이미지 추가"
+          : "📤 이미지 업로드";
+      }
 
       function renderGallery() {
         galleryEl.innerHTML = "";
@@ -200,18 +184,11 @@ function renderBlocks() {
               e.stopPropagation();
               b.images.splice(j, 1);
               renderGallery();
-              updateCountLabel();
+              updateLabel();
+              updateLayoutVisibility();
             });
           galleryEl.appendChild(item);
         });
-      }
-
-      function updateCountLabel() {
-        const tag = el.querySelector(".block-tag");
-        if (tag) {
-          const idx = blocks.findIndex((x) => x.id === b.id) + 1;
-          tag.textContent = `${idx}. 갤러리 (${b.images.length}장)`;
-        }
       }
 
       addBtn.addEventListener("click", () => fileInput.click());
@@ -228,7 +205,8 @@ function renderBlocks() {
             });
             b.images.push(res.url);
             renderGallery();
-            updateCountLabel();
+            updateLabel();
+            updateLayoutVisibility();
             ok++;
           } catch {
             fail++;
@@ -240,7 +218,6 @@ function renderBlocks() {
         fileInput.value = "";
       });
 
-      // 갤러리 내부 드래그 정렬
       adminUtil.initDragSort({
         container: galleryEl,
         itemSelector: ".gallery-item",
@@ -252,6 +229,7 @@ function renderBlocks() {
       });
 
       renderGallery();
+      updateLayoutVisibility();
     }
   });
 }
@@ -262,9 +240,6 @@ document
 document
   .getElementById("btnAddImage")
   .addEventListener("click", () => addBlock("image"));
-document
-  .getElementById("btnAddGallery")
-  .addEventListener("click", () => addBlock("gallery"));
 
 // ========== 썸네일 ==========
 function renderThumbPreview(url) {
@@ -323,7 +298,6 @@ document.getElementById("btnSave").addEventListener("click", async () => {
     btn.disabled = false;
     return;
   }
-  // idx는 신규면 자동 생성, 편집이면 기존 값 유지
   const idx = f.idx.value.trim() || generateIdx();
 
   const cleaned = blocks
@@ -333,14 +307,12 @@ document.getElementById("btnSave").addEventListener("click", async () => {
         return c ? { type: "text", content: c } : null;
       }
       if (b.type === "image") {
-        const s = (b.src || "").trim();
-        return s ? { type: "image", src: s } : null;
-      }
-      if (b.type === "gallery") {
         const imgs = (b.images || []).filter(Boolean);
-        return imgs.length
-          ? { type: "gallery", images: imgs, layout: b.layout || "grid-2" }
-          : null;
+        if (!imgs.length) return null;
+        const layout = /^grid-(2|3|4)$/.test(b.layout || "")
+          ? b.layout
+          : "grid-2";
+        return { type: "image", images: imgs, layout };
       }
       return null;
     })
@@ -348,8 +320,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
 
   const allImages = [];
   cleaned.forEach((b) => {
-    if (b.type === "image" && b.src) allImages.push(b.src);
-    else if (b.type === "gallery" && Array.isArray(b.images))
+    if (b.type === "image" && Array.isArray(b.images))
       allImages.push(...b.images);
   });
   const bodyText = cleaned
@@ -383,6 +354,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
         { method: "PATCH", json: payload },
       );
     }
+    adminUtil.cacheInvalidate("/api/community");
     adminUtil.toast("저장 완료");
     setTimeout(() => (location.href = "community"), 600);
   } catch (e) {
@@ -393,6 +365,34 @@ document.getElementById("btnSave").addEventListener("click", async () => {
 });
 
 // ========== 초기 로드 ==========
+function normalizeBlock(b) {
+  const obj = { id: newId(), type: b.type };
+  if (b.type === "text") {
+    obj.type = "text";
+    obj.content = b.content || "";
+    return obj;
+  }
+  // 기존 image (단일 src) → images 배열로 승격
+  if (b.type === "image") {
+    obj.type = "image";
+    obj.images = Array.isArray(b.images)
+      ? b.images.slice()
+      : b.src
+        ? [b.src]
+        : [];
+    obj.layout = /^grid-(2|3|4)$/.test(b.layout || "") ? b.layout : "grid-2";
+    return obj;
+  }
+  // 기존 gallery → image 타입으로 통일
+  if (b.type === "gallery") {
+    obj.type = "image";
+    obj.images = Array.isArray(b.images) ? b.images.slice() : [];
+    obj.layout = /^grid-(2|3|4)$/.test(b.layout || "") ? b.layout : "grid-2";
+    return obj;
+  }
+  return null;
+}
+
 (async () => {
   if (IS_NEW) {
     metaForm.elements.idx.value = generateIdx();
@@ -407,8 +407,9 @@ document.getElementById("btnSave").addEventListener("click", async () => {
     return;
   }
   try {
-    const d = await adminUtil.api(
+    const d = await adminUtil.apiCached(
       `/api/community/${encodeURIComponent(IDX_PARAM)}`,
+      { ttl: 15_000 },
     );
     const p = d.post || {};
     metaForm.elements.idx.value = p.idx || IDX_PARAM;
@@ -419,16 +420,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
     metaForm.elements.excerpt.value = p.excerpt || "";
     thumbUrl = p.thumb || "";
     renderThumbPreview(thumbUrl);
-    blocks = (p.content_blocks || []).map((b) => {
-      const obj = { id: newId(), type: b.type };
-      if (b.type === "text") obj.content = b.content || "";
-      else if (b.type === "image") obj.src = b.src || "";
-      else if (b.type === "gallery") {
-        obj.images = Array.isArray(b.images) ? b.images.slice() : [];
-        obj.layout = b.layout || "grid-2";
-      }
-      return obj;
-    });
+    blocks = (p.content_blocks || []).map(normalizeBlock).filter(Boolean);
     renderBlocks();
   } catch (e) {
     adminUtil.toast("로드 실패: " + e.message, "error");

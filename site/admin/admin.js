@@ -58,6 +58,43 @@ async function api(path, opts = {}) {
   return data;
 }
 
+// ========== SESSION CACHE ==========
+// 페이지 전환 시 Airtable 재조회 지연을 줄이기 위한 얇은 세션 캐시.
+// 저장/수정 직후에는 cacheInvalidate 로 해당 경로를 비워야 함.
+const CACHE_PREFIX = "admin_cache:";
+
+async function apiCached(path, opts = {}) {
+  const ttl = opts.ttl ?? 30_000; // 기본 30초
+  const key = CACHE_PREFIX + path;
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (raw) {
+      const { t, data } = JSON.parse(raw);
+      if (Date.now() - t < ttl) return data;
+    }
+  } catch {}
+  const data = await api(path, opts);
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ t: Date.now(), data }));
+  } catch {}
+  return data;
+}
+
+function cacheInvalidate(pathPrefix) {
+  try {
+    if (!pathPrefix) {
+      Object.keys(sessionStorage).forEach((k) => {
+        if (k.startsWith(CACHE_PREFIX)) sessionStorage.removeItem(k);
+      });
+      return;
+    }
+    const full = CACHE_PREFIX + pathPrefix;
+    Object.keys(sessionStorage).forEach((k) => {
+      if (k.startsWith(full)) sessionStorage.removeItem(k);
+    });
+  } catch {}
+}
+
 function apiUpload(path, formData) {
   const token = getToken();
   const headers = new Headers();
@@ -166,6 +203,12 @@ const MENU = [
     href: "estimates",
     label: "상담신청",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>',
+  },
+  {
+    nav: "analytics",
+    href: "analytics",
+    label: "유입통계",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg>',
   },
 ];
 
@@ -469,6 +512,8 @@ function formatBytes(n) {
 
 window.adminUtil = {
   api,
+  apiCached,
+  cacheInvalidate,
   apiUpload,
   uploadImage,
   compressToWebP,

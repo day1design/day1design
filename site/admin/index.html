@@ -61,7 +61,7 @@
       (async () => {
         async function loadCount(path, id, key = "records") {
           try {
-            const d = await adminUtil.api(path);
+            const d = await adminUtil.apiCached(path, { ttl: 60_000 });
             const n = Array.isArray(d?.[key])
               ? d[key].length
               : Array.isArray(d?.posts)

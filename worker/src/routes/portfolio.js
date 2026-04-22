@@ -8,18 +8,25 @@ import {
   atDelete,
 } from "../lib/airtable.js";
 import { r2DeleteMany } from "../lib/r2.js";
+import {
+  edgeCacheGet,
+  edgeCachePut,
+  edgeCacheDelete,
+} from "../lib/edge-cache.js";
 
 const TABLE = "Portfolio";
+const CACHE_NS = "portfolio:list";
+const CACHE_TTL = 60;
 
 export async function handlePortfolio(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/portfolio/, "") || "/";
 
-  if (path === "/" && request.method === "GET") return listPortfolio(env);
+  if (path === "/" && request.method === "GET") return listPortfolio(env, ctx);
   if (path === "/" && request.method === "POST") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    return createProject(request, env);
+    return createProject(request, env, ctx);
   }
   const m = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (m) {
@@ -70,11 +77,16 @@ function safeJsonParse(s, fallback = []) {
   }
 }
 
-async function listPortfolio(env) {
+async function listPortfolio(env, ctx) {
+  const cached = await edgeCacheGet(CACHE_NS);
+  if (cached) return jsonOk(cached);
+
   const records = await atListAll(env, TABLE, {
     sort: [{ field: "Order", direction: "asc" }],
   });
-  return jsonOk({ records: records.map(toClient) });
+  const payload = { records: records.map(toClient) };
+  await edgeCachePut(CACHE_NS, payload, CACHE_TTL, ctx);
+  return jsonOk(payload);
 }
 
 async function getProject(env, id) {
@@ -82,7 +94,7 @@ async function getProject(env, id) {
   return jsonOk({ record: toClient(r) });
 }
 
-async function createProject(request, env) {
+async function createProject(request, env, ctx) {
   let body;
   try {
     body = await request.json();
@@ -94,6 +106,7 @@ async function createProject(request, env) {
     return jsonError(400, "Name and Folder required");
   }
   const r = await atCreate(env, TABLE, fields);
+  await edgeCacheDelete(CACHE_NS, ctx);
   return jsonOk({ record: toClient(r) });
 }
 
@@ -119,6 +132,7 @@ async function patchProject(request, env, id, ctx) {
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }
+  await edgeCacheDelete(CACHE_NS, ctx);
   return jsonOk({ record: after, cleaned: orphan.length });
 }
 
@@ -131,6 +145,7 @@ async function deleteProject(env, id, ctx) {
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }
+  await edgeCacheDelete(CACHE_NS, ctx);
   return jsonOk({ deleted: id, cleaned: urls.length });
 }
 

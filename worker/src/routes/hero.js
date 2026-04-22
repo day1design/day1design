@@ -8,16 +8,23 @@ import {
   datePrefix,
   randomId,
 } from "../lib/r2.js";
+import {
+  edgeCacheGet,
+  edgeCachePut,
+  edgeCacheDelete,
+} from "../lib/edge-cache.js";
 
 const TABLE = "HeroSlides";
 const MAX_IMG_BYTES = 10 * 1024 * 1024;
+const CACHE_NS = "hero:slides";
+const CACHE_TTL = 60;
 
 export async function handleHero(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/hero/, "");
 
   if (path === "/slides" && request.method === "GET") {
-    return getSlides(env);
+    return getSlides(env, ctx);
   }
   if (path === "/slides" && request.method === "PUT") {
     if (!(await verifyAdmin(request, env)))
@@ -32,7 +39,10 @@ export async function handleHero(request, env, ctx) {
   return jsonError(404, "Not Found");
 }
 
-async function getSlides(env) {
+async function getSlides(env, ctx) {
+  const cached = await edgeCacheGet(CACHE_NS);
+  if (cached) return jsonOk(cached);
+
   const records = await atListAll(env, TABLE, {
     sort: [{ field: "Order", direction: "asc" }],
   });
@@ -45,10 +55,12 @@ async function getSlides(env) {
       alt: r.fields.Alt || "",
       order: r.fields.Order ?? 0,
     }));
-  return jsonOk({
+  const payload = {
     config: { maxSlides: 10, autoPlayMs: 6000 },
     slides,
-  });
+  };
+  await edgeCachePut(CACHE_NS, payload, CACHE_TTL, ctx);
+  return jsonOk(payload);
 }
 
 /** 전체 배열 교체: 기존 삭제 → 새로 생성. Airtable에는 bulk replace가 없으니 diff보다 이게 단순함 */
@@ -92,6 +104,7 @@ async function putSlides(request, env, ctx) {
     else await task;
   }
 
+  await edgeCacheDelete(CACHE_NS, ctx);
   return jsonOk({ saved: created.length, cleaned: orphanUrls.length });
 }
 

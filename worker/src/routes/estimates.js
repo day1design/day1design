@@ -12,8 +12,17 @@ import { verifyAdmin } from "../lib/auth.js";
 import { r2Upload, safeFileName, datePrefix, randomId } from "../lib/r2.js";
 import { atCreate, atListAll, atUpdate } from "../lib/airtable.js";
 import { notifyTelegram } from "../lib/telegram.js";
+import {
+  edgeCacheGet,
+  edgeCachePut,
+  edgeCacheDeleteMany,
+} from "../lib/edge-cache.js";
 
 const TABLE = "Estimates";
+const CACHE_TTL = 30;
+function listCacheNs(status) {
+  return `estimates:list:${status || "all"}`;
+}
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = [
   "image/jpeg",
@@ -36,14 +45,14 @@ export async function handleEstimates(request, env, ctx) {
   if (path === "/" && request.method === "GET") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    return listEstimates(request, env);
+    return listEstimates(request, env, ctx);
   }
   const idMatch = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (idMatch) {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
     const id = idMatch[1];
-    if (request.method === "PATCH") return patchEstimate(request, env, id);
+    if (request.method === "PATCH") return patchEstimate(request, env, id, ctx);
   }
   return jsonError(404, "Not Found");
 }
@@ -136,6 +145,12 @@ async function submitEstimate(request, env, ctx) {
     ),
   );
 
+  // 관리자 목록 캐시 무효화
+  await edgeCacheDeleteMany(
+    [listCacheNs(null), listCacheNs("접수대기"), listCacheNs("New")],
+    ctx,
+  );
+
   return jsonOk({ id: record.id, received: true });
 }
 
@@ -159,9 +174,13 @@ async function uploadField(form, fieldName, folder, prefix, env) {
   return urls;
 }
 
-async function listEstimates(request, env) {
+async function listEstimates(request, env, ctx) {
   const url = new URL(request.url);
   const status = url.searchParams.get("status");
+  const ns = listCacheNs(status);
+  const cached = await edgeCacheGet(ns);
+  if (cached) return jsonOk(cached);
+
   const filter = status
     ? `{Status}='${status.replace(/'/g, "\\'")}'`
     : undefined;
@@ -169,17 +188,19 @@ async function listEstimates(request, env) {
     filter,
     sort: [{ field: "SubmittedAt", direction: "desc" }],
   });
-  return jsonOk({
+  const payload = {
     records: records.map((r) => ({
       id: r.id,
       ...r.fields,
       ConceptFiles: safeJsonParse(r.fields.ConceptFiles),
       FloorPlans: safeJsonParse(r.fields.FloorPlans),
     })),
-  });
+  };
+  await edgeCachePut(ns, payload, CACHE_TTL, ctx);
+  return jsonOk(payload);
 }
 
-async function patchEstimate(request, env, id) {
+async function patchEstimate(request, env, id, ctx) {
   let body;
   try {
     body = await request.json();
@@ -197,6 +218,17 @@ async function patchEstimate(request, env, id) {
   for (const k of allowed) if (k in body) fields[k] = body[k];
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
   const record = await atUpdate(env, TABLE, id, fields);
+  // 상태 변경 가능성 → 모든 status 조합 invalidate
+  await edgeCacheDeleteMany(
+    [
+      listCacheNs(null),
+      listCacheNs("New"),
+      listCacheNs("InProgress"),
+      listCacheNs("Done"),
+      listCacheNs("Cancelled"),
+    ],
+    ctx,
+  );
   return jsonOk({ id: record.id, updated: record.fields });
 }
 

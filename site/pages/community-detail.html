@@ -410,23 +410,30 @@
                 }
               });
               flushBuffer();
-            } else if (block.type === "image" && block.src) {
-              mainHtml += `<div class="detail-img"><img src="${block.src}" alt="${post.title}" loading="lazy"></div>`;
-            } else if (
-              block.type === "gallery" &&
-              Array.isArray(block.images) &&
-              block.images.length > 0
-            ) {
-              const layout = /^(grid-2|grid-3|grid-4)$/.test(block.layout || "")
-                ? block.layout
-                : "grid-2";
-              const items = block.images
-                .map(
-                  (src) =>
-                    `<div class="detail-gallery-item"><img src="${src}" alt="${post.title}" loading="lazy"></div>`,
+            } else if (block.type === "image" || block.type === "gallery") {
+              const imgs =
+                Array.isArray(block.images) && block.images.length
+                  ? block.images
+                  : block.src
+                    ? [block.src]
+                    : [];
+              if (!imgs.length) return;
+              if (imgs.length === 1) {
+                mainHtml += `<div class="detail-img"><img src="${imgs[0]}" alt="${post.title}" loading="lazy"></div>`;
+              } else {
+                const layout = /^(grid-2|grid-3|grid-4)$/.test(
+                  block.layout || "",
                 )
-                .join("");
-              mainHtml += `<div class="detail-gallery ${layout}">${items}</div>`;
+                  ? block.layout
+                  : "grid-2";
+                const items = imgs
+                  .map(
+                    (src) =>
+                      `<div class="detail-gallery-item"><img src="${src}" alt="${post.title}" loading="lazy"></div>`,
+                  )
+                  .join("");
+                mainHtml += `<div class="detail-gallery ${layout}">${items}</div>`;
+              }
             }
           });
         } else {

@@ -95,20 +95,34 @@
 
         <div class="block-editor">
           <h3 class="be-title">본문 블록</h3>
-          <p class="admin-sub" style="margin-bottom: 16px">
-            블록 순서가 곧 본문 순서입니다. 텍스트·이미지·갤러리를 자유롭게
-            배치하세요.
+          <p class="admin-sub" style="margin-bottom: 12px">
+            블록 순서가 곧 본문 순서입니다. 필요한 블록을 추가해 배치하세요.
           </p>
+          <details class="block-guide">
+            <summary>📘 블록 사용 가이드</summary>
+            <ul>
+              <li><strong>텍스트 블록</strong> — 본문 글을 작성합니다.</li>
+              <li>
+                <strong>이미지 블록</strong> — 사진을 추가합니다. 1장이면 전체
+                너비로, 여러 장이면 2·3·4열 배치 중 선택할 수 있습니다.
+              </li>
+              <li>
+                <strong>블록 순서 바꾸기</strong> — 각 블록의 ↑↓ 버튼으로
+                이동합니다.
+              </li>
+              <li>
+                <strong>블록 내부 이미지 순서</strong> — 썸네일을 드래그해서
+                교체하세요.
+              </li>
+            </ul>
+          </details>
           <div class="blocks-list" id="blocksList"></div>
           <div class="blocks-add">
             <button type="button" class="btn btn-ghost" id="btnAddText">
               + 텍스트 블록
             </button>
             <button type="button" class="btn btn-ghost" id="btnAddImage">
-              + 이미지 (1장)
-            </button>
-            <button type="button" class="btn btn-ghost" id="btnAddGallery">
-              + 갤러리 (여러 장)
+              + 이미지 블록
             </button>
           </div>
         </div>

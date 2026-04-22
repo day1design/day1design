@@ -68,6 +68,7 @@ async function doDelete(idx) {
     await adminUtil.api(`/api/community/${encodeURIComponent(idx)}`, {
       method: "DELETE",
     });
+    adminUtil.cacheInvalidate("/api/community");
     posts = posts.filter((x) => x.idx !== idx);
     render();
     adminUtil.toast("삭제 완료");
@@ -83,7 +84,7 @@ filterSearch.addEventListener("input", render);
   await adminUtil.ensureAuth();
   adminUtil.pingApi();
   try {
-    const d = await adminUtil.api("/api/community");
+    const d = await adminUtil.apiCached("/api/community", { ttl: 30_000 });
     posts = d.posts || [];
     render();
   } catch (e) {

@@ -9,8 +9,20 @@ import {
   atList,
 } from "../lib/airtable.js";
 import { r2DeleteMany } from "../lib/r2.js";
+import {
+  edgeCacheGet,
+  edgeCachePut,
+  edgeCacheDeleteMany,
+} from "../lib/edge-cache.js";
 
 const TABLE = "Community";
+const CACHE_TTL = 60;
+function listCacheNs(board) {
+  return `community:list:${board || "all"}`;
+}
+function postCacheNs(idx) {
+  return `community:post:${idx}`;
+}
 
 function collectPostUrls(post) {
   if (!post) return [];
@@ -19,9 +31,9 @@ function collectPostUrls(post) {
   (post.images || []).forEach((u) => u && out.add(u));
   (post.content_blocks || []).forEach((b) => {
     if (!b) return;
-    if (b.type === "image" && b.src) out.add(b.src);
-    else if (b.type === "gallery" && Array.isArray(b.images)) {
-      b.images.forEach((u) => u && out.add(u));
+    if (b.type === "image" || b.type === "gallery") {
+      if (b.src) out.add(b.src);
+      if (Array.isArray(b.images)) b.images.forEach((u) => u && out.add(u));
     }
   });
   return [...out];
@@ -32,17 +44,17 @@ export async function handleCommunity(request, env, ctx) {
   const path = url.pathname.replace(/^\/api\/community/, "") || "/";
 
   if (path === "/" && request.method === "GET")
-    return listCommunity(request, env);
+    return listCommunity(request, env, ctx);
   if (path === "/" && request.method === "POST") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    return createPost(request, env);
+    return createPost(request, env, ctx);
   }
   // /:idx — idx는 숫자 문자열
   const m = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (m) {
     const idx = m[1];
-    if (request.method === "GET") return getPost(env, idx);
+    if (request.method === "GET") return getPost(env, idx, ctx);
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
     if (request.method === "PATCH") return patchPost(request, env, idx, ctx);
@@ -84,31 +96,43 @@ function toDetailClient(r) {
   };
 }
 
-async function listCommunity(request, env) {
+async function listCommunity(request, env, ctx) {
   const url = new URL(request.url);
   const board = url.searchParams.get("board");
+  const ns = listCacheNs(board);
+  const cached = await edgeCacheGet(ns);
+  if (cached) return jsonOk(cached);
+
   const filter = board ? `{Board}='${board.replace(/'/g, "\\'")}'` : undefined;
   const records = await atListAll(env, TABLE, {
     filter,
     sort: [{ field: "Date", direction: "desc" }],
   });
-  return jsonOk({
+  const payload = {
     total: records.length,
     posts: records.map(toListClient),
-  });
+  };
+  await edgeCachePut(ns, payload, CACHE_TTL, ctx);
+  return jsonOk(payload);
 }
 
-async function getPost(env, idx) {
+async function getPost(env, idx, ctx) {
+  const ns = postCacheNs(idx);
+  const cached = await edgeCacheGet(ns);
+  if (cached) return jsonOk(cached);
+
   const data = await atList(env, TABLE, {
     filter: `{Idx}='${idx.replace(/'/g, "\\'")}'`,
     pageSize: 1,
   });
   const r = (data.records || [])[0];
   if (!r) return jsonError(404, "Post not found");
-  return jsonOk({ post: toDetailClient(r) });
+  const payload = { post: toDetailClient(r) };
+  await edgeCachePut(ns, payload, CACHE_TTL, ctx);
+  return jsonOk(payload);
 }
 
-async function createPost(request, env) {
+async function createPost(request, env, ctx) {
   let body;
   try {
     body = await request.json();
@@ -119,6 +143,10 @@ async function createPost(request, env) {
   if (!fields.Idx || !fields.Title)
     return jsonError(400, "Idx and Title required");
   const r = await atCreate(env, TABLE, fields);
+  await edgeCacheDeleteMany(
+    [listCacheNs(null), listCacheNs("Residential"), listCacheNs("Commercial")],
+    ctx,
+  );
   return jsonOk({ post: toDetailClient(r) });
 }
 
@@ -149,6 +177,15 @@ async function patchPost(request, env, idx, ctx) {
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }
+  await edgeCacheDeleteMany(
+    [
+      listCacheNs(null),
+      listCacheNs("Residential"),
+      listCacheNs("Commercial"),
+      postCacheNs(idx),
+    ],
+    ctx,
+  );
   return jsonOk({ post: after, cleaned: orphan.length });
 }
 
@@ -167,6 +204,15 @@ async function deletePost(env, idx, ctx) {
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }
+  await edgeCacheDeleteMany(
+    [
+      listCacheNs(null),
+      listCacheNs("Residential"),
+      listCacheNs("Commercial"),
+      postCacheNs(idx),
+    ],
+    ctx,
+  );
   return jsonOk({ deleted: idx, cleaned: urls.length });
 }
 

@@ -159,6 +159,7 @@ async function doPatch(id) {
       method: "PATCH",
       json: payload,
     });
+    adminUtil.cacheInvalidate("/api/estimates");
     const r = records.find((x) => x.id === id);
     Object.assign(r, d.updated);
     render();
@@ -178,7 +179,7 @@ filterSearch.addEventListener("input", render);
   await adminUtil.ensureAuth();
   adminUtil.pingApi();
   try {
-    const d = await adminUtil.api("/api/estimates");
+    const d = await adminUtil.apiCached("/api/estimates", { ttl: 30_000 });
     records = d.records || [];
     render();
   } catch (e) {
