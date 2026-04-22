@@ -23,12 +23,12 @@
     }
   }
 
-  // 유입 요약(예시) — analytics.js 30일 기준 MOCK 와 일치
+  // 유입 요약 — GA4 연동 대기 중이므로 빈 상태로 표시
   function renderAnalyticsSummary() {
-    $("dashVisitors").textContent = (1234).toLocaleString("ko-KR");
-    $("dashPageviews").textContent = (5678).toLocaleString("ko-KR");
-    $("dashDuration").textContent = "2:34";
-    $("dashBounce").textContent = "42%";
+    $("dashVisitors").textContent = "—";
+    $("dashPageviews").textContent = "—";
+    $("dashDuration").textContent = "—";
+    $("dashBounce").textContent = "—";
   }
 
   async function loadSubmissionSummary() {

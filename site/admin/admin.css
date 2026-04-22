@@ -1782,7 +1782,7 @@
 }
 .panel-hint {
   font-size: 12px;
-  color: var(--c-text-muted);
+  color: var(--c-text-sub);
   line-height: 1.6;
   margin: -4px 0 12px;
 }
@@ -2478,6 +2478,18 @@
 }
 .chart-wrap canvas {
   max-width: 100% !important;
+}
+.chart-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-muted);
+  font-size: 13px;
+  background: #fafbfc;
+  border: 1px dashed var(--c-border);
+  border-radius: 6px;
 }
 @media (max-width: 640px) {
   .chart-wrap {

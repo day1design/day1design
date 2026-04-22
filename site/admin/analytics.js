@@ -26,45 +26,54 @@ function doughnutLegendPos() {
   return isNarrow() ? "bottom" : "right";
 }
 
-// 페이지 경로 → 한글 메뉴명 매핑 (사이트 헤더 네비 기준)
+// 페이지 경로 → "영문 - 한글" 라벨 (사이트 헤더 네비 기준)
 const PAGE_LABELS = [
-  { match: (p) => p === "/" || p === "/index.html", label: "메인" },
-  { match: (p) => p.startsWith("/pages/about"), label: "회사소개" },
+  { match: (p) => p === "/" || p === "/index.html", label: "HOME - 메인" },
+  { match: (p) => p.startsWith("/pages/about"), label: "ABOUT US - 회사소개" },
   {
     match: (p) => p.startsWith("/pages/project-flow"),
-    label: "프로젝트 플로우",
+    label: "ABOUT US - 프로젝트 플로우",
   },
   {
     match: (p) => p.startsWith("/pages/portfolio") && /[?&]cat=office/.test(p),
-    label: "포트폴리오 · OFFICE",
+    label: "PORTFOLIO - OFFICE",
   },
   {
     match: (p) => p.startsWith("/pages/portfolio") && /[?&]size=20-30/.test(p),
-    label: "포트폴리오 · 20~30평",
+    label: "PORTFOLIO - 20~30평",
   },
   {
     match: (p) => p.startsWith("/pages/portfolio") && /[?&]size=30-40/.test(p),
-    label: "포트폴리오 · 30~40평",
+    label: "PORTFOLIO - 30~40평",
   },
   {
     match: (p) => p.startsWith("/pages/portfolio") && /[?&]size=40-50/.test(p),
-    label: "포트폴리오 · 40~50평",
+    label: "PORTFOLIO - 40~50평",
   },
   {
     match: (p) => p.startsWith("/pages/portfolio") && /[?&]size=50/.test(p),
-    label: "포트폴리오 · 50평 이상",
+    label: "PORTFOLIO - 50평 이상",
   },
   {
     match: (p) => p.startsWith("/pages/portfolio-detail"),
-    label: "포트폴리오 상세",
+    label: "PORTFOLIO - 상세",
   },
-  { match: (p) => p.startsWith("/pages/portfolio"), label: "포트폴리오" },
+  {
+    match: (p) => p.startsWith("/pages/portfolio"),
+    label: "PORTFOLIO - 포트폴리오",
+  },
   {
     match: (p) => p.startsWith("/pages/community-detail"),
-    label: "커뮤니티 · 상세",
+    label: "COMMUNITY - 상세글",
   },
-  { match: (p) => p.startsWith("/pages/community"), label: "커뮤니티" },
-  { match: (p) => p.startsWith("/pages/estimates"), label: "견적문의" },
+  {
+    match: (p) => p.startsWith("/pages/community"),
+    label: "COMMUNITY - 커뮤니티",
+  },
+  {
+    match: (p) => p.startsWith("/pages/estimates"),
+    label: "ESTIMATE - 견적문의",
+  },
 ];
 
 function pageLabel(path) {
@@ -76,61 +85,6 @@ function pageLabel(path) {
 }
 
 // 7일 / 30일 기본 MOCK — 다른 기간은 30일 데이터를 일수에 맞게 스케일
-const MOCK_BASE = {
-  7: {
-    visitors: 287,
-    pageviews: 842,
-    duration: "1:48",
-    bounce: "46%",
-    delta: { visitors: +8, pageviews: +11, duration: -3, bounce: +2 },
-    trendDaily: { visitors: 41, pageviews: 120 },
-    topPages: [
-      { path: "/", views: 312 },
-      { path: "/pages/portfolio.html", views: 186 },
-      { path: "/pages/community.html", views: 94 },
-      { path: "/pages/estimates.html", views: 72 },
-      { path: "/pages/about.html", views: 58 },
-      { path: "/pages/portfolio.html?cat=office", views: 44 },
-      { path: "/pages/portfolio.html?size=30-40", views: 38 },
-      { path: "/pages/community-detail.html", views: 21 },
-      { path: "/pages/project-flow.html", views: 12 },
-      { path: "/pages/portfolio.html?size=20-30", views: 5 },
-    ],
-    sources: {
-      "직접 유입": 41,
-      "검색 유입": 32,
-      "소셜 유입": 18,
-      "추천 유입": 9,
-    },
-  },
-  30: {
-    visitors: 1234,
-    pageviews: 5678,
-    duration: "2:34",
-    bounce: "42%",
-    delta: { visitors: +12, pageviews: +8, duration: +5, bounce: -3 },
-    trendDaily: { visitors: 41, pageviews: 189 },
-    topPages: [
-      { path: "/", views: 1842 },
-      { path: "/pages/portfolio.html", views: 1124 },
-      { path: "/pages/community.html", views: 648 },
-      { path: "/pages/estimates.html", views: 512 },
-      { path: "/pages/about.html", views: 384 },
-      { path: "/pages/portfolio.html?cat=office", views: 296 },
-      { path: "/pages/portfolio.html?size=30-40", views: 248 },
-      { path: "/pages/community-detail.html", views: 156 },
-      { path: "/pages/project-flow.html", views: 104 },
-      { path: "/pages/portfolio.html?size=20-30", views: 68 },
-    ],
-    sources: {
-      "직접 유입": 45,
-      "검색 유입": 30,
-      "소셜 유입": 15,
-      "추천 유입": 10,
-    },
-  },
-};
-
 let trendChart = null;
 let sourcesChart = null;
 let submissionsChart = null;
@@ -237,215 +191,54 @@ function resolveRange(key) {
   return resolveRange("30");
 }
 
-// ========== 유입통계 (예시) ==========
-function mockForRange(range) {
-  // 실 데이터 연결 전이라 기간별 근사치 스케일링만 제공.
-  const base = range.days <= 14 ? MOCK_BASE[7] : MOCK_BASE[30];
-  const baseDays = range.days <= 14 ? 7 : 30;
-  const scale = range.days / baseDays;
-  const visitors = Math.round(base.visitors * scale);
-  const pageviews = Math.round(base.pageviews * scale);
-
-  // 일별 추이
-  const labels = [];
-  const visitorSeries = [];
-  const pageviewSeries = [];
-  const seed = range.start.getTime() / 86400000;
-  for (let i = 0; i < Math.min(range.days, 60); i++) {
-    const d = new Date(range.start);
-    d.setDate(d.getDate() + i);
-    labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
-    // 일관된 pseudo-random (seed 기반)
-    const r1 =
-      ((Math.sin(seed + i * 1.3) + 1) * 0.4 + 0.8) * base.trendDaily.visitors;
-    const r2 =
-      ((Math.sin(seed + i * 0.9 + 5) + 1) * 0.4 + 0.8) *
-      base.trendDaily.pageviews;
-    visitorSeries.push(Math.round(r1));
-    pageviewSeries.push(Math.round(r2));
+// ========== 유입통계 (GA4 연결 대기) ==========
+// 실 데이터 연결 전: KPI/차트/인기페이지는 빈 상태로 렌더.
+function showChartPlaceholder(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const wrap = canvas.parentElement;
+  if (!wrap) return;
+  canvas.style.display = "none";
+  if (!wrap.querySelector(".chart-placeholder")) {
+    const ph = document.createElement("div");
+    ph.className = "chart-placeholder";
+    ph.textContent = "GA4 연동 후 표시됩니다";
+    wrap.appendChild(ph);
   }
+}
 
-  // 60일 넘으면 주 단위로 집계해서 라벨 간소화
-  if (range.days > 60) {
-    const buckets = Math.min(26, Math.ceil(range.days / 7));
-    const wLabels = [];
-    const wVisitors = [];
-    const wPageviews = [];
-    for (let w = 0; w < buckets; w++) {
-      wLabels.push(`W${w + 1}`);
-      wVisitors.push(
-        Math.round(
-          base.trendDaily.visitors * 7 * (0.8 + 0.4 * Math.sin(seed + w)),
-        ),
-      );
-      wPageviews.push(
-        Math.round(
-          base.trendDaily.pageviews * 7 * (0.8 + 0.4 * Math.sin(seed + w + 3)),
-        ),
-      );
-    }
-    return {
-      visitors,
-      pageviews,
-      duration: base.duration,
-      bounce: base.bounce,
-      delta: base.delta,
-      trend: {
-        labels: wLabels,
-        visitors: wVisitors,
-        pageviews: wPageviews,
-      },
-      topPages: base.topPages.map((p) => ({
-        ...p,
-        views: Math.round(p.views * scale),
-      })),
-      sources: base.sources,
-    };
+function renderAnalyticsEmpty() {
+  ["kpiVisitors", "kpiPageviews", "kpiDuration", "kpiBounce"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = "—";
+  });
+  [
+    "kpiVisitorsDelta",
+    "kpiPageviewsDelta",
+    "kpiDurationDelta",
+    "kpiBounceDelta",
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = "—";
+  });
+  if (trendChart) {
+    trendChart.destroy();
+    trendChart = null;
   }
-
-  return {
-    visitors,
-    pageviews,
-    duration: base.duration,
-    bounce: base.bounce,
-    delta: base.delta,
-    trend: {
-      labels,
-      visitors: visitorSeries,
-      pageviews: pageviewSeries,
-    },
-    topPages: base.topPages.map((p) => ({
-      ...p,
-      views: Math.round(p.views * scale),
-    })),
-    sources: base.sources,
-  };
-}
-
-function renderKPI(data) {
-  document.getElementById("kpiVisitors").textContent = fmtInt(data.visitors);
-  document.getElementById("kpiPageviews").textContent = fmtInt(data.pageviews);
-  document.getElementById("kpiDuration").textContent = data.duration;
-  document.getElementById("kpiBounce").textContent = data.bounce;
-
-  document.getElementById("kpiVisitorsDelta").innerHTML = fmtDelta(
-    data.delta.visitors,
-  );
-  document.getElementById("kpiPageviewsDelta").innerHTML = fmtDelta(
-    data.delta.pageviews,
-  );
-  document.getElementById("kpiDurationDelta").innerHTML = fmtDelta(
-    data.delta.duration,
-  );
-  document.getElementById("kpiBounceDelta").innerHTML = fmtDelta(
-    data.delta.bounce,
-    {
-      invert: true,
-    },
-  );
-}
-
-function renderTrend(data) {
-  const ctx = document.getElementById("chartTrend").getContext("2d");
-  if (trendChart) trendChart.destroy();
-  trendChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: data.trend.labels,
-      datasets: [
-        {
-          label: "방문자",
-          data: data.trend.visitors,
-          borderColor: PALETTE.primary,
-          backgroundColor: PALETTE.bg,
-          tension: 0.35,
-          fill: true,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          borderWidth: 2,
-        },
-        {
-          label: "페이지뷰",
-          data: data.trend.pageviews,
-          borderColor: PALETTE.accent,
-          backgroundColor: "transparent",
-          tension: 0.35,
-          fill: false,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          borderWidth: 2,
-          borderDash: [4, 4],
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: "bottom",
-          labels: { usePointStyle: true, boxWidth: 8 },
-        },
-        tooltip: { mode: "index", intersect: false },
-      },
-      scales: {
-        x: { grid: { display: false } },
-        y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.06)" } },
-      },
-      interaction: { mode: "nearest", intersect: false },
-    },
-  });
-}
-
-function renderSources(data) {
-  const ctx = document.getElementById("chartSources").getContext("2d");
-  if (sourcesChart) sourcesChart.destroy();
-  const labels = Object.keys(data.sources);
-  const values = Object.values(data.sources);
-  sourcesChart = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels,
-      datasets: [
-        {
-          data: values,
-          backgroundColor: PALETTE.sources,
-          borderWidth: 0,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: "62%",
-      plugins: {
-        legend: {
-          position: doughnutLegendPos(),
-          labels: { usePointStyle: true, boxWidth: 8 },
-        },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ` ${ctx.label} — ${ctx.parsed}%`,
-          },
-        },
-      },
-    },
-  });
-}
-
-function renderTopPages(data) {
+  if (sourcesChart) {
+    sourcesChart.destroy();
+    sourcesChart = null;
+  }
+  showChartPlaceholder("chartTrend");
+  showChartPlaceholder("chartSources");
   const tbody = document.querySelector("#topPagesTable tbody");
-  tbody.innerHTML = data.topPages
-    .map(
-      (p, i) => `
-      <tr>
-        <td class="num">${i + 1}</td>
-        <td class="path" title="${adminUtil.escapeHtml(p.path)}">${adminUtil.escapeHtml(pageLabel(p.path))}</td>
-        <td class="num" style="text-align:right">${fmtInt(p.views)}</td>
-      </tr>`,
-    )
-    .join("");
+  if (tbody) {
+    tbody.innerHTML =
+      '<tr><td colspan="3" class="empty-state">GA4 연동 후 표시됩니다</td></tr>';
+  }
 }
+
+// pageLabel 은 향후 GA4 데이터 연결 시 path → "영문 - 한글" 라벨 변환용 (아직 미사용).
 
 // ========== 실접수 통계 (Airtable) ==========
 function buildDayBuckets(range) {
@@ -628,11 +421,8 @@ function applyRange(key) {
   const label = document.getElementById("rangeLabel");
   if (label) label.textContent = range.label;
 
-  const data = mockForRange(range);
-  renderKPI(data);
-  renderTrend(data);
-  renderSources(data);
-  renderTopPages(data);
+  // 유입통계 상단은 GA4 연동 대기 상태로만 렌더. 기간 필터는 하단 실접수에만 영향.
+  renderAnalyticsEmpty();
   renderSubmissionStats(range);
 }
 
