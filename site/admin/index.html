@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>대시보드 · DAYONE ADMIN</title>
     <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.vercel.app" crossorigin />
+    <link
+      rel="preconnect"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+      crossorigin
+    />
     <link rel="stylesheet" href="https://day1design.vercel.app/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.vercel.app/css/reset.css" />
     <link rel="stylesheet" href="admin.css" />
@@ -51,12 +57,19 @@
             </div>
             <p>접수 내역 조회·상태/담당자 변경</p>
           </a>
+          <a href="analytics" class="dash-card">
+            <div class="dash-card-head">
+              <h3>유입·접수 통계</h3>
+              <span class="dash-card-count" id="statAnalytics">—</span>
+            </div>
+            <p>기간별 유입·접수 추이 · 출처별 · Meta 캠페인 분석</p>
+          </a>
         </div>
       </main>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="config.js"></script>
-    <script src="admin.js"></script>
+    <script defer src="config.js"></script>
+    <script defer src="admin.js"></script>
     <script>
       (async () => {
         async function loadCount(path, id, key = "records") {
@@ -74,11 +87,30 @@
             document.getElementById(id).textContent = "—";
           }
         }
+        async function loadEstimatesStats() {
+          try {
+            const d = await adminUtil.apiCached("/api/estimates", {
+              ttl: 60_000,
+            });
+            const all = d?.records || [];
+            document.getElementById("statEstimates").textContent = all.length;
+            const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
+            const recent = all.filter((r) => {
+              const t = Date.parse(r.SubmittedAt || "");
+              return !isNaN(t) && t >= since;
+            }).length;
+            document.getElementById("statAnalytics").textContent =
+              `${recent} / 30일`;
+          } catch {
+            document.getElementById("statEstimates").textContent = "—";
+            document.getElementById("statAnalytics").textContent = "—";
+          }
+        }
         // ensureAuth는 admin.js bootstrap이 이미 호출
         loadCount("/api/hero/slides", "statHero");
         loadCount("/api/portfolio", "statPortfolio");
         loadCount("/api/community", "statCommunity", "posts");
-        loadCount("/api/estimates", "statEstimates");
+        loadEstimatesStats();
       })();
     </script>
   </body>

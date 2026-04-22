@@ -2228,9 +2228,14 @@
 }
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   margin-bottom: 18px;
+}
+@media (max-width: 860px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 .kpi-card {
   background: #fff;
@@ -2286,6 +2291,7 @@
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   padding: 18px 20px;
+  min-width: 0;
 }
 .panel-head {
   display: flex;
@@ -2333,6 +2339,17 @@
 .chart-wrap {
   position: relative;
   height: 260px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.chart-wrap canvas {
+  max-width: 100% !important;
+}
+@media (max-width: 640px) {
+  .chart-wrap {
+    height: 300px;
+  }
 }
 .top-table {
   width: 100%;

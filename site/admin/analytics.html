@@ -6,7 +6,11 @@
     <title>유입통계 · DAYONE ADMIN</title>
     <meta name="robots" content="noindex,nofollow" />
     <link rel="preconnect" href="https://day1design.vercel.app" crossorigin />
-    <link rel="preconnect" href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev" crossorigin />
+    <link
+      rel="preconnect"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+      crossorigin
+    />
     <link rel="stylesheet" href="https://day1design.vercel.app/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.vercel.app/css/reset.css" />
     <link rel="stylesheet" href="admin.css" />
@@ -26,8 +30,7 @@
       <main class="admin-content" id="adminContent">
         <div class="notice-banner" role="note" aria-label="데이터 연결 안내">
           <strong>⚠ 유입통계(상단)는 예시 데이터입니다.</strong>
-          도메인 연결 후 구글 애널리틱스 · 검색 콘솔 연동 예정입니다.
-          <strong>접수 통계(하단)는 실제 Airtable 데이터</strong>로 표시됩니다.
+          <strong>접수 통계(하단)는 실제 데이터</strong>로 표시됩니다.
         </div>
 
         <div class="analytics-toolbar">
@@ -41,9 +44,31 @@
             >
               30일
             </button>
-            <button type="button" class="seg-btn" data-range="90">90일</button>
+            <button type="button" class="seg-btn" data-range="prev-month">
+              전월
+            </button>
+            <button type="button" class="seg-btn" data-range="cur-month">
+              당월
+            </button>
+            <button type="button" class="seg-btn" data-range="all">전체</button>
+            <button type="button" class="seg-btn" data-range="custom">
+              선택기간
+            </button>
           </div>
-          <div class="analytics-compare">비교 기준: 이전 기간</div>
+          <div class="analytics-range-picker" id="rangePicker" hidden>
+            <label>
+              <span>시작</span>
+              <input type="date" id="rangeStart" />
+            </label>
+            <label>
+              <span>종료</span>
+              <input type="date" id="rangeEnd" />
+            </label>
+            <button type="button" class="btn-apply-range" id="btnApplyRange">
+              적용
+            </button>
+          </div>
+          <div class="analytics-compare" id="rangeLabel">최근 30일</div>
         </div>
 
         <section class="kpi-grid">
@@ -171,36 +196,13 @@
             </table>
           </div>
         </section>
-
-        <section class="analytics-row">
-          <div class="panel">
-            <div class="panel-head">
-              <h3>연결 가이드</h3>
-            </div>
-            <ol class="connect-steps">
-              <li>도메인(day1design.co)을 Vercel 프로젝트에 연결합니다.</li>
-              <li>
-                구글 애널리틱스(GA4) 속성을 생성하고 측정 ID를 받아 사이트 HTML
-                공통 헤더에 삽입합니다.
-              </li>
-              <li>
-                구글 서치 콘솔에서 동일 도메인을 등록하고 사이트맵을 제출합니다.
-              </li>
-              <li>
-                구글 클라우드 콘솔에서 서비스 계정을 생성하고, 애널리틱스 · 서치
-                콘솔의 읽기 권한을 부여합니다.
-              </li>
-              <li>
-                서비스 계정 키를 Worker 시크릿으로 등록하면 이 페이지 상단
-                유입통계가 실제 값으로 표시됩니다.
-              </li>
-            </ol>
-          </div>
-        </section>
       </main>
     </div>
     <div class="toast" id="toast"></div>
-    <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+    ></script>
     <script defer src="config.js"></script>
     <script defer src="admin.js"></script>
     <script defer src="analytics.js"></script>
