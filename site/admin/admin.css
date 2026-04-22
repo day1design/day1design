@@ -231,6 +231,28 @@
   height: 22px;
   color: var(--c-text);
 }
+/* nav 라벨: 데스크탑=긴 라벨, 모바일=축약 */
+.nav-label-short {
+  display: none;
+}
+/* topbar 로그아웃: 기본 숨김 (사이드바의 로그아웃 사용), 모바일에서만 표시 */
+.topbar-logout {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--c-text-sub);
+  cursor: pointer;
+  min-width: 32px;
+  min-height: 32px;
+}
+.topbar-logout:hover {
+  background: #f3f4f6;
+  color: var(--c-text);
+}
 
 /* API Status */
 .admin-status {
@@ -1197,8 +1219,137 @@
   font-size: 12px;
 }
 
-/* 모바일 (≤640px): 테이블 → 카드 뷰 */
+/* 모바일 (≤640px): 하단 가로 네비게이션 + 테이블 → 카드 뷰 */
 @media (max-width: 640px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+  /* 사이드바 → 하단 고정 가로 탭바로 전환 */
+  .admin-sidebar {
+    top: auto !important;
+    bottom: 0;
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    max-width: 100vw;
+    height: 58px;
+    transform: none !important;
+    background: #fff;
+    border-right: none;
+    border-top: 1px solid var(--c-border);
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.06);
+    padding: 0 !important;
+    z-index: 40;
+    display: flex !important;
+    flex-direction: row;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .sidebar-brand,
+  .sidebar-footer {
+    display: none !important;
+  }
+  .sidebar-nav {
+    display: flex;
+    flex-direction: row;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    gap: 0;
+    overflow: visible;
+  }
+  .sidebar-link {
+    flex: 1 1 0;
+    min-width: 0;
+    width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 2px;
+    margin: 0;
+    border-radius: 0;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--c-text-sub, #64748b);
+    background: transparent !important;
+    position: relative;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .sidebar-link:hover {
+    background: transparent !important;
+    color: var(--c-text);
+  }
+  .sidebar-link svg {
+    width: 20px;
+    height: 20px;
+    opacity: 0.7;
+  }
+  .sidebar-link.active {
+    color: var(--c-brand, #1a2f4e) !important;
+    background: transparent !important;
+  }
+  .sidebar-link.active svg {
+    opacity: 1;
+  }
+  .sidebar-link.active::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 22%;
+    right: 22%;
+    height: 2.5px;
+    background: var(--c-brand, #1a2f4e);
+    border-radius: 0 0 3px 3px;
+  }
+  .nav-label-full {
+    display: none;
+  }
+  .nav-label-short {
+    display: inline;
+    font-size: 10px;
+  }
+
+  /* 레이아웃: 하단 nav 만큼 본문 여백 */
+  .admin-layout {
+    margin-left: 0 !important;
+  }
+  .admin-content {
+    padding-bottom: 74px; /* 58px nav + 16px breathing */
+  }
+
+  /* 햄버거/백드롭 숨김 */
+  .sidebar-toggle {
+    display: none !important;
+  }
+  .admin-backdrop {
+    display: none !important;
+  }
+
+  /* 상단바 로그아웃 버튼 활성화 */
+  .topbar-logout {
+    display: inline-flex;
+  }
+  /* topbar 공간 확보: status 는 dot만 */
+  .admin-topbar {
+    padding: 0 12px;
+  }
+  .admin-status {
+    padding: 4px 6px;
+  }
+  .admin-status .txt {
+    display: none;
+  }
+  .admin-topbar-right {
+    gap: 6px;
+  }
+
   /* wrapper 박스 제거 — 카드별로 독립 테두리만 */
   .data-table-wrap.est-list {
     overflow: visible;
@@ -1997,9 +2148,11 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 .seg {
   display: inline-flex;
+  flex-wrap: wrap;
   background: #f3f5f8;
   border: 1px solid var(--c-border);
   border-radius: 999px;
@@ -2030,6 +2183,48 @@
 .analytics-compare {
   font-size: 12px;
   color: var(--c-text-muted);
+}
+.analytics-range-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.analytics-range-picker[hidden] {
+  display: none;
+}
+.analytics-range-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+.analytics-range-picker input[type="date"] {
+  border: 0;
+  outline: none;
+  font-size: 12px;
+  padding: 2px 4px;
+  color: var(--c-text);
+  background: transparent;
+  font-family: inherit;
+}
+.btn-apply-range {
+  appearance: none;
+  border: 0;
+  background: var(--c-primary);
+  color: #fff;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-apply-range:hover {
+  opacity: 0.9;
 }
 .kpi-grid {
   display: grid;

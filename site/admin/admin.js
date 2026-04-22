@@ -178,36 +178,42 @@ const MENU = [
     nav: "home",
     href: "index",
     label: "대시보드",
+    shortLabel: "홈",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>',
   },
   {
     nav: "hero",
     href: "hero-slides",
     label: "히어로 슬라이드",
+    shortLabel: "히어로",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="1.5"/><path d="M21 16l-5-5-8 8"/></svg>',
   },
   {
     nav: "portfolio",
     href: "portfolio",
     label: "포트폴리오",
+    shortLabel: "시공",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   },
   {
     nav: "community",
     href: "community",
     label: "커뮤니티",
+    shortLabel: "커뮤니티",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H7l-3 3V5z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="13" x2="13" y2="13"/></svg>',
   },
   {
     nav: "estimates",
     href: "estimates",
     label: "상담신청",
+    shortLabel: "상담",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>',
   },
   {
     nav: "analytics",
     href: "analytics",
     label: "유입통계",
+    shortLabel: "통계",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg>',
   },
 ];
@@ -226,7 +232,8 @@ function renderSidebar(currentNav) {
            m.nav === currentNav ? " active" : ""
          }">
            ${m.icon}
-           <span>${m.label}</span>
+           <span class="nav-label-full">${m.label}</span>
+           <span class="nav-label-short">${m.shortLabel || m.label}</span>
          </a>`,
        ).join("")}
      </nav>
@@ -256,6 +263,13 @@ function renderTopbar(title) {
        <div class="admin-status" id="apiStatus" data-state="unknown">
          <span class="dot"></span><span class="txt">API 확인 중</span>
        </div>
+       <button class="topbar-logout" id="btnLogoutTop" type="button" aria-label="로그아웃">
+         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+           <polyline points="16 17 21 12 16 7"/>
+           <line x1="21" y1="12" x2="9" y2="12"/>
+         </svg>
+       </button>
      </div>`;
 }
 
@@ -287,13 +301,15 @@ function bindShellEvents() {
     if (e.key === "Escape") close();
   });
 
-  document.getElementById("btnLogout")?.addEventListener("click", async () => {
+  const doLogout = async () => {
     try {
       await api("/api/auth/logout", { method: "POST" });
     } catch {}
     clearToken();
     location.href = "login";
-  });
+  };
+  document.getElementById("btnLogout")?.addEventListener("click", doLogout);
+  document.getElementById("btnLogoutTop")?.addEventListener("click", doLogout);
 }
 
 function initShell() {
