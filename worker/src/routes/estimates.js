@@ -130,6 +130,7 @@ async function submitEstimate(request, env, ctx) {
     SubmittedAt: fields.submittedAt || new Date().toISOString(),
     Status: "접수대기",
     IP: ip,
+    Source: "homepage",
   });
 
   // 텔레그램 알림

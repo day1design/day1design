@@ -1,6 +1,6 @@
 # Airtable Base 스키마
 
-> 이 파일에 맞춰 Airtable Base에 4개 테이블을 생성하세요.
+> 이 파일에 맞춰 Airtable Base에 5개 테이블을 생성하세요.
 > Base 생성 후 `AIRTABLE_TOKEN`(PAT), `AIRTABLE_BASE_ID`를 `worker/.dev.vars` 및 `wrangler secret put` 으로 주입.
 
 ## Base 생성
@@ -14,32 +14,49 @@
 
 ## 1. `Estimates` 테이블 (상담신청)
 
-| 필드명           | 타입                  | 비고                                           |
-| ---------------- | --------------------- | ---------------------------------------------- |
-| `Name`           | Single line text      | primary field로 지정                           |
-| `Phone`          | Single line text      | `010-0000-0000` 형식                           |
-| `Email`          | Email                 |                                                |
-| `SpaceType`      | Single line text      | 아파트/빌라/주택/상가/기타                     |
-| `SpaceSize`      | Single line text      | 20~30평/30~40평/...                            |
-| `Postcode`       | Single line text      |                                                |
-| `Address`        | Single line text      |                                                |
-| `AddressDetail`  | Single line text      |                                                |
-| `Schedule`       | Single line text      |                                                |
-| `Referral`       | Single line text      |                                                |
-| `Branch`         | Single line text      | 강남점/판교점/지점 무관                        |
-| `Detail`         | Long text             |                                                |
-| `PrivacyAgreed`  | Checkbox              |                                                |
-| `ConceptFiles`   | Long text             | JSON 문자열 (R2 URL 배열)                      |
-| `FloorPlans`     | Long text             | JSON 문자열 (R2 URL 배열)                      |
-| `SubmittedAt`    | Date (with time, ISO) |                                                |
-| `IP`             | Single line text      |                                                |
-| `Status`         | Single select         | 접수대기 / 상담중 / 견적완료 / 계약완료 / 취소 |
-| `Assignee`       | Single line text      |                                                |
-| `ContactedAt`    | Date (with time)      |                                                |
-| `Memo`           | Long text             |                                                |
-| `EstimateAmount` | Number                | 원 단위                                        |
+| 필드명           | 타입                  | 비고                                                           |
+| ---------------- | --------------------- | -------------------------------------------------------------- |
+| `Name`           | Single line text      | primary field로 지정                                           |
+| `Phone`          | Single line text      | `010-0000-0000` 형식                                           |
+| `Email`          | Email                 |                                                                |
+| `SpaceType`      | Single line text      | 아파트/빌라/주택/상가/기타                                     |
+| `SpaceSize`      | Single line text      | 20~30평/30~40평/...                                            |
+| `Postcode`       | Single line text      |                                                                |
+| `Address`        | Single line text      |                                                                |
+| `AddressDetail`  | Single line text      |                                                                |
+| `Schedule`       | Single line text      |                                                                |
+| `Referral`       | Single line text      |                                                                |
+| `Branch`         | Single line text      | 강남점/판교점/지점 무관                                        |
+| `Detail`         | Long text             |                                                                |
+| `PrivacyAgreed`  | Checkbox              |                                                                |
+| `ConceptFiles`   | Long text             | JSON 문자열 (R2 URL 배열)                                      |
+| `FloorPlans`     | Long text             | JSON 문자열 (R2 URL 배열)                                      |
+| `SubmittedAt`    | Date (with time, ISO) |                                                                |
+| `IP`             | Single line text      |                                                                |
+| `Status`         | Single select         | 접수대기 / 상담중 / 견적완료 / 계약완료 / 취소                 |
+| `Assignee`       | Single line text      |                                                                |
+| `ContactedAt`    | Date (with time)      |                                                                |
+| `Memo`           | Long text             | (레거시) 단일 메모 필드. 쓰레드 메모는 아래 EstimateMemos 사용 |
+| `EstimateAmount` | Number                | 원 단위                                                        |
+| `Source`         | Single line text      | `homepage` / `meta` (출처뱃지용, ASCII 고정)                   |
+| `Platform`       | Single line text      | Meta 채널 구분: `facebook` / `instagram` (ASCII)               |
+| `Campaign`       | Single line text      | Meta 캠페인명 (한글 허용)                                      |
 
-## 2. `HeroSlides` 테이블 (메인 히어로)
+> **singleSelect 한글 옵션 금지 규칙**에 따라 `Source` / `Platform` 은 Single line text + 영어 값. Airtable view 필터는 `{Source}='meta'` 형태 사용.
+
+## 2. `EstimateMemos` 테이블 (상담 쓰레드 메모, 신규)
+
+| 필드명       | 타입                  | 비고                                            |
+| ------------ | --------------------- | ----------------------------------------------- |
+| `EstimateId` | Single line text      | primary field. Estimates 레코드 id (rec~~) 저장 |
+| `Body`       | Long text             | 메모 본문 (4000자 제한, 서버 검증)              |
+| `Author`     | Single line text      | 작성자 이름 (선택)                              |
+| `CreatedAt`  | Date (with time, ISO) | 서버가 ISO 8601 로 기록                         |
+| `UpdatedAt`  | Date (with time, ISO) |                                                 |
+
+> Link record 쓰지 않고 ID 문자열로 보관 — Worker 가 filterByFormula 로 조회. 관리자 UI 에서 추가/수정/삭제 가능.
+
+## 3-1. `HeroSlides` 테이블 (메인 히어로)
 
 | 필드명   | 타입             | 비고                           |
 | -------- | ---------------- | ------------------------------ |
@@ -49,7 +66,7 @@
 | `Order`  | Number (int)     | 0부터, 오름차순 정렬           |
 | `Active` | Checkbox         | 기본 체크됨, 숨김 처리 시 해제 |
 
-## 3. `Portfolio` 테이블 (시공 포트폴리오)
+## 4. `Portfolio` 테이블 (시공 포트폴리오)
 
 | 필드명        | 타입             | 비고                                                     |
 | ------------- | ---------------- | -------------------------------------------------------- |
@@ -64,7 +81,7 @@
 | `ThumbAfter`  | URL              | (선택) 그리드 after 썸네일 직접 지정. 비우면 파일명 규칙 |
 | `ThumbBefore` | URL              | (선택) before 썸네일                                     |
 
-## 4. `Community` 테이블 (커뮤니티 게시글)
+## 5. `Community` 테이블 (커뮤니티 게시글)
 
 | 필드명          | 타입             | 비고                                                      |
 | --------------- | ---------------- | --------------------------------------------------------- |

@@ -26,7 +26,12 @@ const MOCK = {
       { path: "/pages/portfolio-detail.html", views: 12 },
       { path: "/pages/process.html", views: 5 },
     ],
-    sources: { Direct: 41, Organic: 32, Social: 18, Referral: 9 },
+    sources: {
+      "직접 유입": 41,
+      "검색 유입": 32,
+      "소셜 유입": 18,
+      "추천 유입": 9,
+    },
   },
   30: {
     visitors: 1234,
@@ -58,7 +63,12 @@ const MOCK = {
       { path: "/pages/portfolio-detail.html", views: 104 },
       { path: "/pages/process.html", views: 68 },
     ],
-    sources: { Direct: 45, Organic: 30, Social: 15, Referral: 10 },
+    sources: {
+      "직접 유입": 45,
+      "검색 유입": 30,
+      "소셜 유입": 15,
+      "추천 유입": 10,
+    },
   },
   90: {
     visitors: 3812,
@@ -85,7 +95,12 @@ const MOCK = {
       { path: "/pages/portfolio-detail.html", views: 284 },
       { path: "/pages/process.html", views: 196 },
     ],
-    sources: { Direct: 43, Organic: 34, Social: 14, Referral: 9 },
+    sources: {
+      "직접 유입": 43,
+      "검색 유입": 34,
+      "소셜 유입": 14,
+      "추천 유입": 9,
+    },
   },
 };
 
@@ -249,10 +264,199 @@ function applyRange(range) {
   renderTrend(data);
   renderSources(data);
   renderTopPages(data);
+  // 실접수 통계도 기간에 맞춰 재계산
+  renderSubmissionStats(range);
 }
 
 document.querySelectorAll(".seg-btn").forEach((btn) => {
   btn.addEventListener("click", () => applyRange(Number(btn.dataset.range)));
 });
 
+// ========== 실접수 통계 (Airtable 실데이터) ==========
+let submissionRecords = null;
+let submissionsChart = null;
+let statusChart = null;
+const STATUS_COLORS = {
+  접수대기: "#f59e0b",
+  상담중: "#3b82f6",
+  견적완료: "#10b981",
+  계약완료: "#059669",
+  취소: "#ef4444",
+};
+
+function dayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function buildDayBuckets(range) {
+  const labels = [];
+  const buckets = {};
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (let i = range - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const k = dayKey(d);
+    labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+    buckets[k] = { homepage: 0, meta: 0 };
+  }
+  return { labels, buckets };
+}
+
+function renderSubmissionStats(range) {
+  if (!submissionRecords) return;
+  const { labels, buckets } = buildDayBuckets(range);
+  const campaigns = {};
+  const statusCount = {};
+  let homepageTotal = 0;
+  let metaTotal = 0;
+  const sinceTs = Date.now() - range * 24 * 60 * 60 * 1000;
+
+  for (const r of submissionRecords) {
+    const iso = r.SubmittedAt;
+    if (!iso) continue;
+    const t = Date.parse(iso);
+    if (isNaN(t) || t < sinceTs) continue;
+    const d = new Date(iso);
+    const k = dayKey(d);
+    const src =
+      (r.Source || "homepage").toLowerCase() === "meta" ? "meta" : "homepage";
+    if (buckets[k]) buckets[k][src]++;
+    if (src === "meta") {
+      metaTotal++;
+      const c = (r.Campaign || "").trim();
+      if (c) campaigns[c] = (campaigns[c] || 0) + 1;
+    } else {
+      homepageTotal++;
+    }
+    const st = r.Status || "접수대기";
+    statusCount[st] = (statusCount[st] || 0) + 1;
+  }
+
+  const total = homepageTotal + metaTotal;
+  document.getElementById("subTotal").textContent = fmtInt(total);
+  document.getElementById("subHomepage").textContent = fmtInt(homepageTotal);
+  document.getElementById("subMeta").textContent = fmtInt(metaTotal);
+  document.getElementById("subMetaRatio").textContent =
+    total > 0 ? `${Math.round((metaTotal / total) * 100)}%` : "—";
+
+  const homeSeries = [];
+  const metaSeries = [];
+  for (const k of Object.keys(buckets)) {
+    homeSeries.push(buckets[k].homepage);
+    metaSeries.push(buckets[k].meta);
+  }
+
+  // 접수 추이 스택 바 차트
+  const ctx = document.getElementById("chartSubmissions").getContext("2d");
+  if (submissionsChart) submissionsChart.destroy();
+  submissionsChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "홈페이지",
+          data: homeSeries,
+          backgroundColor: PALETTE.primary,
+          borderRadius: 2,
+        },
+        {
+          label: "Meta 광고",
+          data: metaSeries,
+          backgroundColor: PALETTE.accent,
+          borderRadius: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { usePointStyle: true, boxWidth: 8 },
+        },
+        tooltip: { mode: "index", intersect: false },
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false } },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: { precision: 0 },
+          grid: { color: "rgba(0,0,0,0.06)" },
+        },
+      },
+    },
+  });
+
+  // 상태별 분포
+  const statusLabels = Object.keys(statusCount);
+  const statusValues = statusLabels.map((k) => statusCount[k]);
+  const statusColors = statusLabels.map(
+    (k) => STATUS_COLORS[k] || PALETTE.muted,
+  );
+  const sctx = document.getElementById("chartStatus").getContext("2d");
+  if (statusChart) statusChart.destroy();
+  statusChart = new Chart(sctx, {
+    type: "doughnut",
+    data: {
+      labels: statusLabels.length ? statusLabels : ["데이터 없음"],
+      datasets: [
+        {
+          data: statusValues.length ? statusValues : [1],
+          backgroundColor: statusColors.length ? statusColors : ["#e5e7eb"],
+          borderWidth: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "62%",
+      plugins: {
+        legend: {
+          position: "right",
+          labels: { usePointStyle: true, boxWidth: 8 },
+        },
+      },
+    },
+  });
+
+  // 캠페인 TOP 5
+  const tbody = document.querySelector("#topCampaignsTable tbody");
+  const campEntries = Object.entries(campaigns)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  if (!campEntries.length) {
+    tbody.innerHTML =
+      '<tr><td colspan="3" class="empty-state">Meta 캠페인 접수 없음</td></tr>';
+  } else {
+    tbody.innerHTML = campEntries
+      .map(
+        ([name, count], i) => `
+        <tr>
+          <td class="num">${i + 1}</td>
+          <td class="path">${adminUtil.escapeHtml(name)}</td>
+          <td class="num" style="text-align:right">${fmtInt(count)}</td>
+        </tr>`,
+      )
+      .join("");
+  }
+}
+
+async function loadSubmissionRecords() {
+  try {
+    await adminUtil.ensureAuth();
+    const d = await adminUtil.apiCached("/api/estimates", { ttl: 60_000 });
+    submissionRecords = d.records || [];
+    renderSubmissionStats(currentRange);
+  } catch (e) {
+    document.getElementById("subTotal").textContent = "—";
+    console.error("submission stats load failed:", e);
+  }
+}
+
 applyRange(30);
+loadSubmissionRecords();

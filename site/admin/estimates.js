@@ -1,10 +1,13 @@
 // ========== 상담신청 관리 ==========
 let records = [];
 let selectedId = null;
+let memoCache = {}; // { estimateId: [memos] }
+let historyCache = {}; // { estimateId: history }
 
 const body = document.getElementById("estBody");
 const detail = document.getElementById("estDetail");
 const filterStatus = document.getElementById("filterStatus");
+const filterSource = document.getElementById("filterSource");
 const filterSearch = document.getElementById("filterSearch");
 
 function escapeHtml(s) {
@@ -26,13 +29,36 @@ function statusBadge(s) {
   return `<span class="${map[s] || "badge"}">${escapeHtml(s || "—")}</span>`;
 }
 
+function sourceBadge(src) {
+  const s = String(src || "homepage").toLowerCase();
+  if (s === "meta") return `<span class="src-badge src-meta">Meta</span>`;
+  return `<span class="src-badge src-homepage">홈페이지</span>`;
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch {
+    return iso;
+  }
+}
+
 function filtered() {
   const st = filterStatus.value;
+  const src = filterSource ? filterSource.value : "";
   const q = filterSearch.value.trim().toLowerCase();
   return records.filter((r) => {
     if (st && r.Status !== st) return false;
+    if (src) {
+      const s = (r.Source || "homepage").toLowerCase();
+      if (s !== src) return false;
+    }
     if (q) {
-      const hay = `${r.Name} ${r.Phone} ${r.Address} ${r.Email}`.toLowerCase();
+      const hay =
+        `${r.Name} ${r.Phone} ${r.Address} ${r.Email} ${r.Campaign || ""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -43,22 +69,23 @@ function render() {
   const list = filtered();
   if (!list.length) {
     body.innerHTML =
-      '<tr><td colspan="6" class="empty-state">접수 내역이 없습니다.</td></tr>';
+      '<tr><td colspan="7" class="empty-state">접수 내역이 없습니다.</td></tr>';
     return;
   }
   body.innerHTML = list
     .map(
       (r) => `
     <tr data-id="${r.id}" class="${r.id === selectedId ? "is-selected" : ""}">
-      <td>${escapeHtml((r.SubmittedAt || "").slice(0, 10))}</td>
-      <td>
+      <td data-label="접수일">${escapeHtml((r.SubmittedAt || "").slice(0, 10))}</td>
+      <td data-label="출처">${sourceBadge(r.Source)}</td>
+      <td data-label="이름">
         <div class="cell-title">${escapeHtml(r.Name)}</div>
-        <small class="cell-sub">${escapeHtml(r.Email || "")}</small>
+        <small class="cell-sub">${escapeHtml(r.Email || r.Campaign || "")}</small>
       </td>
-      <td>${escapeHtml(r.Phone)}</td>
-      <td>${escapeHtml(r.SpaceType)} / ${escapeHtml(r.SpaceSize)}</td>
-      <td>${escapeHtml(r.Branch)}</td>
-      <td>${statusBadge(r.Status)}</td>
+      <td data-label="연락처">${escapeHtml(r.Phone)}</td>
+      <td data-label="유형/평수">${escapeHtml(r.SpaceType || "")} ${r.SpaceSize ? "/ " + escapeHtml(r.SpaceSize) : ""}</td>
+      <td data-label="지점">${escapeHtml(r.Branch || "")}</td>
+      <td data-label="상태">${statusBadge(r.Status)}</td>
     </tr>`,
     )
     .join("");
@@ -77,28 +104,95 @@ function filesList(raw) {
     .join("");
 }
 
-function openDetail(id) {
+function historyHtml(history) {
+  if (!history)
+    return `<div class="history-box">이전 접수 내역 조회 중...</div>`;
+  const total = history.total || 1;
+  const sessionNo = history.sessionNo || 1;
+  const prev = history.previousLatest;
+  const sessionLine =
+    sessionNo > 1
+      ? `<span class="session-pill">${sessionNo}회차</span> <span style="font-size:12px;color:var(--c-text-sub);">(총 ${total}회)</span>`
+      : `<span class="session-pill" style="background:#d1fae5;color:#065f46;">신규 고객</span>`;
+
+  let html = `<div class="history-box"><h4>상담 회차</h4><div style="margin-bottom:8px;">${sessionLine}</div>`;
+  if (prev) {
+    html += `<div style="font-size:12px;color:var(--c-text-sub);margin-bottom:4px;">직전 접수</div>`;
+    const items = (history.previous || []).slice(0, 5);
+    html += items
+      .map((p) => {
+        const src = (p.source || "homepage").toLowerCase();
+        const srcLabel = src === "meta" ? "Meta" : "홈페이지";
+        return `<div class="history-item">
+          <span class="h-date">${escapeHtml(fmtDateTime(p.submittedAt))}</span>
+          <span class="h-meta">· ${escapeHtml(srcLabel)} · ${escapeHtml(p.status || "—")}${p.branch ? " · " + escapeHtml(p.branch) : ""}</span>
+        </div>`;
+      })
+      .join("");
+    if ((history.previous || []).length > 5) {
+      html += `<div style="font-size:11px;color:var(--c-text-sub);margin-top:4px;">외 ${history.previous.length - 5}건</div>`;
+    }
+  }
+  html += "</div>";
+  return html;
+}
+
+function memoItemHtml(memo) {
+  const updated = memo.updatedAt && memo.updatedAt !== memo.createdAt;
+  return `
+    <div class="memo-item" data-memo-id="${memo.id}">
+      <div class="memo-head">
+        <span><strong>${escapeHtml(memo.author || "관리자")}</strong> · ${escapeHtml(fmtDateTime(memo.createdAt))}${updated ? " <span style='color:#94a3b8;'>(수정됨)</span>" : ""}</span>
+        <span class="memo-actions">
+          <button type="button" data-act="edit">수정</button>
+          <button type="button" data-act="del">삭제</button>
+        </span>
+      </div>
+      <div class="memo-body">${escapeHtml(memo.body)}</div>
+    </div>
+  `;
+}
+
+function memoThreadHtml(memos) {
+  if (!memos || !memos.length) {
+    return `<div class="memo-empty">아직 작성된 메모가 없습니다. 아래에서 새 메모를 추가하세요.</div>`;
+  }
+  return memos.map(memoItemHtml).join("");
+}
+
+async function openDetail(id) {
   const r = records.find((x) => x.id === id);
   if (!r) return;
   selectedId = id;
   render();
+
   detail.innerHTML = `
     <div class="detail-head">
       <div>
-        <h2>${escapeHtml(r.Name)}</h2>
-        <div class="detail-sub">${adminUtil.fmtDate(r.SubmittedAt)} · IP ${escapeHtml(r.IP || "—")}</div>
+        <h2>${escapeHtml(r.Name)} ${sourceBadge(r.Source)}</h2>
+        <div class="detail-sub">${fmtDateTime(r.SubmittedAt)} · IP ${escapeHtml(r.IP || "—")}</div>
       </div>
       ${statusBadge(r.Status)}
     </div>
 
+    <div id="historyBox">${historyHtml(historyCache[id])}</div>
+
     <dl class="detail-dl">
       <dt>연락처</dt><dd>${escapeHtml(r.Phone)}</dd>
-      <dt>이메일</dt><dd>${escapeHtml(r.Email)}</dd>
-      <dt>공간</dt><dd>${escapeHtml(r.SpaceType)} · ${escapeHtml(r.SpaceSize)}</dd>
-      <dt>주소</dt><dd>${escapeHtml(r.Postcode)} ${escapeHtml(r.Address)} ${escapeHtml(r.AddressDetail)}</dd>
+      <dt>이메일</dt><dd>${escapeHtml(r.Email || "—")}</dd>
+      <dt>공간</dt><dd>${escapeHtml(r.SpaceType || "—")} ${r.SpaceSize ? "· " + escapeHtml(r.SpaceSize) : ""}</dd>
+      <dt>주소/지역</dt><dd>${escapeHtml(r.Postcode || "")} ${escapeHtml(r.Address || "")} ${escapeHtml(r.AddressDetail || "")}</dd>
       <dt>일정</dt><dd>${escapeHtml(r.Schedule || "—")}</dd>
       <dt>경로</dt><dd>${escapeHtml(r.Referral || "—")}</dd>
       <dt>지점</dt><dd>${escapeHtml(r.Branch || "—")}</dd>
+      ${
+        (r.Source || "").toLowerCase() === "meta"
+          ? `
+        <dt>Meta 플랫폼</dt><dd>${escapeHtml(r.Platform || "—")}</dd>
+        <dt>Meta 캠페인</dt><dd>${escapeHtml(r.Campaign || "—")}</dd>
+      `
+          : ""
+      }
       <dt>상세내용</dt><dd><div class="detail-note">${escapeHtml(r.Detail || "—")}</div></dd>
       <dt>컨셉파일</dt><dd>${filesList(r.ConceptFiles)}</dd>
       <dt>평면도</dt><dd>${filesList(r.FloorPlans)}</dd>
@@ -129,18 +223,43 @@ function openDetail(id) {
         <label>견적 금액 (원)</label>
         <input type="number" id="editAmount" min="0" value="${r.EstimateAmount || 0}" />
       </div>
-      <div class="field">
-        <label>메모</label>
-        <textarea id="editMemo" rows="4">${escapeHtml(r.Memo || "")}</textarea>
-      </div>
       <div class="form-actions">
-        <button class="btn btn-primary" id="btnPatch">변경사항 저장</button>
+        <button class="btn btn-primary" id="btnPatch">상담 정보 저장</button>
+      </div>
+    </div>
+
+    <div class="admin-panel">
+      <h3>메모 (쓰레드)</h3>
+      <div class="memo-thread" id="memoThread">
+        ${memoCache[id] ? memoThreadHtml(memoCache[id]) : '<div class="memo-empty">불러오는 중...</div>'}
+      </div>
+      <div class="memo-editor">
+        <textarea id="memoInput" placeholder="새 메모를 입력하세요 (Ctrl+Enter 저장)"></textarea>
+        <div class="memo-editor-row">
+          <input type="text" id="memoAuthor" placeholder="작성자 (선택)" style="width:140px;padding:6px 8px;border:1px solid var(--c-border);border-radius:6px;font-size:12px;" />
+          <button class="btn btn-primary" id="btnAddMemo" type="button">메모 추가</button>
+        </div>
       </div>
     </div>
   `;
+
   detail
     .querySelector("#btnPatch")
     .addEventListener("click", () => doPatch(id));
+  detail
+    .querySelector("#btnAddMemo")
+    .addEventListener("click", () => addMemo(id));
+  detail.querySelector("#memoInput").addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      addMemo(id);
+    }
+  });
+  bindMemoActions(id);
+
+  // 메모 + 회차 병렬 로드
+  if (!memoCache[id]) loadMemos(id);
+  if (!historyCache[id]) loadHistory(id);
 }
 
 async function doPatch(id) {
@@ -149,7 +268,6 @@ async function doPatch(id) {
   const payload = {
     Status: detail.querySelector("#editStatus").value,
     Assignee: detail.querySelector("#editAssignee").value.trim(),
-    Memo: detail.querySelector("#editMemo").value,
     EstimateAmount: Number(detail.querySelector("#editAmount").value) || 0,
   };
   const ca = detail.querySelector("#editContactedAt").value;
@@ -163,7 +281,12 @@ async function doPatch(id) {
     const r = records.find((x) => x.id === id);
     Object.assign(r, d.updated);
     render();
-    openDetail(id);
+    // 상세 head 의 상태뱃지만 교체
+    const dh = detail.querySelector(".detail-head");
+    if (dh) {
+      const oldBadge = dh.querySelector(".badge");
+      if (oldBadge) oldBadge.outerHTML = statusBadge(payload.Status);
+    }
     adminUtil.toast("저장 완료");
   } catch (e) {
     adminUtil.toast("저장 실패: " + e.message, "error");
@@ -172,7 +295,136 @@ async function doPatch(id) {
   }
 }
 
+// -- memos ----------------------------------------------------
+
+async function loadMemos(id) {
+  try {
+    const d = await adminUtil.api(`/api/estimates/${id}/memos`);
+    memoCache[id] = d.memos || [];
+  } catch (e) {
+    memoCache[id] = [];
+  }
+  if (selectedId === id) {
+    const thread = detail.querySelector("#memoThread");
+    if (thread) thread.innerHTML = memoThreadHtml(memoCache[id]);
+    bindMemoActions(id);
+  }
+}
+
+async function loadHistory(id) {
+  try {
+    const d = await adminUtil.api(`/api/estimates/${id}/history`);
+    historyCache[id] = d;
+  } catch {
+    historyCache[id] = { sessionNo: 1, previous: [] };
+  }
+  if (selectedId === id) {
+    const hb = detail.querySelector("#historyBox");
+    if (hb) hb.innerHTML = historyHtml(historyCache[id]);
+  }
+}
+
+async function addMemo(id) {
+  const input = detail.querySelector("#memoInput");
+  const authorEl = detail.querySelector("#memoAuthor");
+  const text = input.value.trim();
+  if (!text) return;
+  const author = authorEl.value.trim();
+  try {
+    const d = await adminUtil.api(`/api/estimates/${id}/memos`, {
+      method: "POST",
+      json: { body: text, author },
+    });
+    memoCache[id] = [...(memoCache[id] || []), d.memo];
+    detail.querySelector("#memoThread").innerHTML = memoThreadHtml(
+      memoCache[id],
+    );
+    bindMemoActions(id);
+    input.value = "";
+    adminUtil.toast("메모 추가됨");
+  } catch (e) {
+    adminUtil.toast("메모 저장 실패: " + e.message, "error");
+  }
+}
+
+function bindMemoActions(id) {
+  const thread = detail.querySelector("#memoThread");
+  if (!thread) return;
+  thread.querySelectorAll(".memo-item").forEach((el) => {
+    const mid = el.dataset.memoId;
+    el.querySelectorAll(".memo-actions button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const act = btn.dataset.act;
+        if (act === "edit") editMemoInline(id, mid, el);
+        if (act === "del") deleteMemo(id, mid);
+      });
+    });
+  });
+}
+
+function editMemoInline(estimateId, memoId, el) {
+  const memo = (memoCache[estimateId] || []).find((m) => m.id === memoId);
+  if (!memo) return;
+  el.innerHTML = `
+    <div class="memo-editor">
+      <textarea data-role="edit-body">${escapeHtml(memo.body)}</textarea>
+      <div class="memo-editor-row">
+        <button class="btn" data-act="cancel" type="button">취소</button>
+        <button class="btn btn-primary" data-act="save" type="button">저장</button>
+      </div>
+    </div>
+  `;
+  const ta = el.querySelector("textarea");
+  ta.focus();
+  el.querySelector('[data-act="cancel"]').addEventListener("click", () => {
+    el.outerHTML = memoItemHtml(memo);
+    bindMemoActions(estimateId);
+  });
+  el.querySelector('[data-act="save"]').addEventListener("click", async () => {
+    const text = ta.value.trim();
+    if (!text) return;
+    try {
+      const d = await adminUtil.api(
+        `/api/estimates/${estimateId}/memos/${memoId}`,
+        { method: "PATCH", json: { body: text } },
+      );
+      memoCache[estimateId] = memoCache[estimateId].map((m) =>
+        m.id === memoId ? d.memo : m,
+      );
+      detail.querySelector("#memoThread").innerHTML = memoThreadHtml(
+        memoCache[estimateId],
+      );
+      bindMemoActions(estimateId);
+      adminUtil.toast("메모 수정됨");
+    } catch (e) {
+      adminUtil.toast("수정 실패: " + e.message, "error");
+    }
+  });
+}
+
+async function deleteMemo(estimateId, memoId) {
+  if (!confirm("이 메모를 삭제하시겠습니까?")) return;
+  try {
+    await adminUtil.api(`/api/estimates/${estimateId}/memos/${memoId}`, {
+      method: "DELETE",
+    });
+    memoCache[estimateId] = (memoCache[estimateId] || []).filter(
+      (m) => m.id !== memoId,
+    );
+    detail.querySelector("#memoThread").innerHTML = memoThreadHtml(
+      memoCache[estimateId],
+    );
+    bindMemoActions(estimateId);
+    adminUtil.toast("메모 삭제됨");
+  } catch (e) {
+    adminUtil.toast("삭제 실패: " + e.message, "error");
+  }
+}
+
+// -- init -----------------------------------------------------
+
 filterStatus.addEventListener("change", render);
+if (filterSource) filterSource.addEventListener("change", render);
 filterSearch.addEventListener("input", render);
 
 (async () => {
@@ -183,14 +435,17 @@ filterSearch.addEventListener("input", render);
     records = d.records || [];
     render();
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="6" class="empty-state">로드 실패: ${escapeHtml(e.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="empty-state">로드 실패: ${escapeHtml(e.message)}</td></tr>`;
   }
-  document.getElementById("btnLogout").addEventListener("click", async (e) => {
-    e.preventDefault();
-    try {
-      await adminUtil.api("/api/auth/logout", { method: "POST" });
-    } catch {}
-    adminUtil.clearToken();
-    location.href = "login.html";
-  });
+  const logoutBtn = document.getElementById("btnLogout");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      try {
+        await adminUtil.api("/api/auth/logout", { method: "POST" });
+      } catch {}
+      adminUtil.clearToken();
+      location.href = "login.html";
+    });
+  }
 })();

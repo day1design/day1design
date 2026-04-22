@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>유입통계 · DAYONE ADMIN</title>
     <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.vercel.app" crossorigin />
+    <link rel="preconnect" href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev" crossorigin />
     <link rel="stylesheet" href="https://day1design.vercel.app/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.vercel.app/css/reset.css" />
     <link rel="stylesheet" href="admin.css" />
@@ -23,9 +25,9 @@
       <header class="admin-topbar" id="adminTopbar"></header>
       <main class="admin-content" id="adminContent">
         <div class="notice-banner" role="note" aria-label="데이터 연결 안내">
-          <strong>⚠ 예시 데이터입니다.</strong>
-          도메인 연결 후 Google Analytics 4 · Search Console 연동을 진행하며,
-          실제 연결 전까지는 아래 값이 샘플로 표시됩니다.
+          <strong>⚠ 유입통계(상단)는 예시 데이터입니다.</strong>
+          도메인 연결 후 구글 애널리틱스 · 검색 콘솔 연동 예정입니다.
+          <strong>접수 통계(하단)는 실제 Airtable 데이터</strong>로 표시됩니다.
         </div>
 
         <div class="analytics-toolbar">
@@ -82,7 +84,7 @@
         <section class="analytics-row two-col">
           <div class="panel">
             <div class="panel-head">
-              <h3>인기 페이지 Top 10</h3>
+              <h3>인기 페이지 TOP 10</h3>
               <span class="panel-sub">페이지뷰 기준</span>
             </div>
             <table class="top-table" id="topPagesTable">
@@ -111,24 +113,86 @@
         <section class="analytics-row">
           <div class="panel">
             <div class="panel-head">
+              <h3>상담 접수 통계 · 실데이터</h3>
+              <span class="panel-sub">출처별 · 기간별 접수 건수</span>
+            </div>
+            <div class="sub-kpi" id="subKpi">
+              <div class="sub-kpi-item">
+                <div class="sub-kpi-label">총 접수</div>
+                <div class="sub-kpi-value" id="subTotal">—</div>
+              </div>
+              <div class="sub-kpi-item">
+                <div class="sub-kpi-label">홈페이지</div>
+                <div class="sub-kpi-value" id="subHomepage">—</div>
+              </div>
+              <div class="sub-kpi-item">
+                <div class="sub-kpi-label">Meta 광고</div>
+                <div class="sub-kpi-value" id="subMeta">—</div>
+              </div>
+              <div class="sub-kpi-item">
+                <div class="sub-kpi-label">Meta 비중</div>
+                <div class="sub-kpi-value" id="subMetaRatio">—</div>
+              </div>
+            </div>
+            <div class="chart-wrap" style="margin-top: 16px">
+              <canvas id="chartSubmissions" height="240"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section class="analytics-row two-col">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>상태별 분포</h3>
+              <span class="panel-sub">현재 기준</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="chartStatus" height="220"></canvas>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <h3>Meta 캠페인 TOP 5</h3>
+              <span class="panel-sub">접수 건수</span>
+            </div>
+            <table class="top-table" id="topCampaignsTable">
+              <thead>
+                <tr>
+                  <th style="width: 40px">#</th>
+                  <th>캠페인</th>
+                  <th style="width: 70px; text-align: right">접수</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="3" class="empty-state">불러오는 중...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="analytics-row">
+          <div class="panel">
+            <div class="panel-head">
               <h3>연결 가이드</h3>
             </div>
             <ol class="connect-steps">
               <li>도메인(day1design.co)을 Vercel 프로젝트에 연결합니다.</li>
               <li>
-                Google Analytics 4 속성을 생성하고 측정 ID를 받아 HTML에
-                삽입합니다.
+                구글 애널리틱스(GA4) 속성을 생성하고 측정 ID를 받아 사이트 HTML
+                공통 헤더에 삽입합니다.
               </li>
               <li>
-                Search Console에서 동일 도메인을 등록하고 사이트맵을 제출합니다.
+                구글 서치 콘솔에서 동일 도메인을 등록하고 사이트맵을 제출합니다.
               </li>
               <li>
-                Google Cloud Console에서 서비스 계정을 생성하고, GA4 · Search
-                Console의 읽기 권한을 부여합니다.
+                구글 클라우드 콘솔에서 서비스 계정을 생성하고, 애널리틱스 · 서치
+                콘솔의 읽기 권한을 부여합니다.
               </li>
               <li>
-                서비스 계정 키를 Worker 시크릿에 저장하면 이 페이지에서 실제
-                값이 표시됩니다.
+                서비스 계정 키를 Worker 시크릿으로 등록하면 이 페이지 상단
+                유입통계가 실제 값으로 표시됩니다.
               </li>
             </ol>
           </div>
@@ -136,9 +200,9 @@
       </main>
     </div>
     <div class="toast" id="toast"></div>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="config.js"></script>
-    <script src="admin.js"></script>
-    <script src="analytics.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script defer src="config.js"></script>
+    <script defer src="admin.js"></script>
+    <script defer src="analytics.js"></script>
   </body>
 </html>
