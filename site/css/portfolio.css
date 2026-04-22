@@ -195,4 +195,40 @@
   .modal-overlay {
     padding: 20px;
   }
+  /* 로고 아래 공백 확보 — project-section 상단 여백 추가 */
+  .project-section {
+    padding-top: calc(var(--section-padding) + 20px);
+  }
+  /* LNB 크기 축소 */
+  .filter-tabs button {
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding: 10px 14px;
+  }
+  .filter-tabs button:hover,
+  .filter-tabs button.active:hover {
+    font-size: 12px;
+  }
+  /* Sub filter: 가운데 정렬 + 3+2 행 분할 */
+  .sub-filter {
+    padding: 22px 16px 28px;
+  }
+  .sub-filter .sub-group {
+    justify-content: center;
+    gap: 8px;
+  }
+  .sub-filter button {
+    font-size: 12px;
+    padding: 4px 4px;
+  }
+  /* 30~40평과 40~50평 사이 구분자를 줄바꿈 트리거로 전환 */
+  .sub-filter .row-break {
+    flex-basis: 100%;
+    visibility: hidden;
+    width: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
 }

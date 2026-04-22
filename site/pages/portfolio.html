@@ -17,6 +17,29 @@
       rel="canonical"
       href="https://day1design.vercel.app/pages/portfolio.html"
     />
+    <!-- Favicon -->
+    <link
+      rel="icon"
+      type="image/x-icon"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon.ico"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-16.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-180.png"
+    />
     <meta name="theme-color" content="#5A5448" />
 
     <!-- Open Graph -->
@@ -117,7 +140,6 @@
       href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
       crossorigin
     />
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="stylesheet" href="../css/fonts.css" />
     <link rel="stylesheet" href="../css/variables.css" />
     <link rel="stylesheet" href="../css/reset.css" />
@@ -129,7 +151,15 @@
     <!-- HEADER -->
     <header class="header" id="header">
       <div class="header-inner">
-        <div class="logo"><a href="../index.html">DAYONE DESIGN</a></div>
+        <div class="logo">
+          <a href="../index.html"
+            ><img
+              src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone-wordmark.webp"
+              alt="DAYONE DESIGN"
+              width="281"
+              height="26"
+          /></a>
+        </div>
         <nav>
           <ul class="nav-list">
             <li>
@@ -191,7 +221,7 @@
           <button data-size="20-30">20~30평</button>
           <span class="sep" aria-hidden="true">|</span>
           <button data-size="30-40">30~40평</button>
-          <span class="sep" aria-hidden="true">|</span>
+          <span class="sep row-break" aria-hidden="true">|</span>
           <button data-size="40-50">40~50평</button>
           <span class="sep" aria-hidden="true">|</span>
           <button data-size="50+">50평 이상~</button>
@@ -223,7 +253,14 @@
     <footer class="footer">
       <div class="footer-inner">
         <div class="footer-top">
-          <div class="footer-logo">DAYONE DESIGN</div>
+          <div class="footer-logo">
+            <img
+              src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone-wordmark.webp"
+              alt="DAYONE DESIGN"
+              width="260"
+              height="24"
+            />
+          </div>
           <div class="footer-nav">
             <a href="about.html">ABOUT US</a>
             <a href="portfolio.html">PORTFOLIO</a>
@@ -275,11 +312,19 @@
       </div>
     </footer>
 
+    <!-- 모바일 하단 탭바 -->
+    <nav class="bottom-nav" aria-label="모바일 하단 메뉴">
+      <a href="about.html">ABOUT</a>
+      <a href="portfolio.html" class="active">PORTFOLIO</a>
+      <a href="community.html">COMMUNITY</a>
+      <a href="estimates.html">ESTIMATE</a>
+    </nav>
+
     <script src="../js/config.js"></script>
-    <script src="../js/common.js"></script>
+    <script defer src="../js/common.js"></script>
     <script>
       const IMG_PREFIX = "../";
     </script>
-    <script src="../js/main.js"></script>
+    <script defer src="../js/main.js"></script>
   </body>
 </html>

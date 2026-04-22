@@ -17,6 +17,11 @@
     <meta name="author" content="데이원디자인" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://day1design.vercel.app/" />
+        <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-180.png" />
     <meta name="theme-color" content="#5A5448" />
 
     <!-- Open Graph -->
@@ -59,7 +64,28 @@
       href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
       crossorigin
     />
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <!-- LCP: 히어로 기본 배경 preload. admin 데이터와 무관한 고정 브랜드 이미지 → sync 불필요 -->
+    <link
+      rel="preload"
+      as="image"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/hero/hero-main-bg.webp"
+      fetchpriority="high"
+    />
+    <!-- 핵심 폰트 preload (body 400 / heading 700) -->
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-4Regular.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-7ExtraBold.woff2"
+      crossorigin
+    />
     <link rel="stylesheet" href="css/fonts.css" />
     <link rel="stylesheet" href="css/variables.css" />
     <link rel="stylesheet" href="css/reset.css" />
@@ -190,7 +216,7 @@
     <!-- ========== HEADER ========== -->
     <header class="header" id="header">
       <div class="header-inner">
-        <div class="logo"><a href="index.html">DAYONE DESIGN</a></div>
+        <div class="logo"><a href="index.html"><img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone-wordmark.webp" alt="DAYONE DESIGN" width="281" height="26" /></a></div>
         <nav>
           <ul class="nav-list">
             <li>
@@ -232,7 +258,8 @@
     </div>
 
     <!-- ========== POPUP (이미지 기반) ========== -->
-    <div class="popup-overlay" id="popupOverlay">
+    <!-- 기본 hidden: JS가 dismiss 이력 체크 후 필요 시만 hidden 제거 → 검정 오버레이 플래시 방지 -->
+    <div class="popup-overlay hidden" id="popupOverlay">
       <div class="popup">
         <span class="popup-close" id="popupClose">&times;</span>
         <img
@@ -248,7 +275,18 @@
     </div>
 
     <!-- ========== HERO SLIDER ========== -->
+    <!-- <img class="hero-fallback">는 HTML 파서가 즉시 발견 → <link rel=preload>와 강결합되어
+         캐시 히트 즉시 렌더. JSON 도착 전/실패 시에도 히어로가 보여 검정/빈 화면 방지.
+         고정 브랜드 이미지라 admin 슬라이드 변경과 무관 (sync 불필요).
+         실제 첫 슬라이드는 JSON 도착 후 JS가 이 이미지 위에 페이드인으로 렌더. -->
     <section class="hero hero-slider">
+      <img
+        class="hero-fallback"
+        src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/hero/hero-main-bg.webp"
+        alt=""
+        fetchpriority="high"
+        decoding="async"
+      />
       <div class="hero-track" id="heroTrack">
         <!-- 슬라이드는 JS가 data/hero-slides.json 기반으로 렌더 -->
       </div>
@@ -349,7 +387,7 @@
     <footer class="footer">
       <div class="footer-inner">
         <div class="footer-top">
-          <div class="footer-logo">DAYONE DESIGN</div>
+          <div class="footer-logo"><img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone-wordmark.webp" alt="DAYONE DESIGN" width="260" height="24" /></div>
           <div class="footer-nav">
             <a href="pages/about.html">ABOUT US</a>
             <a href="pages/portfolio.html">PORTFOLIO</a>
@@ -410,7 +448,15 @@
       </div>
     </footer>
 
-    <script src="js/config.js" defer></script>
+    <!-- 모바일 하단 탭바 -->
+    <nav class="bottom-nav" aria-label="모바일 하단 메뉴">
+      <a href="pages/about.html">ABOUT</a>
+      <a href="pages/portfolio.html">PORTFOLIO</a>
+      <a href="pages/community.html">COMMUNITY</a>
+      <a href="pages/estimates.html">ESTIMATE</a>
+    </nav>
+
+    <script src="js/config.js"></script>
     <script src="js/common.js" defer></script>
     <script src="js/main.js" defer></script>
   </body>

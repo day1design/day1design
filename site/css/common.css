@@ -26,10 +26,26 @@
   justify-content: space-between;
 }
 .logo a {
+  display: inline-flex;
+  align-items: center;
+  /* 이미지 없을 때 fallback 텍스트 스타일 유지 */
   font-size: 20px;
   font-weight: 300;
   letter-spacing: var(--letter-spacing-logo);
   color: var(--color-text-heading);
+}
+.logo a img {
+  height: 22px;
+  width: auto;
+  max-width: 100%;
+  display: block;
+  /* 기본(transparent header) 상태에선 밝은 톤. scrolled/hover면 원래 브랜드 컬러 복원 */
+  filter: brightness(1.6);
+  transition: filter 0.25s ease;
+}
+.header.scrolled .logo a img,
+.header:hover .logo a img {
+  filter: none;
 }
 .nav-list {
   display: flex;
@@ -183,6 +199,16 @@
   font-size: 20px;
   font-weight: 300;
   letter-spacing: var(--letter-spacing-logo);
+  display: flex;
+  align-items: center;
+}
+.footer-logo img {
+  height: 24px;
+  width: auto;
+  max-width: 100%;
+  display: block;
+  /* 푸터 배경(#5a5448)과 로고 컬러(동일)가 겹쳐 안 보이는 문제 해결 */
+  filter: brightness(0) invert(1);
 }
 .footer-nav {
   display: flex;
@@ -206,6 +232,7 @@
 .footer-social {
   display: flex;
   gap: 12px;
+  flex-shrink: 0;
 }
 .footer-social a {
   display: flex;
@@ -213,6 +240,9 @@
   justify-content: center;
   transition: var(--transition);
   opacity: 0.9;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
 }
 .footer-social a:hover {
   opacity: 1;
@@ -220,6 +250,9 @@
 .footer-social img {
   width: 40px;
   height: 40px;
+  object-fit: contain;
+  /* 네이버 블로그 등 비정사각 아이콘도 비율 유지 */
+  flex-shrink: 0;
 }
 .footer-info {
   font-size: 12px;
@@ -420,6 +453,14 @@
   }
   .header-inner {
     padding: 0 20px;
+    position: relative;
+  }
+  /* 모바일: 로고를 헤더 가운데 고정 (햄버거는 우측 유지) */
+  .logo {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
   }
   .container {
     padding: 0 20px;
@@ -439,11 +480,205 @@
     letter-spacing: 3px;
     font-size: 17px;
   }
+  .logo a img {
+    height: 16px;
+  }
+  .footer-logo img {
+    height: 20px;
+  }
   .popup-branches {
     flex-direction: column;
   }
   :root {
     --section-padding: 48px;
     --font-size-hero: 26px;
+  }
+}
+
+/* 모바일 가로 스크롤 절대 금지: 어떤 요소가 오버플로해도 body가 스크롤 생성하지 않도록 고정 안전장치.
+   (가로 스크롤은 모바일 UX 최악 요소 — 원인 요소 발견 시 별도 수정하되 이 안전장치는 항상 유지) */
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* ========== BOTTOM NAV (모바일 하단 탭바) ========== */
+.bottom-nav {
+  display: none;
+}
+@media (max-width: 991px) {
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 58px;
+    background: rgba(255, 255, 255, 0.98);
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 -1px 6px rgba(0, 0, 0, 0.04);
+    z-index: 99;
+    backdrop-filter: saturate(180%) blur(12px);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+  }
+  .bottom-nav a {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 1.2px;
+    color: var(--color-text-primary);
+    transition: color 0.2s ease;
+  }
+  .bottom-nav a {
+    position: relative;
+    padding-top: 10px; /* active indicator용 여유 */
+  }
+  .bottom-nav a.active {
+    color: var(--color-brand-beige);
+    font-weight: 700;
+  }
+  /* active indicator: 상단 중앙 막대 + 은은한 배경 → 계층 구분 강화 */
+  .bottom-nav a.active::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 32px;
+    height: 3px;
+    background: var(--color-brand-beige);
+    border-radius: 0 0 3px 3px;
+  }
+  .bottom-nav a.active::after {
+    content: "";
+    position: absolute;
+    inset: 4px 4px 4px 4px;
+    background: rgba(90, 84, 72, 0.06);
+    border-radius: 8px;
+    z-index: -1;
+  }
+  .bottom-nav a + a {
+    border-left: 1px solid rgba(0, 0, 0, 0.05);
+  }
+  /* 햄버거/드롭다운 대체: 하단바로 통일 */
+  .hamburger {
+    display: none !important;
+  }
+  .mobile-nav {
+    display: none !important;
+  }
+  /* 하단바에 콘텐츠가 가려지지 않도록 body에 여백 */
+  body {
+    padding-bottom: 58px;
+  }
+  /* 모바일 푸터: 메뉴(PC 전용) 숨김 + SNS/텍스트 레이아웃 재정리 */
+  .footer-nav {
+    display: none;
+  }
+  .footer-bottom {
+    flex-direction: column;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .footer-social,
+  .footer-social a,
+  .footer-social img {
+    width: 32px;
+    height: 32px;
+  }
+  /* 헤더 fixed와 본문 사이 여백 확보 — 히어로 없는 페이지의 첫 섹션에 상단 여유.
+     히어로가 있는 페이지(index, about)는 hero 자체가 공간 차지해 영향 없음. */
+  .community-header,
+  .project-section,
+  .estimate-header {
+    padding-top: calc(var(--header-height) + 20px);
+  }
+}
+@media (max-width: 767px) {
+  .footer-info {
+    font-size: 11px;
+    line-height: 1.75;
+  }
+  .footer-info p {
+    margin-bottom: 2px;
+  }
+  .footer-credit {
+    font-size: 10px;
+  }
+}
+
+/* ========== BOTTOM NAV · Popover LNB ========== */
+/* ABOUT/PORTFOLIO 탭 클릭 시 탭 바로 위에 뜨는 서브메뉴 팝오버 */
+.bn-popover {
+  position: fixed;
+  bottom: 72px; /* 탭바 58 + 간격 14 */
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 6px;
+  z-index: 200;
+  min-width: 180px;
+  max-width: 220px;
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+  display: none;
+}
+.bn-popover.open {
+  display: block;
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+.bn-popover a {
+  display: block;
+  padding: 10px 16px;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: var(--color-text-primary);
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+.bn-popover a:hover,
+.bn-popover a.active {
+  background: rgba(90, 84, 72, 0.08);
+  color: var(--color-brand-beige);
+  font-weight: 600;
+}
+.bn-popover .bn-pop-divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.06);
+  margin: 4px 2px;
+}
+/* 화살표 (탭 방향 가리킴) */
+.bn-popover::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+/* popover 열린 상태에서 해당 트리거 탭 강조 */
+.bottom-nav a.submenu-open {
+  color: var(--color-brand-beige);
+  font-weight: 700;
+}
+/* PC(992+)에선 popover 숨김 (하단탭바 자체가 안 보임) */
+@media (min-width: 992px) {
+  .bn-popover {
+    display: none !important;
   }
 }
