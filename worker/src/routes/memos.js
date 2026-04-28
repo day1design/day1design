@@ -9,19 +9,15 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
 import {
-  atCreate,
-  atGet,
-  atUpdate,
-  atDelete,
-  atListAll,
-} from "../lib/airtable.js";
+  d1Create as atCreate,
+  d1Get as atGet,
+  d1Update as atUpdate,
+  d1Delete as atDelete,
+  d1ListAll as atListAll,
+} from "../lib/d1.js";
 
 const TBL_ESTIMATE = "Estimates";
 const TBL_MEMO = "EstimateMemos";
-
-function escapeFormula(s) {
-  return String(s || "").replace(/'/g, "\\'");
-}
 
 function normalizePhone(s) {
   return String(s || "").replace(/\D/g, "");
@@ -41,9 +37,8 @@ export async function handleMemos(request, env, ctx, estimateId, memoId) {
 }
 
 async function listMemos(env, estimateId) {
-  const filter = `{EstimateId}='${escapeFormula(estimateId)}'`;
   const records = await atListAll(env, TBL_MEMO, {
-    filter,
+    where: { EstimateId: estimateId },
     sort: [{ field: "CreatedAt", direction: "asc" }],
   });
   const memos = records.map((r) => ({
@@ -132,8 +127,9 @@ export async function handleHistory(request, env, ctx, estimateId) {
   let current;
   try {
     current = await atGet(env, TBL_ESTIMATE, estimateId);
-  } catch {
-    return jsonError(404, "Estimate not found");
+  } catch (e) {
+    if (e.notFound) return jsonError(404, "Estimate not found");
+    throw e;
   }
   const myPhoneDigits = normalizePhone(current.fields.Phone);
   const myEmail = String(current.fields.Email || "")

@@ -6,7 +6,7 @@
 
 import { jsonOk, jsonError, json } from "../lib/response.js";
 import { escapeHtml } from "../lib/security.js";
-import { atCreate } from "../lib/airtable.js";
+import { d1Create as atCreate } from "../lib/d1.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import { edgeCacheDeleteMany } from "../lib/edge-cache.js";
 
@@ -39,6 +39,58 @@ function normalizePlatform(s) {
   if (v.includes("instagram")) return "instagram";
   if (v.includes("facebook")) return "facebook";
   return "facebook";
+}
+
+// 텔레그램 메시지 빌더 — 폴라애드 스타일 (섹션 헤더 + 트리 문자)
+// parse_mode: HTML 전제. 빈 필드는 라인 자체 생략.
+function buildMetaLeadMessage({
+  name,
+  prettyPhone,
+  location,
+  spaceType,
+  area,
+  scheduledDate,
+  budget,
+  platform,
+  campaign,
+}) {
+  const platformLabel = platform === "instagram" ? "Instagram" : "Facebook";
+  const spaceLabel = (spaceType || "").replace(/_/g, " ");
+
+  const pushBlock = (lines, header, rows) => {
+    if (rows.length === 0) return;
+    lines.push("", header);
+    rows.forEach((row, i) => {
+      lines.push(`${i === rows.length - 1 ? "└" : "├"} ${row}`);
+    });
+  };
+
+  const out = [];
+  out.push(`<b>[day1design/meta-lead]</b> 🔔 <b>신규 상담 신청</b>`);
+  out.push(`🔵 Meta 광고`);
+
+  // 고객정보 — 이름/연락처는 항상, 지역은 있을 때만
+  const customer = [
+    `이름: ${escapeHtml(name)}`,
+    `연락처: ${escapeHtml(prettyPhone)}`,
+  ];
+  if (location) customer.push(`지역: ${escapeHtml(location)}`);
+  pushBlock(out, `👤 <b>고객정보</b>`, customer);
+
+  // 공간/일정/예산
+  const space = [];
+  if (spaceLabel) space.push(`유형: ${escapeHtml(spaceLabel)}`);
+  if (area) space.push(`면적: ${escapeHtml(area)}`);
+  if (scheduledDate) space.push(`시공예정: ${escapeHtml(scheduledDate)}`);
+  if (budget) space.push(`가용예산: ${escapeHtml(budget)}`);
+  pushBlock(out, `🏘 <b>공간/일정</b>`, space);
+
+  // 광고정보 — 플랫폼은 항상, 캠페인은 있을 때만
+  const ads = [`플랫폼: ${escapeHtml(platformLabel)}`];
+  if (campaign) ads.push(`캠페인: ${escapeHtml(campaign)}`);
+  pushBlock(out, `📢 <b>광고정보</b>`, ads);
+
+  return out.join("\n");
 }
 
 export async function handleMetaLead(request, env, ctx) {
@@ -98,6 +150,9 @@ export async function handleMetaLead(request, env, ctx) {
   const scheduledDate = String(body.scheduledDate || "")
     .trim()
     .slice(0, 100); // 시공예정일
+  const budget = String(body.budget || "")
+    .trim()
+    .slice(0, 60); // 가용예산 (예: 3,000~5,000만원)
   const platform = normalizePlatform(body.platform);
   const campaign = String(body.campaign || "")
     .trim()
@@ -121,6 +176,7 @@ export async function handleMetaLead(request, env, ctx) {
   if (spaceType) detailLines.push(`공간유형: ${spaceType}`);
   if (area) detailLines.push(`면적: ${area}`);
   if (scheduledDate) detailLines.push(`시공예정일: ${scheduledDate}`);
+  if (budget) detailLines.push(`가용예산: ${budget}`);
   const detail = detailLines.join("\n");
 
   // 11) Airtable 저장 — Estimates 스키마와 자연스럽게 매핑
@@ -156,7 +212,7 @@ export async function handleMetaLead(request, env, ctx) {
     });
     recordId = record.id;
   } catch (e) {
-    saveError = e.message || "Airtable create failed";
+    saveError = e.message || "D1 create failed";
   }
 
   // 12) 백그라운드: 텔레그램 + 캐시 무효화
@@ -169,30 +225,32 @@ export async function handleMetaLead(request, env, ctx) {
         );
         await notifyTelegram(
           env,
-          `[day1design/meta-lead] 새 Meta 상담신청\n` +
-            `이름: ${escapeHtml(name)}\n` +
-            `연락처: ${escapeHtml(prettyPhone)}\n` +
-            `지역: ${escapeHtml(location || "-")}\n` +
-            `공간유형: ${escapeHtml(spaceType || "-")}\n` +
-            `면적: ${escapeHtml(area || "-")}\n` +
-            `시공예정일: ${escapeHtml(scheduledDate || "-")}\n` +
-            `플랫폼: ${escapeHtml(platform)}\n` +
-            `캠페인: ${escapeHtml(campaign || "-")}`,
+          buildMetaLeadMessage({
+            name,
+            prettyPhone,
+            location,
+            spaceType,
+            area,
+            scheduledDate,
+            budget,
+            platform,
+            campaign,
+          }),
         );
       } else if (saveError) {
         await notifyTelegram(
           env,
-          `[day1design/meta-lead] 500 Airtable 저장 실패\n` +
-            `이름: ${escapeHtml(name)}\n` +
-            `전화: ${escapeHtml(prettyPhone)}\n` +
-            `에러: ${escapeHtml(saveError.slice(0, 200))}`,
+          `<b>[day1design/meta-lead]</b> ⚠ <b>D1 저장 실패</b>\n` +
+            `├ 이름: ${escapeHtml(name)}\n` +
+            `├ 전화: ${escapeHtml(prettyPhone)}\n` +
+            `└ 에러: ${escapeHtml(saveError.slice(0, 200))}`,
         );
       }
     })(),
   );
 
   if (!recordId) {
-    return json({ ok: false, error: "Airtable save failed" }, { status: 502 });
+    return json({ ok: false, error: "D1 save failed" }, { status: 502 });
   }
 
   return jsonOk({ id: recordId, source: "meta" });

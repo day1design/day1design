@@ -8,15 +8,21 @@ compatibility_flags = ["nodejs_compat"]
 binding = "IMAGES"
 bucket_name = "day1design-r2"
 
+# D1 database (데이터 저장 — Airtable 대체)
+[[d1_databases]]
+binding = "DB"
+database_name = "day1design"
+database_id = "60c293bc-5359-4a94-bc18-c3cda0829366"
+
 [vars]
 # CORS 화이트리스트 (콤마 구분)
 ALLOWED_ORIGINS = "https://day1design.vercel.app,https://admin-day1design.vercel.app,http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5500"
 R2_PUBLIC_BASE = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
 
 # 비밀값은 배포 전 wrangler secret put 으로 주입:
-#   wrangler secret put AIRTABLE_TOKEN
-#   wrangler secret put AIRTABLE_BASE_ID
 #   wrangler secret put ADMIN_TOKEN
+#   wrangler secret put JWT_SECRET
+#   wrangler secret put META_LEAD_SECRET
 #   wrangler secret put TELEGRAM_BOT_TOKEN    (선택)
 #   wrangler secret put TELEGRAM_CHAT_ID      (선택)
 # 로컬 개발은 worker/.dev.vars 파일에 동일 키로 저장

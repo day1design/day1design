@@ -1,12 +1,12 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
 import {
-  atListAll,
-  atGet,
-  atCreate,
-  atUpdate,
-  atDelete,
-} from "../lib/airtable.js";
+  d1ListAll as atListAll,
+  d1Get as atGet,
+  d1Create as atCreate,
+  d1Update as atUpdate,
+  d1Delete as atDelete,
+} from "../lib/d1.js";
 import { r2DeleteMany } from "../lib/r2.js";
 import {
   edgeCacheGet,

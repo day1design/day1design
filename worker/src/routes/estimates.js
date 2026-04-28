@@ -10,7 +10,12 @@ import {
 } from "../lib/security.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { r2Upload, safeFileName, datePrefix, randomId } from "../lib/r2.js";
-import { atCreate, atListAll, atUpdate, atDelete } from "../lib/airtable.js";
+import {
+  d1Create as atCreate,
+  d1ListAll as atListAll,
+  d1Update as atUpdate,
+  d1Delete as atDelete,
+} from "../lib/d1.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import {
   edgeCacheGet,
@@ -65,6 +70,7 @@ async function deleteEstimate(env, id, ctx) {
   try {
     await atDelete(env, TABLE, id);
   } catch (e) {
+    if (e.notFound) return jsonError(404, "Estimate not found");
     ctx.waitUntil(
       notifyTelegram(
         env,
@@ -211,11 +217,9 @@ async function listEstimates(request, env, ctx) {
   const cached = await edgeCacheGet(ns);
   if (cached) return jsonOk(cached);
 
-  const filter = status
-    ? `{Status}='${status.replace(/'/g, "\\'")}'`
-    : undefined;
+  const where = status ? { Status: status } : undefined;
   const records = await atListAll(env, TABLE, {
-    filter,
+    where,
     sort: [{ field: "SubmittedAt", direction: "desc" }],
   });
   const payload = {
@@ -261,7 +265,13 @@ async function patchEstimate(request, env, id, ctx) {
   const fields = {};
   for (const k of allowed) if (k in body) fields[k] = body[k];
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
-  const record = await atUpdate(env, TABLE, id, fields);
+  let record;
+  try {
+    record = await atUpdate(env, TABLE, id, fields);
+  } catch (e) {
+    if (e.notFound) return jsonError(404, "Estimate not found");
+    throw e;
+  }
   // 상태 변경 가능성 → 모든 status 조합 invalidate
   await edgeCacheDeleteMany(
     [

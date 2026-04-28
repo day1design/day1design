@@ -7,9 +7,12 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
-    "secret:airtable-token": "wrangler secret put AIRTABLE_TOKEN",
-    "secret:airtable-base": "wrangler secret put AIRTABLE_BASE_ID",
-    "secret:admin-token": "wrangler secret put ADMIN_TOKEN"
+    "d1:migrate": "wrangler d1 execute day1design --remote --file=migrations/0001_init.sql",
+    "d1:migrate:local": "wrangler d1 execute day1design --local --file=migrations/0001_init.sql",
+    "d1:export": "wrangler d1 export day1design --remote --output=_export/d1-backup.sql",
+    "secret:admin-token": "wrangler secret put ADMIN_TOKEN",
+    "secret:jwt": "wrangler secret put JWT_SECRET",
+    "secret:meta-lead": "wrangler secret put META_LEAD_SECRET"
   },
   "devDependencies": {
     "wrangler": "^3.78.0"

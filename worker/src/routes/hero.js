@@ -1,6 +1,6 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import { atListAll, atCreate, atUpdate, atDelete } from "../lib/airtable.js";
+import { d1ListAll, d1ReplaceAll } from "../lib/d1.js";
 import {
   r2Upload,
   r2DeleteMany,
@@ -43,7 +43,7 @@ async function getSlides(env, ctx) {
   const cached = await edgeCacheGet(CACHE_NS);
   if (cached) return jsonOk(cached);
 
-  const records = await atListAll(env, TABLE, {
+  const records = await d1ListAll(env, TABLE, {
     sort: [{ field: "Order", direction: "asc" }],
   });
   const slides = records
@@ -63,7 +63,7 @@ async function getSlides(env, ctx) {
   return jsonOk(payload);
 }
 
-/** 전체 배열 교체: 기존 삭제 → 새로 생성. Airtable에는 bulk replace가 없으니 diff보다 이게 단순함 */
+/** 전체 배열 교체: D1 ReplaceAll (DELETE + batch INSERT) */
 async function putSlides(request, env, ctx) {
   let body;
   try {
@@ -75,27 +75,21 @@ async function putSlides(request, env, ctx) {
   if (!slides) return jsonError(400, "slides[] required");
   if (slides.length > 10) return jsonError(400, "Max 10 slides");
 
-  const existing = await atListAll(env, TABLE);
+  const existing = await d1ListAll(env, TABLE);
   const oldUrls = existing.map((r) => r.fields.Image).filter(Boolean);
   const newUrls = new Set(slides.map((s) => s.image).filter(Boolean));
   const orphanUrls = oldUrls.filter((u) => !newUrls.has(u));
 
-  for (const r of existing) {
-    await atDelete(env, TABLE, r.id);
-  }
-  const created = [];
-  for (let i = 0; i < slides.length; i++) {
-    const s = slides[i];
-    if (!s.image) continue;
-    const rec = await atCreate(env, TABLE, {
+  const newRecords = slides
+    .filter((s) => s.image)
+    .map((s, i) => ({
       Image: s.image,
       Href: s.href || "",
       Alt: s.alt || "",
       Order: i,
       Active: true,
-    });
-    created.push(rec);
-  }
+    }));
+  const created = await d1ReplaceAll(env, TABLE, newRecords);
 
   // 고아 이미지 R2 삭제 (응답 지연 방지: waitUntil)
   if (orphanUrls.length > 0) {

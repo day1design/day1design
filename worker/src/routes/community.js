@@ -1,13 +1,12 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
 import {
-  atListAll,
-  atGet,
-  atCreate,
-  atUpdate,
-  atDelete,
-  atList,
-} from "../lib/airtable.js";
+  d1ListAll as atListAll,
+  d1Create as atCreate,
+  d1Update as atUpdate,
+  d1Delete as atDelete,
+  d1List as atList,
+} from "../lib/d1.js";
 import { r2DeleteMany } from "../lib/r2.js";
 import {
   edgeCacheGet,
@@ -103,9 +102,9 @@ async function listCommunity(request, env, ctx) {
   const cached = await edgeCacheGet(ns);
   if (cached) return jsonOk(cached);
 
-  const filter = board ? `{Board}='${board.replace(/'/g, "\\'")}'` : undefined;
+  const where = board ? { Board: board } : undefined;
   const records = await atListAll(env, TABLE, {
-    filter,
+    where,
     sort: [{ field: "Date", direction: "desc" }],
   });
   const payload = {
@@ -122,7 +121,7 @@ async function getPost(env, idx, ctx) {
   if (cached) return jsonOk(cached);
 
   const data = await atList(env, TABLE, {
-    filter: `{Idx}='${idx.replace(/'/g, "\\'")}'`,
+    where: { Idx: idx },
     pageSize: 1,
   });
   const r = (data.records || [])[0];
@@ -158,7 +157,7 @@ async function patchPost(request, env, idx, ctx) {
     return jsonError(400, "Invalid JSON");
   }
   const data = await atList(env, TABLE, {
-    filter: `{Idx}='${idx.replace(/'/g, "\\'")}'`,
+    where: { Idx: idx },
     pageSize: 1,
   });
   const r = (data.records || [])[0];
@@ -191,7 +190,7 @@ async function patchPost(request, env, idx, ctx) {
 
 async function deletePost(env, idx, ctx) {
   const data = await atList(env, TABLE, {
-    filter: `{Idx}='${idx.replace(/'/g, "\\'")}'`,
+    where: { Idx: idx },
     pageSize: 1,
   });
   const r = (data.records || [])[0];
