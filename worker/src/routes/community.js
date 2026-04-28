@@ -1,12 +1,6 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import {
-  d1ListAll as atListAll,
-  d1Create as atCreate,
-  d1Update as atUpdate,
-  d1Delete as atDelete,
-  d1List as atList,
-} from "../lib/d1.js";
+import { d1ListAll, d1Create, d1Update, d1Delete, d1List } from "../lib/d1.js";
 import { r2DeleteMany } from "../lib/r2.js";
 import {
   edgeCacheGet,
@@ -103,7 +97,7 @@ async function listCommunity(request, env, ctx) {
   if (cached) return jsonOk(cached);
 
   const where = board ? { Board: board } : undefined;
-  const records = await atListAll(env, TABLE, {
+  const records = await d1ListAll(env, TABLE, {
     where,
     sort: [{ field: "Date", direction: "desc" }],
   });
@@ -120,7 +114,7 @@ async function getPost(env, idx, ctx) {
   const cached = await edgeCacheGet(ns);
   if (cached) return jsonOk(cached);
 
-  const data = await atList(env, TABLE, {
+  const data = await d1List(env, TABLE, {
     where: { Idx: idx },
     pageSize: 1,
   });
@@ -141,7 +135,7 @@ async function createPost(request, env, ctx) {
   const fields = mapFields(body);
   if (!fields.Idx || !fields.Title)
     return jsonError(400, "Idx and Title required");
-  const r = await atCreate(env, TABLE, fields);
+  const r = await d1Create(env, TABLE, fields);
   await edgeCacheDeleteMany(
     [listCacheNs(null), listCacheNs("Residential"), listCacheNs("Commercial")],
     ctx,
@@ -156,7 +150,7 @@ async function patchPost(request, env, idx, ctx) {
   } catch {
     return jsonError(400, "Invalid JSON");
   }
-  const data = await atList(env, TABLE, {
+  const data = await d1List(env, TABLE, {
     where: { Idx: idx },
     pageSize: 1,
   });
@@ -165,7 +159,7 @@ async function patchPost(request, env, idx, ctx) {
   const before = toDetailClient(r);
   const fields = mapFields(body);
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
-  const updated = await atUpdate(env, TABLE, r.id, fields);
+  const updated = await d1Update(env, TABLE, r.id, fields);
   const after = toDetailClient(updated);
 
   // 이전에 있었으나 새 상태에는 없는 URL만 정리
@@ -189,14 +183,14 @@ async function patchPost(request, env, idx, ctx) {
 }
 
 async function deletePost(env, idx, ctx) {
-  const data = await atList(env, TABLE, {
+  const data = await d1List(env, TABLE, {
     where: { Idx: idx },
     pageSize: 1,
   });
   const r = (data.records || [])[0];
   if (!r) return jsonError(404, "Post not found");
   const before = toDetailClient(r);
-  await atDelete(env, TABLE, r.id);
+  await d1Delete(env, TABLE, r.id);
   const urls = collectPostUrls(before);
   if (urls.length > 0) {
     const task = r2DeleteMany(env.IMAGES, urls, env.R2_PUBLIC_BASE);

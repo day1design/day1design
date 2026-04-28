@@ -1,12 +1,12 @@
 // ─── Meta Lead 수신 엔드포인트 ───
 // Make → HTTP Make a request → 이 Worker 로 POST.
 // 인증: X-Meta-Lead-Secret 헤더 (서버-서버 호출 → Origin 미검증)
-// 저장: Airtable `Estimates` 테이블에 Source="meta" 로 기입 → 관리자 UI에서 Meta 출처 뱃지.
+// 저장: D1 `Estimates` 테이블에 Source="meta" 로 기입 → 관리자 UI에서 Meta 출처 뱃지.
 // 중복방지: phone+timestamp 10분 캐시.
 
 import { jsonOk, jsonError, json } from "../lib/response.js";
 import { escapeHtml } from "../lib/security.js";
-import { d1Create as atCreate } from "../lib/d1.js";
+import { d1Create } from "../lib/d1.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import { edgeCacheDeleteMany } from "../lib/edge-cache.js";
 
@@ -179,7 +179,7 @@ export async function handleMetaLead(request, env, ctx) {
   if (budget) detailLines.push(`가용예산: ${budget}`);
   const detail = detailLines.join("\n");
 
-  // 11) Airtable 저장 — Estimates 스키마와 자연스럽게 매핑
+  // 11) D1 저장 — Estimates 스키마와 자연스럽게 매핑
   //   location → Address (지역)
   //   spaceType → SpaceType (아파트/빌라/주택/상가/기타)
   //   area → SpaceSize (20~30평/30~40평 등)
@@ -187,7 +187,7 @@ export async function handleMetaLead(request, env, ctx) {
   let recordId = null;
   let saveError = null;
   try {
-    const record = await atCreate(env, TABLE, {
+    const record = await d1Create(env, TABLE, {
       Name: name,
       Phone: prettyPhone,
       Email: "",

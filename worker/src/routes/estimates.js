@@ -10,12 +10,7 @@ import {
 } from "../lib/security.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { r2Upload, safeFileName, datePrefix, randomId } from "../lib/r2.js";
-import {
-  d1Create as atCreate,
-  d1ListAll as atListAll,
-  d1Update as atUpdate,
-  d1Delete as atDelete,
-} from "../lib/d1.js";
+import { d1Create, d1ListAll, d1Update, d1Delete } from "../lib/d1.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import {
   edgeCacheGet,
@@ -68,7 +63,7 @@ async function deleteEstimate(env, id, ctx) {
     return jsonError(400, "Invalid id");
   }
   try {
-    await atDelete(env, TABLE, id);
+    await d1Delete(env, TABLE, id);
   } catch (e) {
     if (e.notFound) return jsonError(404, "Estimate not found");
     ctx.waitUntil(
@@ -145,8 +140,8 @@ async function submitEstimate(request, env, ctx) {
   );
   const planUrls = await uploadField(form, "floor_plans", folder, "plan", env);
 
-  // Airtable 레코드 생성
-  const record = await atCreate(env, TABLE, {
+  // D1 레코드 생성
+  const record = await d1Create(env, TABLE, {
     Name: fields.name,
     Phone: fields.phone,
     Email: fields.email,
@@ -218,7 +213,7 @@ async function listEstimates(request, env, ctx) {
   if (cached) return jsonOk(cached);
 
   const where = status ? { Status: status } : undefined;
-  const records = await atListAll(env, TABLE, {
+  const records = await d1ListAll(env, TABLE, {
     where,
     sort: [{ field: "SubmittedAt", direction: "desc" }],
   });
@@ -267,7 +262,7 @@ async function patchEstimate(request, env, id, ctx) {
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
   let record;
   try {
-    record = await atUpdate(env, TABLE, id, fields);
+    record = await d1Update(env, TABLE, id, fields);
   } catch (e) {
     if (e.notFound) return jsonError(404, "Estimate not found");
     throw e;

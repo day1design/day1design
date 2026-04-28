@@ -1,6 +1,6 @@
 // ========== Cloudflare Edge Cache helper ==========
 // Workers 공용 캐시. 관리자 리스트 응답을 짧은 TTL로 저장해
-// 매 요청마다 Airtable을 왕복하지 않도록 한다.
+// 동일 데이터에 대한 D1 왕복을 줄인다.
 // 관리자 인증이 이미 통과된 후에 호출하는 것을 전제한다.
 
 export function cacheKey(namespace) {

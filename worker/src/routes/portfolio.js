@@ -1,12 +1,6 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import {
-  d1ListAll as atListAll,
-  d1Get as atGet,
-  d1Create as atCreate,
-  d1Update as atUpdate,
-  d1Delete as atDelete,
-} from "../lib/d1.js";
+import { d1ListAll, d1Get, d1Create, d1Update, d1Delete } from "../lib/d1.js";
 import { r2DeleteMany } from "../lib/r2.js";
 import {
   edgeCacheGet,
@@ -81,7 +75,7 @@ async function listPortfolio(env, ctx) {
   const cached = await edgeCacheGet(CACHE_NS);
   if (cached) return jsonOk(cached);
 
-  const records = await atListAll(env, TABLE, {
+  const records = await d1ListAll(env, TABLE, {
     sort: [{ field: "Order", direction: "asc" }],
   });
   const payload = { records: records.map(toClient) };
@@ -90,7 +84,7 @@ async function listPortfolio(env, ctx) {
 }
 
 async function getProject(env, id) {
-  const r = await atGet(env, TABLE, id);
+  const r = await d1Get(env, TABLE, id);
   return jsonOk({ record: toClient(r) });
 }
 
@@ -105,7 +99,7 @@ async function createProject(request, env, ctx) {
   if (!fields.Name || !fields.Folder) {
     return jsonError(400, "Name and Folder required");
   }
-  const r = await atCreate(env, TABLE, fields);
+  const r = await d1Create(env, TABLE, fields);
   await edgeCacheDelete(CACHE_NS, ctx);
   return jsonOk({ record: toClient(r) });
 }
@@ -121,8 +115,8 @@ async function patchProject(request, env, id, ctx) {
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
 
   // 기존 상태 → 변경 후 diff에서 사라진 이미지 URL 수집
-  const before = toClient(await atGet(env, TABLE, id));
-  const r = await atUpdate(env, TABLE, id, fields);
+  const before = toClient(await d1Get(env, TABLE, id));
+  const r = await d1Update(env, TABLE, id, fields);
   const after = toClient(r);
   const orphan = collectUrls(before).filter(
     (u) => !collectUrls(after).includes(u),
@@ -137,8 +131,8 @@ async function patchProject(request, env, id, ctx) {
 }
 
 async function deleteProject(env, id, ctx) {
-  const before = toClient(await atGet(env, TABLE, id));
-  await atDelete(env, TABLE, id);
+  const before = toClient(await d1Get(env, TABLE, id));
+  await d1Delete(env, TABLE, id);
   const urls = collectUrls(before);
   if (urls.length > 0) {
     const task = r2DeleteMany(env.IMAGES, urls, env.R2_PUBLIC_BASE);

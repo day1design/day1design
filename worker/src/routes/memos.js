@@ -1,5 +1,5 @@
 // ─── 상담신청 메모 쓰레드 + 회차 조회 ───
-// Airtable EstimateMemos 테이블 사용. 1 건당 여러개 메모 가능 (쓰레드형).
+// D1 EstimateMemos 테이블. 1 건당 여러 메모 (쓰레드형).
 //   GET    /api/estimates/:id/memos        → 해당 상담의 메모 목록 (오래된 순)
 //   POST   /api/estimates/:id/memos        → 새 메모 추가
 //   PATCH  /api/estimates/:id/memos/:mid   → 메모 수정
@@ -8,13 +8,7 @@
 
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import {
-  d1Create as atCreate,
-  d1Get as atGet,
-  d1Update as atUpdate,
-  d1Delete as atDelete,
-  d1ListAll as atListAll,
-} from "../lib/d1.js";
+import { d1Create, d1Get, d1Update, d1Delete, d1ListAll } from "../lib/d1.js";
 
 const TBL_ESTIMATE = "Estimates";
 const TBL_MEMO = "EstimateMemos";
@@ -37,7 +31,7 @@ export async function handleMemos(request, env, ctx, estimateId, memoId) {
 }
 
 async function listMemos(env, estimateId) {
-  const records = await atListAll(env, TBL_MEMO, {
+  const records = await d1ListAll(env, TBL_MEMO, {
     where: { EstimateId: estimateId },
     sort: [{ field: "CreatedAt", direction: "asc" }],
   });
@@ -67,7 +61,7 @@ async function createMemo(request, env, estimateId) {
     .trim()
     .slice(0, 40);
   const now = new Date().toISOString();
-  const record = await atCreate(env, TBL_MEMO, {
+  const record = await d1Create(env, TBL_MEMO, {
     EstimateId: estimateId,
     Body: text,
     Author: author,
@@ -97,7 +91,7 @@ async function updateMemo(request, env, memoId) {
   if (!text) return jsonError(400, "Body required");
   if (text.length > 4000) return jsonError(400, "Body too long");
   const now = new Date().toISOString();
-  const record = await atUpdate(env, TBL_MEMO, memoId, {
+  const record = await d1Update(env, TBL_MEMO, memoId, {
     Body: text,
     UpdatedAt: now,
   });
@@ -114,7 +108,7 @@ async function updateMemo(request, env, memoId) {
 }
 
 async function deleteMemo(env, memoId) {
-  await atDelete(env, TBL_MEMO, memoId);
+  await d1Delete(env, TBL_MEMO, memoId);
   return jsonOk({ deleted: memoId });
 }
 
@@ -126,7 +120,7 @@ export async function handleHistory(request, env, ctx, estimateId) {
   // 현재 레코드 → phone 추출
   let current;
   try {
-    current = await atGet(env, TBL_ESTIMATE, estimateId);
+    current = await d1Get(env, TBL_ESTIMATE, estimateId);
   } catch (e) {
     if (e.notFound) return jsonError(404, "Estimate not found");
     throw e;
@@ -140,8 +134,8 @@ export async function handleHistory(request, env, ctx, estimateId) {
     return jsonOk({ sessionNo: 1, previous: [] });
   }
 
-  // 동일 고객 후보군 조회 (Airtable formula 한글 이슈 피하려 전부 로드 후 JS 필터)
-  const all = await atListAll(env, TBL_ESTIMATE, {
+  // 동일 고객 후보군 조회 (단순 equality 비교용으로 전부 로드 후 JS 필터)
+  const all = await d1ListAll(env, TBL_ESTIMATE, {
     sort: [{ field: "SubmittedAt", direction: "asc" }],
   });
 
