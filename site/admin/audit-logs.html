@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>관리자 로그 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260520-export" />
+    <script>
+      window.ADMIN_PAGE = { title: "관리자 로그", nav: "audit" };
+    </script>
+    <style>
+      .audit-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .audit-table th,
+      .audit-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--c-border);
+        text-align: left;
+        vertical-align: top;
+      }
+      .audit-table th {
+        background: var(--c-surface);
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--c-text-sub);
+      }
+      .sev-info {
+        color: #5a5448;
+      }
+      .sev-warn {
+        color: #c87a2a;
+        font-weight: 600;
+      }
+      .sev-error {
+        color: #c5371a;
+        font-weight: 700;
+      }
+      .audit-pagination {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      .audit-pagination .btn-sm[disabled] {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .audit-empty {
+        padding: 60px 20px;
+        text-align: center;
+        color: var(--c-text-sub);
+      }
+    </style>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <section class="admin-section">
+          <div class="admin-toolbar" style="margin-bottom: 16px">
+            <div class="filter-row">
+              <label>유형</label>
+              <select id="auditType">
+                <option value="">전체</option>
+                <option value="login_ok">로그인 성공</option>
+                <option value="login_fail">로그인 실패</option>
+                <option value="rate_limit">Rate-limit 초과</option>
+                <option value="error_5xx">서버 5xx 에러</option>
+              </select>
+              <label>심각도</label>
+              <select id="auditSeverity">
+                <option value="">전체</option>
+                <option value="info">info</option>
+                <option value="warn">warn</option>
+                <option value="error">error</option>
+              </select>
+              <label>기간</label>
+              <input type="date" id="auditFrom" />
+              <span class="filter-tilde">~</span>
+              <input type="date" id="auditTo" />
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                id="btnAuditReload"
+              >
+                새로고침
+              </button>
+              <input
+                type="search"
+                id="auditSearch"
+                class="filter-search"
+                placeholder="IP/사용자/메시지 검색"
+              />
+            </div>
+          </div>
+          <div id="auditBody">
+            <div class="audit-empty">불러오는 중...</div>
+          </div>
+          <div class="audit-pagination">
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              id="btnAuditPrev"
+            >
+              이전
+            </button>
+            <span
+              id="auditPageInfo"
+              style="
+                align-self: center;
+                font-size: 13px;
+                color: var(--c-text-sub);
+              "
+              >—</span
+            >
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              id="btnAuditNext"
+            >
+              다음
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script defer src="config.js"></script>
+    <script defer src="admin.js"></script>
+    <script defer src="audit-logs.js?v=20260520-init"></script>
+  </body>
+</html>

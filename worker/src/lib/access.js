@@ -85,6 +85,14 @@ export function classifyAccess(request, opts = {}) {
     return { role: method === "GET" ? "main" : "admin", method, path };
   }
 
+  if (path.startsWith("/api/marketing-links")) {
+    return { role: "admin", method, path };
+  }
+
+  if (path.startsWith("/api/audit")) {
+    return { role: "admin", method, path };
+  }
+
   return { role: "unknown", method, path };
 }
 

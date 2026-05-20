@@ -6,8 +6,13 @@ import { handleAuth } from "./routes/auth.js";
 import { handleUpload } from "./routes/upload.js";
 import { handleMetaLead } from "./routes/meta-lead.js";
 import { handleAnalytics } from "./routes/analytics.js";
+import { handleAudit } from "./routes/audit.js";
 import { handleMemos, handleHistory } from "./routes/memos.js";
 import { handleSms } from "./routes/sms.js";
+import {
+  handleMarketingLinks,
+  handleSlugRedirect,
+} from "./routes/marketing.js";
 import { cors, preflight } from "./lib/cors.js";
 import { jsonError } from "./lib/response.js";
 import { notifyTelegram } from "./lib/telegram.js";
@@ -157,6 +162,10 @@ async function handleApi(request, env, ctx, path) {
     res = await handleUpload(request, env, ctx, services);
   } else if (path.startsWith("/api/sms")) {
     res = await handleSms(request, env, ctx, services);
+  } else if (path.startsWith("/api/marketing-links")) {
+    res = await handleMarketingLinks(request, env, ctx);
+  } else if (path.startsWith("/api/audit")) {
+    res = await handleAudit(request, env);
   } else {
     res = jsonError(404, "Not Found");
   }
@@ -185,6 +194,11 @@ export default {
       if (isApiPath(path)) {
         if (!isApiHost(host)) return jsonError(404, "Not Found");
         return handleApi(request, env, ctx, path);
+      }
+
+      // 공개 마케팅 슬러그 리다이렉트: day1design.co.kr/r/<slug>
+      if (path.startsWith("/r/") && (isMainHost(host) || isLocalHost(host))) {
+        return handleSlugRedirect(request, env, ctx, path.slice(3));
       }
 
       if (isMainHost(host) || isAdminHost(host)) {
