@@ -72,11 +72,7 @@
               <p class="ops-eyebrow">상담 접수 운영판단</p>
               <h2 id="opsTitle">접수량 추이와 처리 우선순위</h2>
             </div>
-            <div
-              class="ops-period"
-              role="tablist"
-              aria-label="접수 집계 단위"
-            >
+            <div class="ops-period" role="tablist" aria-label="접수 집계 단위">
               <button
                 type="button"
                 class="ops-period-btn active"
@@ -144,7 +140,9 @@
               <div class="panel ops-panel ops-main-panel">
                 <div class="panel-head">
                   <h3 id="opsBarTitle">월별 접수량 + 예상치</h3>
-                  <span class="panel-sub" id="opsBarSub">기간 내 접수 기준</span>
+                  <span class="panel-sub" id="opsBarSub"
+                    >기간 내 접수 기준</span
+                  >
                 </div>
                 <div class="ops-bars" id="opsBars">
                   <div class="empty-state">불러오는 중...</div>
@@ -157,15 +155,14 @@
               >
                 <div class="panel-head">
                   <h3 id="opsHeatmapTitleDesktop">방문·접수 히트맵</h3>
-                  <span class="panel-sub" data-ops-heatmap-sub>최근 활동 밀도</span>
+                  <span class="panel-sub" data-ops-heatmap-sub
+                    >최근 활동 밀도</span
+                  >
                 </div>
                 <div class="ops-heatmap" data-ops-heatmap>
                   <div class="ops-empty">불러오는 중...</div>
                 </div>
-                <div
-                  class="ops-heatmap-summary"
-                  data-ops-heatmap-summary
-                ></div>
+                <div class="ops-heatmap-summary" data-ops-heatmap-summary></div>
               </div>
               <div class="ops-insights-stack">
                 <div class="panel ops-panel ops-insight-panel">
@@ -199,10 +196,18 @@
                     <div class="ops-hour-grid" id="hourlySubmissions">
                       <div class="ops-empty">불러오는 중...</div>
                     </div>
-                    <div class="ops-hour-summary" id="hourlySubmissionSummary"></div>
-                    <div class="ops-location-top" aria-labelledby="visitorLocationTitle">
+                    <div
+                      class="ops-hour-summary"
+                      id="hourlySubmissionSummary"
+                    ></div>
+                    <div
+                      class="ops-location-top"
+                      aria-labelledby="visitorLocationTitle"
+                    >
                       <div class="ops-location-head">
-                        <strong id="visitorLocationTitle">접속위치 TOP 5</strong>
+                        <strong id="visitorLocationTitle"
+                          >접속위치 TOP 5</strong
+                        >
                         <span>IP 기반 · 시단위 집계</span>
                       </div>
                       <div class="ops-location-list" id="visitorLocationTop">
@@ -242,6 +247,18 @@
                   <span class="panel-sub">접수 기여도</span>
                 </div>
                 <div class="ops-mini-ranks" id="opsMiniRanks"></div>
+                <a
+                  class="ops-clarity-link"
+                  href="https://clarity.microsoft.com/projects/view/wty53osevq/dashboard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span class="ops-clarity-meta">
+                    <strong>Microsoft Clarity</strong>
+                    <em>세션 녹화 · 히트맵 · 이상행동</em>
+                  </span>
+                  <span class="ops-clarity-cta" aria-hidden="true">열기 ↗</span>
+                </a>
               </div>
             </div>
             <div
@@ -250,15 +267,14 @@
             >
               <div class="panel-head">
                 <h3 id="opsHeatmapTitleMobile">방문·접수 히트맵</h3>
-                <span class="panel-sub" data-ops-heatmap-sub>최근 활동 밀도</span>
+                <span class="panel-sub" data-ops-heatmap-sub
+                  >최근 활동 밀도</span
+                >
               </div>
               <div class="ops-heatmap" data-ops-heatmap>
                 <div class="ops-empty">불러오는 중...</div>
               </div>
-              <div
-                class="ops-heatmap-summary"
-                data-ops-heatmap-summary
-              ></div>
+              <div class="ops-heatmap-summary" data-ops-heatmap-summary></div>
             </div>
           </div>
         </section>
@@ -363,7 +379,6 @@
             </table>
           </div>
         </section>
-
       </main>
     </div>
     <div class="modal visitor-detail-modal" id="visitorLocationModal" hidden>
@@ -395,7 +410,11 @@
               role="tablist"
               aria-label="IP 접속 상세 기간"
             >
-              <button type="button" class="seg-btn" data-visitor-detail-range="7">
+              <button
+                type="button"
+                class="seg-btn"
+                data-visitor-detail-range="7"
+              >
                 7일
               </button>
               <button
@@ -420,7 +439,11 @@
               >
                 당월
               </button>
-              <button type="button" class="seg-btn" data-visitor-detail-range="all">
+              <button
+                type="button"
+                class="seg-btn"
+                data-visitor-detail-range="all"
+              >
                 전체
               </button>
               <button
@@ -440,7 +463,11 @@
                 <span>종료</span>
                 <input type="date" id="visitorDetailEnd" />
               </label>
-              <button type="button" class="btn-apply-range" id="visitorDetailApply">
+              <button
+                type="button"
+                class="btn-apply-range"
+                id="visitorDetailApply"
+              >
                 적용
               </button>
             </div>

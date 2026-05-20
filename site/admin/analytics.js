@@ -311,9 +311,7 @@ function setText(id, value) {
 }
 
 function sameMonth(a, b) {
-  return (
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
-  );
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 }
 
 function clampPercent(value) {
@@ -423,7 +421,11 @@ function saveTargetSetting(monthKey, patch) {
 }
 
 function loadTargetSetting(monthKey) {
-  if (!monthKey || targetSettingsLoaded.has(monthKey) || targetSettingsLoading.has(monthKey)) {
+  if (
+    !monthKey ||
+    targetSettingsLoaded.has(monthKey) ||
+    targetSettingsLoading.has(monthKey)
+  ) {
     return;
   }
   targetSettingsLoading.add(monthKey);
@@ -468,7 +470,9 @@ function syncTargetControl(forecastStats, effectiveTarget) {
   if (manual) manual.checked = effectiveTarget.manual;
   if (input) {
     input.disabled = !effectiveTarget.manual;
-    input.value = String(effectiveTarget.value || effectiveTarget.defaultValue || "");
+    input.value = String(
+      effectiveTarget.value || effectiveTarget.defaultValue || "",
+    );
     input.placeholder = effectiveTarget.defaultValue
       ? String(effectiveTarget.defaultValue)
       : "목표량";
@@ -854,16 +858,20 @@ function renderVisitorLocations(rows = currentVisitorLocationRows) {
   }
 
   const items = rows.slice(0, 5);
-  const maxVisits = Math.max(...items.map((item) => Number(item.visits || 0)), 1);
-  wrap.innerHTML = items
-    .map((item, index) => {
-      const visits = Number(item.visits || 0);
-      const uniqueIps = Number(item.uniqueIps || 0);
-      const width = clampPercent((visits / maxVisits) * 100);
-      const peakText = item.peakHourLabel
-        ? `피크 ${item.peakHourLabel} ${fmtInt(item.peakHourVisits || 0)}회`
-        : "피크 시간 없음";
-      return `
+  const maxVisits = Math.max(
+    ...items.map((item) => Number(item.visits || 0)),
+    1,
+  );
+  wrap.innerHTML =
+    items
+      .map((item, index) => {
+        const visits = Number(item.visits || 0);
+        const uniqueIps = Number(item.uniqueIps || 0);
+        const width = clampPercent((visits / maxVisits) * 100);
+        const peakText = item.peakHourLabel
+          ? `피크 ${item.peakHourLabel} ${fmtInt(item.peakHourVisits || 0)}회`
+          : "피크 시간 없음";
+        return `
         <div class="ops-location-row">
           <span class="ops-location-rank">${index + 1}</span>
           <div class="ops-location-main">
@@ -877,8 +885,8 @@ function renderVisitorLocations(rows = currentVisitorLocationRows) {
             </div>
           </div>
         </div>`;
-    })
-    .join("") +
+      })
+      .join("") +
     `<button type="button" class="ops-location-detail-btn" id="visitorLocationDetailOpen">
       <strong>IP 접속 상세보기</strong>
       <span>기간별 누적 · 월별 일자 데이터</span>
@@ -886,21 +894,21 @@ function renderVisitorLocations(rows = currentVisitorLocationRows) {
 }
 
 function syncVisitorDetailControls() {
-  document
-    .querySelectorAll("[data-visitor-detail-range]")
-    .forEach((btn) => {
-      const on = btn.dataset.visitorDetailRange === visitorDetailRangeKey;
-      btn.classList.toggle("active", on);
-      btn.setAttribute("aria-pressed", on ? "true" : "false");
-    });
+  document.querySelectorAll("[data-visitor-detail-range]").forEach((btn) => {
+    const on = btn.dataset.visitorDetailRange === visitorDetailRangeKey;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+  });
   const picker = document.getElementById("visitorDetailPicker");
   if (picker) picker.hidden = visitorDetailRangeKey !== "custom";
   const startInput = document.getElementById("visitorDetailStart");
   const endInput = document.getElementById("visitorDetailEnd");
-  if (startInput && visitorDetailStart) startInput.value = dayKey(visitorDetailStart);
+  if (startInput && visitorDetailStart)
+    startInput.value = dayKey(visitorDetailStart);
   if (endInput && visitorDetailEnd) endInput.value = dayKey(visitorDetailEnd);
   const label = document.getElementById("visitorDetailRangeLabel");
-  if (label) label.textContent = resolveVisitorDetailRange(visitorDetailRangeKey).label;
+  if (label)
+    label.textContent = resolveVisitorDetailRange(visitorDetailRangeKey).label;
 }
 
 function openVisitorLocationDetail() {
@@ -956,11 +964,13 @@ function renderVisitorLocationDetail(data) {
     return;
   }
   if (data.error) {
-    wrap.innerHTML = '<div class="ops-empty">상세기록을 불러오지 못했습니다</div>';
+    wrap.innerHTML =
+      '<div class="ops-empty">상세기록을 불러오지 못했습니다</div>';
     return;
   }
   if (!data.configured) {
-    wrap.innerHTML = '<div class="ops-empty">IP 접속 기록 저장소가 준비되지 않았습니다</div>';
+    wrap.innerHTML =
+      '<div class="ops-empty">IP 접속 기록 저장소가 준비되지 않았습니다</div>';
     return;
   }
 
@@ -1013,7 +1023,8 @@ function visitorDetailMetric(label, value, sub) {
 }
 
 function renderVisitorDetailTopLocations(rows) {
-  if (!rows.length) return '<div class="ops-empty">위치 데이터가 없습니다</div>';
+  if (!rows.length)
+    return '<div class="ops-empty">위치 데이터가 없습니다</div>';
   const maxVisits = Math.max(...rows.map((row) => Number(row.visits || 0)), 1);
   return `<div class="visitor-detail-top-list">
     ${rows
@@ -1034,9 +1045,11 @@ function renderVisitorDetailTopLocations(rows) {
 }
 
 function renderVisitorDetailMonths(months) {
-  if (!months.length) return '<div class="ops-empty">일자별 데이터가 없습니다</div>';
+  if (!months.length)
+    return '<div class="ops-empty">일자별 데이터가 없습니다</div>';
   return months
-    .map((month) => `
+    .map(
+      (month) => `
       <details class="visitor-detail-month" open>
         <summary>
           <strong>${formatMonthKey(month.monthKey)}</strong>
@@ -1044,23 +1057,28 @@ function renderVisitorDetailMonths(months) {
         </summary>
         <div class="visitor-detail-day-list">
           ${(month.days || [])
-            .map((day) => `
+            .map(
+              (day) => `
               <div class="visitor-detail-day-row">
                 <span>${formatDayKey(day.date)}</span>
                 <strong>${fmtInt(day.visits || 0)}회</strong>
                 <em>IP ${fmtInt(day.uniqueIps || 0)} · 위치 ${fmtInt(day.locations || 0)}</em>
-              </div>`)
+              </div>`,
+            )
             .join("")}
         </div>
-      </details>`)
+      </details>`,
+    )
     .join("");
 }
 
 function renderVisitorDetailEvents(events) {
-  if (!events.length) return '<div class="ops-empty">최근 접속 로그가 없습니다</div>';
+  if (!events.length)
+    return '<div class="ops-empty">최근 접속 로그가 없습니다</div>';
   return `<div class="visitor-detail-event-list">
     ${events
-      .map((event) => `
+      .map(
+        (event) => `
         <div class="visitor-detail-event-row">
           <div>
             <strong>${adminUtil.escapeHtml(event.ipPrefix || "IP 미확인")}</strong>
@@ -1072,7 +1090,8 @@ function renderVisitorDetailEvents(events) {
               ? ` · ${adminUtil.escapeHtml(event.referrerHost)}`
               : ""
           }</p>
-        </div>`)
+        </div>`,
+      )
       .join("")}
   </div>`;
 }
@@ -1116,7 +1135,11 @@ function normalizeSubmissionSource(value) {
 function normalizeTrafficSource(value) {
   const key = String(value || "other").toLowerCase();
   if (SOURCE_LABELS[key]) return key;
-  if (key.includes("facebook") || key.includes("instagram") || key.includes("meta")) {
+  if (
+    key.includes("facebook") ||
+    key.includes("instagram") ||
+    key.includes("meta")
+  ) {
     return "meta";
   }
   if (key.includes("google")) return "google";
@@ -1368,7 +1391,9 @@ function renderOpsActions(rows, sourceCounts, statusCount, branchCounts) {
   const dayAgo = Date.now() - 86400000;
   const agedPending = rows.filter((row) => {
     const d = recordDate(row);
-    return (row.Status || "접수대기") === "접수대기" && d && d.getTime() < dayAgo;
+    return (
+      (row.Status || "접수대기") === "접수대기" && d && d.getTime() < dayAgo
+    );
   }).length;
   const items = [
     {
@@ -1559,7 +1584,8 @@ function renderOpsActivityHeatmap(range) {
 
   const dateHeaders = dates
     .map((date, index) => {
-      const showLabel = index === 0 || index === dates.length - 1 || index % 5 === 0;
+      const showLabel =
+        index === 0 || index === dates.length - 1 || index % 5 === 0;
       return `<div class="ops-heatmap-date">${
         showLabel ? `${date.getMonth() + 1}/${date.getDate()}` : ""
       }</div>`;
@@ -1608,7 +1634,8 @@ function renderOpsActivityHeatmap(range) {
     if (summary) summary.textContent = defaultSummary;
     wrap.querySelectorAll(".ops-heatmap-cell").forEach((cell) => {
       const updateSummary = () => {
-        if (summary) summary.textContent = cell.dataset.detail || defaultSummary;
+        if (summary)
+          summary.textContent = cell.dataset.detail || defaultSummary;
       };
       cell.addEventListener("mouseenter", updateSummary);
       cell.addEventListener("focus", updateSummary);
@@ -1618,7 +1645,9 @@ function renderOpsActivityHeatmap(range) {
 }
 
 function normalizedPathValue(path) {
-  const raw = String(path || "").trim().toLowerCase();
+  const raw = String(path || "")
+    .trim()
+    .toLowerCase();
   if (!raw) return "";
   try {
     const url = new URL(raw, window.location.origin);
@@ -1647,7 +1676,8 @@ function getTrafficTotals() {
     { visitors: 0, pageviews: 0 },
   );
   return {
-    visitors: Number(currentTrafficSummary?.visitors || 0) || trendTotals.visitors,
+    visitors:
+      Number(currentTrafficSummary?.visitors || 0) || trendTotals.visitors,
     pageviews:
       Number(currentTrafficSummary?.pageviews || 0) || trendTotals.pageviews,
   };
@@ -1684,7 +1714,12 @@ function renderOpsConversionFunnel() {
     return;
   }
 
-  if (!traffic.visitors && !traffic.pageviews && !estimate.views && !submissions) {
+  if (
+    !traffic.visitors &&
+    !traffic.pageviews &&
+    !estimate.views &&
+    !submissions
+  ) {
     wrap.innerHTML = '<div class="ops-empty">전환 데이터가 없습니다</div>';
     if (summary) summary.textContent = "";
     return;
@@ -1722,7 +1757,9 @@ function renderOpsConversionFunnel() {
 
   wrap.innerHTML = steps
     .map((step, index) => {
-      const width = step.value ? clampPercent((step.value / maxValue) * 100) : 0;
+      const width = step.value
+        ? clampPercent((step.value / maxValue) * 100)
+        : 0;
       return `
         <div class="ops-funnel-step">
           <div class="ops-funnel-head">
@@ -1766,7 +1803,9 @@ function renderSourceConversion() {
       visitors: 0,
       sessions: 0,
     };
-    current.visitors += Number(row.visitors || row.users || row.activeUsers || 0);
+    current.visitors += Number(
+      row.visitors || row.users || row.activeUsers || 0,
+    );
     current.sessions += Number(row.sessions || 0);
     trafficMap.set(key, current);
   });
@@ -1776,7 +1815,11 @@ function renderSourceConversion() {
     ...Object.keys(submissionCounts),
   ]);
   keys.delete("meta");
-  if (!keys.size && submissionRecords == null && !currentTrafficSourceRows.length) {
+  if (
+    !keys.size &&
+    submissionRecords == null &&
+    !currentTrafficSourceRows.length
+  ) {
     wrap.innerHTML = '<div class="ops-empty">불러오는 중...</div>';
     return;
   }
@@ -1803,10 +1846,11 @@ function renderSourceConversion() {
         (b.rate || 0) - (a.rate || 0) ||
         b.denominator - a.denominator,
     )
-    .slice(0, 6);
+    .slice(0, 9);
 
   if (!items.length) {
-    wrap.innerHTML = '<div class="ops-empty">소스별 전환 데이터가 없습니다</div>';
+    wrap.innerHTML =
+      '<div class="ops-empty">소스별 전환 데이터가 없습니다</div>';
     return;
   }
 
@@ -1890,20 +1934,22 @@ function renderHourlySubmissionPattern() {
   const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
   const avg = total / buckets.length;
   const peakIndex = buckets.reduce(
-    (best, bucket, index) => (bucket.count > buckets[best].count ? index : best),
+    (best, bucket, index) =>
+      bucket.count > buckets[best].count ? index : best,
     0,
   );
   wrap.innerHTML = buckets
     .map((bucket, index) => {
-      const width = bucket.count ? clampPercent((bucket.count / maxCount) * 100) : 0;
-      const tier =
-        !bucket.count
-          ? "is-empty"
-          : index === peakIndex
-            ? "is-hot"
-            : bucket.count >= avg
-              ? "is-warm"
-              : "is-cool";
+      const width = bucket.count
+        ? clampPercent((bucket.count / maxCount) * 100)
+        : 0;
+      const tier = !bucket.count
+        ? "is-empty"
+        : index === peakIndex
+          ? "is-hot"
+          : bucket.count >= avg
+            ? "is-warm"
+            : "is-cool";
       return `
         <div class="ops-hour-item ${tier}">
           <div class="ops-hour-head">
@@ -1967,7 +2013,8 @@ function renderOpsCampaigns(campaigns, total) {
   if (!wrap) return;
   const entries = sortEntriesDesc(campaigns).slice(0, 5);
   if (!entries.length) {
-    wrap.innerHTML = '<div class="ops-empty">광고명 접수 데이터가 없습니다</div>';
+    wrap.innerHTML =
+      '<div class="ops-empty">광고명 접수 데이터가 없습니다</div>';
     return;
   }
   const maxCount = Math.max(...entries.map(([, count]) => count), 1);
@@ -2013,7 +2060,9 @@ function renderOpsDashboard(
   const dayAgo = Date.now() - 86400000;
   const agedPending = rowsInRange.filter((row) => {
     const d = recordDate(row);
-    return (row.Status || "접수대기") === "접수대기" && d && d.getTime() < dayAgo;
+    return (
+      (row.Status || "접수대기") === "접수대기" && d && d.getTime() < dayAgo
+    );
   }).length;
   const avg = total / Math.max(1, range.days);
   const branchCounts = {};
@@ -2279,25 +2328,29 @@ document.querySelectorAll(".ops-period-btn").forEach((btn) => {
     }
   });
 
-  document
-    .querySelectorAll("[data-visitor-detail-range]")
-    .forEach((btn) => {
-      btn.addEventListener("click", () => {
-        visitorDetailRangeKey = btn.dataset.visitorDetailRange || "30";
-        syncVisitorDetailControls();
-        if (visitorDetailRangeKey !== "custom") {
-          loadVisitorLocationDetail(resolveVisitorDetailRange(visitorDetailRangeKey));
-        }
-      });
+  document.querySelectorAll("[data-visitor-detail-range]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      visitorDetailRangeKey = btn.dataset.visitorDetailRange || "30";
+      syncVisitorDetailControls();
+      if (visitorDetailRangeKey !== "custom") {
+        loadVisitorLocationDetail(
+          resolveVisitorDetailRange(visitorDetailRangeKey),
+        );
+      }
     });
+  });
 
   const apply = document.getElementById("visitorDetailApply");
   if (apply) {
     apply.addEventListener("click", () => {
       const startInput = document.getElementById("visitorDetailStart");
       const endInput = document.getElementById("visitorDetailEnd");
-      const start = startInput?.value ? new Date(`${startInput.value}T00:00:00`) : null;
-      const end = endInput?.value ? new Date(`${endInput.value}T00:00:00`) : null;
+      const start = startInput?.value
+        ? new Date(`${startInput.value}T00:00:00`)
+        : null;
+      const end = endInput?.value
+        ? new Date(`${endInput.value}T00:00:00`)
+        : null;
       if (!start || !end || isNaN(+start) || isNaN(+end) || start > end) {
         adminUtil.toast("상세조회 기간을 확인해주세요", "error");
         return;
@@ -2326,7 +2379,9 @@ document.querySelectorAll(".ops-period-btn").forEach((btn) => {
     const current = targetSettingFor(forecastStats.monthKey);
     const value = Math.max(
       0,
-      Math.round(Number(input.value || current.value || forecastStats.targetCount || 0)),
+      Math.round(
+        Number(input.value || current.value || forecastStats.targetCount || 0),
+      ),
     );
     saveTargetSetting(forecastStats.monthKey, {
       manual: manual.checked,
