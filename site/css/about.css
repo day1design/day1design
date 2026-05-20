@@ -229,7 +229,7 @@
   flex-direction: column;
 }
 .color-band {
-  aspect-ratio: 2.2 / 1; /* 박스 살짝 더 높여 타이틀 간격 확보 */
+  aspect-ratio: 3.8 / 1; /* 박스 폭 1200 기준 높이 ~316px */
   display: flex;
   align-items: center;
   justify-content: center;
