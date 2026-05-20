@@ -1,6 +1,8 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import { r2Upload, safeFileName, datePrefix, randomId } from "../lib/r2.js";
+import { safeFileName, datePrefix, randomId } from "../lib/r2.js";
+import { createServices } from "../lib/services.js";
+import { assertUploadPolicy, fileExt } from "../lib/upload-policy.js";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -12,7 +14,12 @@ const MAX_BYTES = 10 * 1024 * 1024;
  *   name: string (선택, 파일명 힌트)
  * 응답: { url }
  */
-export async function handleUpload(request, env, ctx) {
+export async function handleUpload(
+  request,
+  env,
+  ctx,
+  services = createServices(env),
+) {
   if (!(await verifyAdmin(request, env))) return jsonError(401, "Unauthorized");
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/upload/, "");
@@ -23,24 +30,24 @@ export async function handleUpload(request, env, ctx) {
     if (!file || typeof file === "string")
       return jsonError(400, "file required");
     if (file.size > MAX_BYTES) return jsonError(413, "File too large");
-    const ct = file.type || "";
-    if (!ct.startsWith("image/")) return jsonError(415, "Only images allowed");
+    try {
+      assertUploadPolicy(file);
+    } catch (e) {
+      return jsonError(e.status || 415, e.message);
+    }
 
     const folder = String(form.get("folder") || "uploads").replace(
       /[^\w/-]/g,
       "",
     );
     const name = String(form.get("name") || file.name);
-    const ext = (name.split(".").pop() || "webp").toLowerCase().slice(0, 8);
+    const ext = fileExt(name) || "bin";
+    const contentType = String(file.type || "").trim() || "image/webp";
     const key = `${folder}/${datePrefix()}-${randomId()}/${safeFileName(name.replace(/\.[^.]+$/, ""))}.${ext}`;
-    const uploadedUrl = await r2Upload(
-      env.IMAGES,
+    const uploadedUrl = await services.media.upload(
       key,
       await file.arrayBuffer(),
-      {
-        contentType: ct,
-        publicBase: env.R2_PUBLIC_BASE,
-      },
+      { contentType },
     );
     return jsonOk({ url: uploadedUrl, key });
   }

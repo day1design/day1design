@@ -352,7 +352,18 @@ sizeBtns.forEach((btn) => {
 // Initial render (URL 파라미터 cat=office / size=20-30 등 지원)
 if (grid) {
   const params = new URLSearchParams(location.search);
-  const urlCat = params.get("cat");
+  const pathCategory = location.pathname
+    .replace(/\/+$/, "")
+    .split("/")
+    .pop()
+    ?.toLowerCase();
+  const urlCat =
+    params.get("cat") ||
+    (pathCategory === "office"
+      ? "office"
+      : pathCategory === "house"
+        ? "house"
+        : "");
   const urlSize = params.get("size");
 
   if (urlCat === "office") {
@@ -500,48 +511,157 @@ function closeLightbox() {
   if (lb) lb.classList.remove("open");
 }
 
-// ========== YOUTUBE FACADE (click-to-play) ==========
-// Avoid loading the ~400KB YouTube player until the user actually clicks.
-document.querySelectorAll(".youtube-facade").forEach((facade) => {
-  const load = () => {
-    const id = facade.dataset.videoId;
-    if (!id) return;
-    const iframe = document.createElement("iframe");
-    iframe.src = `https://www.youtube.com/embed/${id}?autoplay=1&rel=0`;
-    iframe.title = "DAYONE BRAND FILM";
-    iframe.allow =
-      "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
-    iframe.referrerPolicy = "strict-origin-when-cross-origin";
-    iframe.allowFullscreen = true;
-    facade.innerHTML = "";
-    facade.appendChild(iframe);
-    facade.classList.add("loaded");
+// ========== BRAND FILM VIDEO (lazy autoplay) ==========
+document.querySelectorAll(".brandfilm-player").forEach((player) => {
+  const video = player.querySelector(".brandfilm-element");
+  const playBtn = player.querySelector(".brandfilm-play-toggle");
+  const soundBtn = player.querySelector(".brandfilm-sound-toggle");
+  const src = player.dataset.videoSrc;
+  const poster = player.dataset.posterSrc;
+  const isMobileMuted = window.matchMedia(
+    "(max-width: 767px), (pointer: coarse)",
+  ).matches;
+  let loaded = false;
+  let loadStarted = false;
+  let controlsTimer = null;
+
+  if (!video || !src) return;
+  if (poster) video.poster = poster;
+  if (isMobileMuted) player.classList.add("is-mobile-muted");
+
+  const setPlayState = (isPlaying) => {
+    if (!playBtn) return;
+    playBtn.classList.toggle("is-playing", isPlaying);
+    playBtn.setAttribute(
+      "aria-label",
+      isPlaying ? "Pause DAYONE BRAND FILM" : "Play DAYONE BRAND FILM",
+    );
   };
-  facade.addEventListener("click", load);
-  facade.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      load();
+
+  const setSoundState = () => {
+    if (!soundBtn) return;
+    soundBtn.classList.toggle("is-muted", video.muted);
+    soundBtn.setAttribute(
+      "aria-label",
+      video.muted ? "Unmute DAYONE BRAND FILM" : "Mute DAYONE BRAND FILM",
+    );
+  };
+
+  const showControls = () => {
+    if (!loaded) return;
+    player.classList.add("controls-visible");
+    clearTimeout(controlsTimer);
+    controlsTimer = setTimeout(() => {
+      player.classList.remove("controls-visible");
+    }, 2400);
+  };
+
+  const playVideo = () => {
+    video.muted = isMobileMuted ? true : video.muted;
+    setSoundState();
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise
+        .then(() => setPlayState(true))
+        .catch(() => setPlayState(false));
+    } else {
+      setPlayState(true);
     }
+  };
+
+  const loadVideo = ({ shouldPlay = true } = {}) => {
+    if (!loaded) {
+      if (loadStarted) return;
+      loadStarted = true;
+      video.src = src;
+      video.load();
+      loaded = true;
+      player.classList.add("is-loaded");
+    }
+    if (shouldPlay) playVideo();
+  };
+
+  const isNearViewport = () => {
+    const rect = player.getBoundingClientRect();
+    const margin = Math.min(window.innerHeight, 700);
+    return rect.top < window.innerHeight + margin && rect.bottom > -margin;
+  };
+
+  const loadWhenNear = () => {
+    if (!loaded && isNearViewport()) loadVideo();
+  };
+
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            loadVideo();
+            observer.disconnect();
+          }
+        });
+      },
+      { rootMargin: "700px 0px", threshold: 0.01 },
+    );
+    observer.observe(player);
+  }
+
+  let fallbackTimer = null;
+  const scheduleFallbackCheck = () => {
+    clearTimeout(fallbackTimer);
+    fallbackTimer = setTimeout(loadWhenNear, 100);
+  };
+  window.addEventListener("load", loadWhenNear, { once: true });
+  window.addEventListener("scroll", scheduleFallbackCheck, { passive: true });
+  window.addEventListener("resize", scheduleFallbackCheck);
+  setTimeout(loadWhenNear, 1200);
+
+  video.addEventListener("play", () => setPlayState(true));
+  video.addEventListener("pause", () => setPlayState(false));
+  video.addEventListener("volumechange", setSoundState);
+
+  player.addEventListener("click", () => {
+    if (!loaded) loadVideo();
+    showControls();
   });
+
+  playBtn?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!loaded) {
+      loadVideo();
+      showControls();
+      return;
+    }
+    if (video.paused) playVideo();
+    else video.pause();
+    showControls();
+  });
+
+  soundBtn?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isMobileMuted) {
+      video.muted = true;
+      setSoundState();
+      showControls();
+      return;
+    }
+    if (!loaded) loadVideo({ shouldPlay: false });
+    video.muted = !video.muted;
+    setSoundState();
+    if (video.paused) playVideo();
+    showControls();
+  });
+
+  setPlayState(false);
+  setSoundState();
 });
 
 // ========== HERO SLIDER ==========
 (async function initHeroSlider() {
   const track = document.getElementById("heroTrack");
   if (!track) return;
-
-  // L4: fallback img 페이드인 셋업 — 디코드 전 사각형 튐 방지
-  const fallbackImg = document.querySelector(".hero-fallback");
-  if (fallbackImg) {
-    if (fallbackImg.complete && fallbackImg.naturalWidth > 0) {
-      fallbackImg.classList.add("loaded");
-    } else {
-      const markLoaded = () => fallbackImg.classList.add("loaded");
-      fallbackImg.addEventListener("load", markLoaded, { once: true });
-      fallbackImg.addEventListener("error", markLoaded, { once: true });
-    }
-  }
 
   // 로더가 히어로 첫 이미지 로드까지 기다릴 수 있게 이벤트 dispatch
   const signalHeroReady = () => {
@@ -587,8 +707,6 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
   // Only the first slide gets its background-image inline (LCP).
   // Other slides store the URL in data-bg and load it just before activation.
   // 첫 슬라이드도 .active는 이미지 로드 완료 후에만 부여 → pop-in/섬광 방지.
-  // (로드 전엔 모든 슬라이드 opacity 0 → .hero의 inline bg(hero-main-bg)가 그대로 유지,
-  //  로드 후 .active 부여 시 800ms transition으로 부드럽게 페이드 전환)
   track.innerHTML = slides
     .map((s, i) => {
       const alt = (s.alt || "").replace(/"/g, "&quot;");
@@ -636,7 +754,10 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
     if (!url) return Promise.resolve(); // 이미 세팅된 슬라이드
     return new Promise((resolve) => {
       const img = new Image();
+      let settled = false;
       const done = () => {
+        if (settled) return;
+        settled = true;
         el.style.backgroundImage = `url('${url}')`;
         el.removeAttribute("data-bg");
         resolve();
@@ -644,18 +765,26 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
       img.onload = done;
       img.onerror = done;
       img.src = url;
+      // 무한 hang 방어 — 4초 안에 onload/onerror 둘 다 안 오면 진행
+      setTimeout(done, 4000);
     });
   }
 
-  // L2: z-index 스태킹 crossfade — 새 슬라이드를 이전 위에 얹어 opacity 0→1만 진행.
-  // 이전 슬라이드는 .active 해제되어 opacity 1→0. z-index 차이로 새가 위에 있어
-  // 합성 투명도 gap이 발생하지 않음 (뒤 fallback 노출 0).
+  function clearPreviousSlides() {
+    slideEls.forEach((el) => el.classList.remove("prev"));
+  }
+
+  // 새 슬라이드를 이전 슬라이드 위로 페이드인한 뒤, 전환이 끝나면 이전 장면을 제거한다.
+  // 이 방식은 전환 중 뒤쪽 고정 배경이나 바탕색이 비치는 순간을 막는다.
   function goTo(idx) {
     const target = (idx + slides.length) % slides.length;
     if (target === current && slideEls[target]?.classList.contains("active"))
       return;
 
     waitForSlideImage(slideEls[target]).then(() => {
+      const prevIndex = current;
+      const previous = slideEls[prevIndex];
+      if (previous && prevIndex !== target) previous.classList.add("prev");
       // 더블 rAF: backgroundImage 세팅 → 레이아웃 → 페인트 보장 후 transition 시작
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
@@ -666,6 +795,10 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
             el.classList.toggle("active", i === target),
           );
           current = target;
+          const active = slideEls[target];
+          const done = () => clearPreviousSlides();
+          active?.addEventListener("transitionend", done, { once: true });
+          setTimeout(done, 900);
           // 다음 슬라이드 백그라운드 preload
           waitForSlideImage(slideEls[(target + 1) % slides.length]);
         }),
@@ -712,15 +845,17 @@ document.querySelectorAll(".youtube-facade").forEach((facade) => {
     }),
   );
 
-  // pause on hover
-  slider.addEventListener("mouseenter", () => timer && clearInterval(timer));
-  slider.addEventListener("mouseleave", resetTimer);
+  // 무한 롤링 — 호버/터치 정지 없음 (모바일 mouseleave 누락으로 영구 stuck 방지)
+  // 백그라운드 탭 복귀 시 즉시 재개 (브라우저 throttle로 죽은 타이머 살림)
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) resetTimer();
+  });
 
   resetTimer();
 })();
 
 // ========== PORTFOLIO API 전환 (optional) ==========
-// window.DAY1_API_BASE 가 설정되어 있으면 Airtable에서 projectData를 덮어씀.
+// window.DAY1_API_BASE 가 설정되어 있으면 Worker API에서 projectData를 덮어씀.
 // 하드코딩 데이터와 동일하면 재렌더 스킵(깜빡임 방지).
 (async function loadPortfolioFromApi() {
   const API_BASE =

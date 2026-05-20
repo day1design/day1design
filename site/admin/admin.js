@@ -22,8 +22,6 @@ function clearToken() {
 
 async function api(path, opts = {}) {
   const headers = new Headers(opts.headers || {});
-  const token = getToken();
-  if (token) headers.set("x-admin-token", token);
 
   let body = opts.body;
   if (opts.json !== undefined) {
@@ -59,7 +57,7 @@ async function api(path, opts = {}) {
 }
 
 // ========== SESSION CACHE ==========
-// 페이지 전환 시 Airtable 재조회 지연을 줄이기 위한 얇은 세션 캐시.
+// 페이지 전환 시 Worker API 재조회 지연을 줄이기 위한 얇은 세션 캐시.
 // 저장/수정 직후에는 cacheInvalidate 로 해당 경로를 비워야 함.
 const CACHE_PREFIX = "admin_cache:";
 
@@ -96,9 +94,7 @@ function cacheInvalidate(pathPrefix) {
 }
 
 function apiUpload(path, formData) {
-  const token = getToken();
   const headers = new Headers();
-  if (token) headers.set("x-admin-token", token);
   return fetch(API_BASE + path, {
     method: "POST",
     headers,
@@ -137,10 +133,14 @@ function toast(msg, type = "") {
 }
 
 async function ensureAuth() {
-  if (isLoginPage()) return true;
+  if (isLoginPage()) {
+    document.body.classList.add("auth-ready");
+    return true;
+  }
   try {
     const me = await api("/api/auth/me");
     if (!me || !me.loggedIn) throw new Error("not logged in");
+    document.body.classList.add("auth-ready");
     return true;
   } catch {
     clearToken();
@@ -176,7 +176,7 @@ async function pingApi() {
 const MENU = [
   {
     nav: "home",
-    href: "index",
+    href: "dashboard",
     label: "대시보드",
     shortLabel: "홈",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>',
@@ -327,6 +327,8 @@ function bootstrap() {
     ensureAuth().then((ok) => {
       if (ok) pingApi();
     });
+  } else {
+    document.body.classList.add("auth-ready");
   }
 }
 
@@ -492,15 +494,30 @@ function compressToWebP(file, maxWidth = 1920, quality = 0.82) {
 
 /**
  * 이미지 파일을 WebP로 자동 변환 후 R2 업로드.
+ * skipCompressUnder(bytes) 가 지정되고 파일이 그 이하면 원본 그대로 업로드.
  * @param {File} file
- * @param {object} opts - { folder, maxWidth, quality }
+ * @param {object} opts - { folder, maxWidth, quality, skipCompressUnder }
  * @returns {Promise<{url, key}>}
  */
 async function uploadImage(file, opts = {}) {
   const folder = opts.folder || "uploads";
   const maxWidth = opts.maxWidth || 1920;
   const quality = opts.quality || 0.82;
-  const c = await compressToWebP(file, maxWidth, quality);
+  const skipCompressUnder = Number(opts.skipCompressUnder) || 0;
+
+  let c;
+  if (
+    skipCompressUnder > 0 &&
+    file &&
+    file.size <= skipCompressUnder &&
+    String(file.type || "").startsWith("image/")
+  ) {
+    // 원본 통과: 압축/리사이즈/포맷변환 없음
+    c = { blob: file, name: file.name, size: file.size, type: file.type };
+  } else {
+    c = await compressToWebP(file, maxWidth, quality);
+  }
+
   const fd = new FormData();
   fd.append("file", c.blob, c.name);
   fd.append("folder", folder);

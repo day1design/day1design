@@ -120,7 +120,10 @@ editThumbFile.addEventListener("change", async () => {
   if (!f) return;
   try {
     adminUtil.toast("이미지 업로드 중...");
-    const res = await adminUtil.uploadImage(f, { folder: "hero" });
+    const res = await adminUtil.uploadImage(f, {
+      folder: "hero",
+      skipCompressUnder: 5 * 1024 * 1024,
+    });
     editingImage = res.url;
     renderEditThumb(editingImage);
     adminUtil.toast("업로드 완료");
@@ -162,7 +165,10 @@ document.getElementById("slideEditForm").addEventListener("submit", (e) => {
 async function handleImageReplace(index, file) {
   try {
     adminUtil.toast("이미지 업로드 중...");
-    const res = await adminUtil.uploadImage(file, { folder: "hero" });
+    const res = await adminUtil.uploadImage(file, {
+      folder: "hero",
+      skipCompressUnder: 5 * 1024 * 1024,
+    });
     slides[index].image = res.url;
     setDirty(true);
     render();
@@ -210,7 +216,10 @@ uploadInput?.addEventListener("change", async () => {
   if (!file) return;
   try {
     adminUtil.toast("업로드 중...");
-    const res = await adminUtil.uploadImage(file, { folder: "hero" });
+    const res = await adminUtil.uploadImage(file, {
+      folder: "hero",
+      skipCompressUnder: 5 * 1024 * 1024,
+    });
     pendingAddUrl = res.url;
     setPreview(res.url);
     adminUtil.toast("업로드 완료");
