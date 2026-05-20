@@ -229,7 +229,7 @@
   flex-direction: column;
 }
 .color-band {
-  aspect-ratio: 2.5 / 1;
+  aspect-ratio: 2.2 / 1; /* 박스 살짝 더 높여 타이틀 간격 확보 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -244,12 +244,12 @@
   background: var(--color-brand-beige);
   color: #fff;
 }
-/* 라벨을 박스 안에서 BRAND COLOR 반대쪽으로 이동 — 와이어프레임 간격 재현 */
+/* 라벨을 박스 안에서 BRAND COLOR 반대쪽으로 더 멀리 — 3 타이틀 간격 확보 */
 .color-band.beige .color-name {
-  transform: translateY(-22%);
+  transform: translateY(-33%);
 }
 .color-band.grey .color-name {
-  transform: translateY(22%);
+  transform: translateY(33%);
 }
 .color-name {
   font-size: 48px;
@@ -289,7 +289,7 @@
 /* 컬러 설명문 — 흰색 배경 */
 .color-desc-wrap {
   background: #fff;
-  padding: 56px 20px 80px;
+  padding: 32px 20px 80px;
 }
 .color-desc {
   max-width: 960px;
