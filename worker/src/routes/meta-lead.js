@@ -6,11 +6,11 @@
 
 import { jsonOk, jsonError, json } from "../lib/response.js";
 import { escapeHtml } from "../lib/security.js";
-import { d1Create } from "../lib/d1.js";
+import { createServices } from "../lib/services.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import { edgeCacheDeleteMany } from "../lib/edge-cache.js";
 
-const TABLE = "Estimates";
+const MAX_BODY_CHARS = 65536;
 
 function timingSafeEqual(a, b) {
   if (a.length !== b.length) return false;
@@ -93,7 +93,12 @@ function buildMetaLeadMessage({
   return out.join("\n");
 }
 
-export async function handleMetaLead(request, env, ctx) {
+export async function handleMetaLead(
+  request,
+  env,
+  ctx,
+  services = createServices(env),
+) {
   // 1) 시크릿 검증
   if (!env.META_LEAD_SECRET) {
     return jsonError(500, "Server misconfigured");
@@ -111,7 +116,7 @@ export async function handleMetaLead(request, env, ctx) {
 
   // 3) Body size
   const raw = await request.text();
-  if (raw.length > 10240) return jsonError(413, "Payload too large");
+  if (raw.length > MAX_BODY_CHARS) return jsonError(413, "Payload too large");
 
   // 4) JSON 파싱
   let body;
@@ -151,8 +156,7 @@ export async function handleMetaLead(request, env, ctx) {
     .trim()
     .slice(0, 100); // 시공예정일
   const budget = String(body.budget || "")
-    .trim()
-    .slice(0, 60); // 가용예산 (예: 3,000~5,000만원)
+    .trim(); // Meta 폼의 예산/문의내용 원문은 저장용으로 보존
   const platform = normalizePlatform(body.platform);
   const campaign = String(body.campaign || "")
     .trim()
@@ -187,7 +191,7 @@ export async function handleMetaLead(request, env, ctx) {
   let recordId = null;
   let saveError = null;
   try {
-    const record = await d1Create(env, TABLE, {
+    const record = await services.estimates.create({
       Name: name,
       Phone: prettyPhone,
       Email: "",

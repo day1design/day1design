@@ -8,10 +8,7 @@
 
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import { d1Create, d1Get, d1Update, d1Delete, d1ListAll } from "../lib/d1.js";
-
-const TBL_ESTIMATE = "Estimates";
-const TBL_MEMO = "EstimateMemos";
+import { createServices } from "../lib/services.js";
 
 function normalizePhone(s) {
   return String(s || "").replace(/\D/g, "");
@@ -19,19 +16,28 @@ function normalizePhone(s) {
 
 // -- memos ----------------------------------------------------
 
-export async function handleMemos(request, env, ctx, estimateId, memoId) {
+export async function handleMemos(
+  request,
+  env,
+  ctx,
+  estimateId,
+  memoId,
+  services = createServices(env),
+) {
   if (!(await verifyAdmin(request, env))) return jsonError(401, "Unauthorized");
 
-  if (request.method === "GET") return listMemos(env, estimateId);
-  if (request.method === "POST") return createMemo(request, env, estimateId);
+  if (request.method === "GET") return listMemos(env, estimateId, services);
+  if (request.method === "POST")
+    return createMemo(request, env, estimateId, services);
   if (memoId && request.method === "PATCH")
-    return updateMemo(request, env, memoId);
-  if (memoId && request.method === "DELETE") return deleteMemo(env, memoId);
+    return updateMemo(request, env, memoId, services);
+  if (memoId && request.method === "DELETE")
+    return deleteMemo(env, memoId, services);
   return jsonError(404, "Not Found");
 }
 
-async function listMemos(env, estimateId) {
-  const records = await d1ListAll(env, TBL_MEMO, {
+async function listMemos(env, estimateId, services) {
+  const records = await services.estimateMemos.listAll({
     where: { EstimateId: estimateId },
     sort: [{ field: "CreatedAt", direction: "asc" }],
   });
@@ -46,7 +52,7 @@ async function listMemos(env, estimateId) {
   return jsonOk({ memos });
 }
 
-async function createMemo(request, env, estimateId) {
+async function createMemo(request, env, estimateId, services) {
   let body;
   try {
     body = await request.json();
@@ -61,7 +67,7 @@ async function createMemo(request, env, estimateId) {
     .trim()
     .slice(0, 40);
   const now = new Date().toISOString();
-  const record = await d1Create(env, TBL_MEMO, {
+  const record = await services.estimateMemos.create({
     EstimateId: estimateId,
     Body: text,
     Author: author,
@@ -80,7 +86,7 @@ async function createMemo(request, env, estimateId) {
   });
 }
 
-async function updateMemo(request, env, memoId) {
+async function updateMemo(request, env, memoId, services) {
   let body;
   try {
     body = await request.json();
@@ -91,7 +97,7 @@ async function updateMemo(request, env, memoId) {
   if (!text) return jsonError(400, "Body required");
   if (text.length > 4000) return jsonError(400, "Body too long");
   const now = new Date().toISOString();
-  const record = await d1Update(env, TBL_MEMO, memoId, {
+  const record = await services.estimateMemos.update(memoId, {
     Body: text,
     UpdatedAt: now,
   });
@@ -107,20 +113,26 @@ async function updateMemo(request, env, memoId) {
   });
 }
 
-async function deleteMemo(env, memoId) {
-  await d1Delete(env, TBL_MEMO, memoId);
+async function deleteMemo(env, memoId, services) {
+  await services.estimateMemos.delete(memoId);
   return jsonOk({ deleted: memoId });
 }
 
 // -- history (회차 조회) --------------------------------------
 
-export async function handleHistory(request, env, ctx, estimateId) {
+export async function handleHistory(
+  request,
+  env,
+  ctx,
+  estimateId,
+  services = createServices(env),
+) {
   if (!(await verifyAdmin(request, env))) return jsonError(401, "Unauthorized");
 
   // 현재 레코드 → phone 추출
   let current;
   try {
-    current = await d1Get(env, TBL_ESTIMATE, estimateId);
+    current = await services.estimates.get(estimateId);
   } catch (e) {
     if (e.notFound) return jsonError(404, "Estimate not found");
     throw e;
@@ -135,7 +147,7 @@ export async function handleHistory(request, env, ctx, estimateId) {
   }
 
   // 동일 고객 후보군 조회 (단순 equality 비교용으로 전부 로드 후 JS 필터)
-  const all = await d1ListAll(env, TBL_ESTIMATE, {
+  const all = await services.estimates.listAll({
     sort: [{ field: "SubmittedAt", direction: "asc" }],
   });
 

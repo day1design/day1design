@@ -1,14 +1,12 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import { d1ListAll, d1Create, d1Update, d1Delete, d1List } from "../lib/d1.js";
-import { r2DeleteMany } from "../lib/r2.js";
+import { createServices } from "../lib/services.js";
 import {
   edgeCacheGet,
   edgeCachePut,
   edgeCacheDeleteMany,
 } from "../lib/edge-cache.js";
 
-const TABLE = "Community";
 const CACHE_TTL = 60;
 function listCacheNs(board) {
   return `community:list:${board || "all"}`;
@@ -32,26 +30,33 @@ function collectPostUrls(post) {
   return [...out];
 }
 
-export async function handleCommunity(request, env, ctx) {
+export async function handleCommunity(
+  request,
+  env,
+  ctx,
+  services = createServices(env),
+) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/community/, "") || "/";
 
   if (path === "/" && request.method === "GET")
-    return listCommunity(request, env, ctx);
+    return listCommunity(request, env, ctx, services);
   if (path === "/" && request.method === "POST") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    return createPost(request, env, ctx);
+    return createPost(request, env, ctx, services);
   }
   // /:idx — idx는 숫자 문자열
   const m = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (m) {
     const idx = m[1];
-    if (request.method === "GET") return getPost(env, idx, ctx);
+    if (request.method === "GET") return getPost(env, idx, ctx, services);
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    if (request.method === "PATCH") return patchPost(request, env, idx, ctx);
-    if (request.method === "DELETE") return deletePost(env, idx, ctx);
+    if (request.method === "PATCH")
+      return patchPost(request, env, idx, ctx, services);
+    if (request.method === "DELETE")
+      return deletePost(env, idx, ctx, services);
   }
   return jsonError(404, "Not Found");
 }
@@ -89,7 +94,7 @@ function toDetailClient(r) {
   };
 }
 
-async function listCommunity(request, env, ctx) {
+async function listCommunity(request, env, ctx, services) {
   const url = new URL(request.url);
   const board = url.searchParams.get("board");
   const ns = listCacheNs(board);
@@ -97,7 +102,7 @@ async function listCommunity(request, env, ctx) {
   if (cached) return jsonOk(cached);
 
   const where = board ? { Board: board } : undefined;
-  const records = await d1ListAll(env, TABLE, {
+  const records = await services.community.listAll({
     where,
     sort: [{ field: "Date", direction: "desc" }],
   });
@@ -109,12 +114,12 @@ async function listCommunity(request, env, ctx) {
   return jsonOk(payload);
 }
 
-async function getPost(env, idx, ctx) {
+async function getPost(env, idx, ctx, services) {
   const ns = postCacheNs(idx);
   const cached = await edgeCacheGet(ns);
   if (cached) return jsonOk(cached);
 
-  const data = await d1List(env, TABLE, {
+  const data = await services.community.list({
     where: { Idx: idx },
     pageSize: 1,
   });
@@ -125,7 +130,7 @@ async function getPost(env, idx, ctx) {
   return jsonOk(payload);
 }
 
-async function createPost(request, env, ctx) {
+async function createPost(request, env, ctx, services) {
   let body;
   try {
     body = await request.json();
@@ -135,7 +140,7 @@ async function createPost(request, env, ctx) {
   const fields = mapFields(body);
   if (!fields.Idx || !fields.Title)
     return jsonError(400, "Idx and Title required");
-  const r = await d1Create(env, TABLE, fields);
+  const r = await services.community.create(fields);
   await edgeCacheDeleteMany(
     [listCacheNs(null), listCacheNs("Residential"), listCacheNs("Commercial")],
     ctx,
@@ -143,14 +148,14 @@ async function createPost(request, env, ctx) {
   return jsonOk({ post: toDetailClient(r) });
 }
 
-async function patchPost(request, env, idx, ctx) {
+async function patchPost(request, env, idx, ctx, services) {
   let body;
   try {
     body = await request.json();
   } catch {
     return jsonError(400, "Invalid JSON");
   }
-  const data = await d1List(env, TABLE, {
+  const data = await services.community.list({
     where: { Idx: idx },
     pageSize: 1,
   });
@@ -159,14 +164,14 @@ async function patchPost(request, env, idx, ctx) {
   const before = toDetailClient(r);
   const fields = mapFields(body);
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
-  const updated = await d1Update(env, TABLE, r.id, fields);
+  const updated = await services.community.update(r.id, fields);
   const after = toDetailClient(updated);
 
   // 이전에 있었으나 새 상태에는 없는 URL만 정리
   const afterSet = new Set(collectPostUrls(after));
   const orphan = collectPostUrls(before).filter((u) => !afterSet.has(u));
   if (orphan.length > 0) {
-    const task = r2DeleteMany(env.IMAGES, orphan, env.R2_PUBLIC_BASE);
+    const task = services.media.deleteMany(orphan);
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }
@@ -182,18 +187,18 @@ async function patchPost(request, env, idx, ctx) {
   return jsonOk({ post: after, cleaned: orphan.length });
 }
 
-async function deletePost(env, idx, ctx) {
-  const data = await d1List(env, TABLE, {
+async function deletePost(env, idx, ctx, services) {
+  const data = await services.community.list({
     where: { Idx: idx },
     pageSize: 1,
   });
   const r = (data.records || [])[0];
   if (!r) return jsonError(404, "Post not found");
   const before = toDetailClient(r);
-  await d1Delete(env, TABLE, r.id);
+  await services.community.delete(r.id);
   const urls = collectPostUrls(before);
   if (urls.length > 0) {
-    const task = r2DeleteMany(env.IMAGES, urls, env.R2_PUBLIC_BASE);
+    const task = services.media.deleteMany(urls);
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }

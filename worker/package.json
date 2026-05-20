@@ -7,10 +7,12 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
+    "test": "node --test tests/*.test.mjs",
     "d1:migrate": "wrangler d1 execute day1design --remote --file=migrations/0001_init.sql",
+    "d1:migrate:analytics": "wrangler d1 execute day1design --remote --file=migrations/0002_analytics_snapshots.sql",
     "d1:migrate:local": "wrangler d1 execute day1design --local --file=migrations/0001_init.sql",
     "d1:export": "wrangler d1 export day1design --remote --output=_export/d1-backup.sql",
-    "secret:admin-token": "wrangler secret put ADMIN_TOKEN",
+    "secret:admin-password": "wrangler secret put ADMIN_PASSWORD",
     "secret:jwt": "wrangler secret put JWT_SECRET",
     "secret:meta-lead": "wrangler secret put META_LEAD_SECRET"
   },

@@ -1,10 +1,10 @@
-// ─── D1 어댑터 (Airtable 대체) ───
-// Airtable과 동일한 {id, fields:{...}} 형태로 반환하여 라우트 코드 변경 범위 최소화.
+// ─── D1 레코드 어댑터 ───
+// Worker 라우트가 공유하는 {id, fields:{...}} 형태로 반환한다.
 //
 // 주요 차이점:
 //  - filterByFormula 문자열 대신 where 객체 사용: { Status: '접수대기' }
 //  - sort/limit는 동일
-//  - id 형식: rec + 14자 (Airtable 호환 → 기존 데이터 import 시 id 보존, 신규는 새로 발급)
+//  - id 형식: rec + 14자 (이관 데이터 id 보존, 신규는 새로 발급)
 //  - JSON 필드(ConceptFiles/FloorPlans/Images/ContentBlocks)는 TEXT로 직렬화 보관 (라우트가 JSON.parse)
 //  - PrivacyAgreed/Active는 INTEGER 0/1 → boolean으로 변환
 
@@ -74,6 +74,29 @@ const SCHEMA = {
     "BodyText",
     "Images",
     "ContentBlocks",
+  ],
+  AnalyticsSnapshots: [
+    "RangeKey",
+    "StartDate",
+    "EndDate",
+    "Source",
+    "Payload",
+    "RawR2Key",
+    "CreatedAt",
+  ],
+  AdminSettings: ["Value", "UpdatedAt"],
+  MessageTemplates: ["Name", "Subject", "Content", "CreatedAt", "UpdatedAt"],
+  SmsLogs: [
+    "EstimateId",
+    "TemplateId",
+    "ToPhone",
+    "Subject",
+    "Content",
+    "SmsType",
+    "Status",
+    "Detail",
+    "SentAt",
+    "SentBy",
   ],
 };
 
@@ -167,7 +190,7 @@ export async function d1List(
   return { records: (result.results || []).map((r) => rowToRecord(r, table)) };
 }
 
-/** 전체 레코드 (Airtable atListAll 호환) — D1는 페이지네이션 불필요, LIMIT 5000 */
+/** 전체 레코드 — D1는 페이지네이션 불필요, LIMIT 5000 */
 export async function d1ListAll(env, table, opts = {}) {
   const r = await d1List(env, table, { ...opts, limit: 5000 });
   return r.records;

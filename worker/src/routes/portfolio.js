@@ -1,35 +1,41 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import { d1ListAll, d1Get, d1Create, d1Update, d1Delete } from "../lib/d1.js";
-import { r2DeleteMany } from "../lib/r2.js";
+import { createServices } from "../lib/services.js";
 import {
   edgeCacheGet,
   edgeCachePut,
   edgeCacheDelete,
 } from "../lib/edge-cache.js";
 
-const TABLE = "Portfolio";
 const CACHE_NS = "portfolio:list";
 const CACHE_TTL = 60;
 
-export async function handlePortfolio(request, env, ctx) {
+export async function handlePortfolio(
+  request,
+  env,
+  ctx,
+  services = createServices(env),
+) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/portfolio/, "") || "/";
 
-  if (path === "/" && request.method === "GET") return listPortfolio(env, ctx);
+  if (path === "/" && request.method === "GET")
+    return listPortfolio(env, ctx, services);
   if (path === "/" && request.method === "POST") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    return createProject(request, env, ctx);
+    return createProject(request, env, ctx, services);
   }
   const m = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (m) {
     const id = m[1];
-    if (request.method === "GET") return getProject(env, id);
+    if (request.method === "GET") return getProject(env, id, services);
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    if (request.method === "PATCH") return patchProject(request, env, id, ctx);
-    if (request.method === "DELETE") return deleteProject(env, id, ctx);
+    if (request.method === "PATCH")
+      return patchProject(request, env, id, ctx, services);
+    if (request.method === "DELETE")
+      return deleteProject(env, id, ctx, services);
   }
   return jsonError(404, "Not Found");
 }
@@ -71,11 +77,11 @@ function safeJsonParse(s, fallback = []) {
   }
 }
 
-async function listPortfolio(env, ctx) {
+async function listPortfolio(env, ctx, services) {
   const cached = await edgeCacheGet(CACHE_NS);
   if (cached) return jsonOk(cached);
 
-  const records = await d1ListAll(env, TABLE, {
+  const records = await services.portfolio.listAll({
     sort: [{ field: "Order", direction: "asc" }],
   });
   const payload = { records: records.map(toClient) };
@@ -83,12 +89,12 @@ async function listPortfolio(env, ctx) {
   return jsonOk(payload);
 }
 
-async function getProject(env, id) {
-  const r = await d1Get(env, TABLE, id);
+async function getProject(env, id, services) {
+  const r = await services.portfolio.get(id);
   return jsonOk({ record: toClient(r) });
 }
 
-async function createProject(request, env, ctx) {
+async function createProject(request, env, ctx, services) {
   let body;
   try {
     body = await request.json();
@@ -99,12 +105,12 @@ async function createProject(request, env, ctx) {
   if (!fields.Name || !fields.Folder) {
     return jsonError(400, "Name and Folder required");
   }
-  const r = await d1Create(env, TABLE, fields);
+  const r = await services.portfolio.create(fields);
   await edgeCacheDelete(CACHE_NS, ctx);
   return jsonOk({ record: toClient(r) });
 }
 
-async function patchProject(request, env, id, ctx) {
+async function patchProject(request, env, id, ctx, services) {
   let body;
   try {
     body = await request.json();
@@ -115,14 +121,14 @@ async function patchProject(request, env, id, ctx) {
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
 
   // 기존 상태 → 변경 후 diff에서 사라진 이미지 URL 수집
-  const before = toClient(await d1Get(env, TABLE, id));
-  const r = await d1Update(env, TABLE, id, fields);
+  const before = toClient(await services.portfolio.get(id));
+  const r = await services.portfolio.update(id, fields);
   const after = toClient(r);
   const orphan = collectUrls(before).filter(
     (u) => !collectUrls(after).includes(u),
   );
   if (orphan.length > 0) {
-    const task = r2DeleteMany(env.IMAGES, orphan, env.R2_PUBLIC_BASE);
+    const task = services.media.deleteMany(orphan);
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }
@@ -130,12 +136,12 @@ async function patchProject(request, env, id, ctx) {
   return jsonOk({ record: after, cleaned: orphan.length });
 }
 
-async function deleteProject(env, id, ctx) {
-  const before = toClient(await d1Get(env, TABLE, id));
-  await d1Delete(env, TABLE, id);
+async function deleteProject(env, id, ctx, services) {
+  const before = toClient(await services.portfolio.get(id));
+  await services.portfolio.delete(id);
   const urls = collectUrls(before);
   if (urls.length > 0) {
-    const task = r2DeleteMany(env.IMAGES, urls, env.R2_PUBLIC_BASE);
+    const task = services.media.deleteMany(urls);
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }

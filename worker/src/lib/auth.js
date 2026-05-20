@@ -22,23 +22,25 @@ export function parseCookies(request) {
 }
 
 /**
- * 관리자 인증 검증. 아래 중 하나라도 통과하면 true.
- *  1) day1_admin 쿠키에 유효한 JWT (HS256, JWT_SECRET 서명)
- *  2) x-admin-token 헤더 = env.ADMIN_TOKEN (레거시/백도어)
- * async 로 변경됨 — 호출부에 반드시 await.
+ * 관리자 인증 검증. 둘 중 하나라도 통과하면 true.
+ *  1) day1_admin 쿠키의 JWT (HS256, JWT_SECRET 서명)
+ *  2) Authorization: Bearer <jwt> 헤더 (cookie 가 cross-site 차단/만료될 때 fallback)
  */
 export async function verifyAdmin(request, env) {
+  if (!env.JWT_SECRET) return false;
   // 1) JWT 쿠키
   const cookies = parseCookies(request);
-  const jwt = cookies[COOKIE_NAME];
-  if (jwt && env.JWT_SECRET) {
-    const payload = await verifyJwt(jwt, env.JWT_SECRET);
+  const cookieJwt = cookies[COOKIE_NAME];
+  if (cookieJwt) {
+    const payload = await verifyJwt(cookieJwt, env.JWT_SECRET);
     if (payload && payload.sub === "admin") return true;
   }
-  // 2) x-admin-token 헤더 (레거시, 긴급 복구용)
-  if (env.ADMIN_TOKEN) {
-    const header = request.headers.get("x-admin-token");
-    if (header && timingSafeEqual(header, env.ADMIN_TOKEN)) return true;
+  // 2) Authorization Bearer JWT
+  const auth = request.headers.get("authorization") || "";
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (m) {
+    const payload = await verifyJwt(m[1].trim(), env.JWT_SECRET);
+    if (payload && payload.sub === "admin") return true;
   }
   return false;
 }

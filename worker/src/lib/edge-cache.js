@@ -40,14 +40,16 @@ export async function edgeCacheDelete(namespace, ctx) {
   try {
     const task = caches.default.delete(cacheKey(namespace));
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
-    else await task;
+    await task;
   } catch {}
 }
 
 // 여러 namespace 동시 invalidate
 export async function edgeCacheDeleteMany(namespaces, ctx) {
-  const tasks = namespaces.map((ns) => caches.default.delete(cacheKey(ns)));
-  const all = Promise.allSettled(tasks);
-  if (ctx && ctx.waitUntil) ctx.waitUntil(all);
-  else await all;
+  try {
+    const tasks = namespaces.map((ns) => caches.default.delete(cacheKey(ns)));
+    const all = Promise.allSettled(tasks);
+    if (ctx && ctx.waitUntil) ctx.waitUntil(all);
+    await all;
+  } catch {}
 }

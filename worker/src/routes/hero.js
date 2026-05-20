@@ -1,49 +1,52 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import { d1ListAll, d1ReplaceAll } from "../lib/d1.js";
 import {
-  r2Upload,
-  r2DeleteMany,
   safeFileName,
   datePrefix,
   randomId,
 } from "../lib/r2.js";
+import { createServices } from "../lib/services.js";
+import { assertUploadPolicy, fileExt } from "../lib/upload-policy.js";
 import {
   edgeCacheGet,
   edgeCachePut,
   edgeCacheDelete,
 } from "../lib/edge-cache.js";
 
-const TABLE = "HeroSlides";
 const MAX_IMG_BYTES = 10 * 1024 * 1024;
 const CACHE_NS = "hero:slides";
 const CACHE_TTL = 60;
 
-export async function handleHero(request, env, ctx) {
+export async function handleHero(
+  request,
+  env,
+  ctx,
+  services = createServices(env),
+) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/hero/, "");
 
   if (path === "/slides" && request.method === "GET") {
-    return getSlides(env, ctx);
+    return getSlides(env, ctx, services);
   }
   if (path === "/slides" && request.method === "PUT") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    return putSlides(request, env, ctx);
+    return putSlides(request, env, ctx, services);
   }
   if (path === "/upload" && request.method === "POST") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    return uploadImage(request, env);
+    return uploadImage(request, env, services);
   }
   return jsonError(404, "Not Found");
 }
 
-async function getSlides(env, ctx) {
+async function getSlides(env, ctx, services) {
   const cached = await edgeCacheGet(CACHE_NS);
   if (cached) return jsonOk(cached);
 
-  const records = await d1ListAll(env, TABLE, {
+  const records = await services.heroSlides.listAll({
     sort: [{ field: "Order", direction: "asc" }],
   });
   const slides = records
@@ -64,7 +67,7 @@ async function getSlides(env, ctx) {
 }
 
 /** 전체 배열 교체: D1 ReplaceAll (DELETE + batch INSERT) */
-async function putSlides(request, env, ctx) {
+async function putSlides(request, env, ctx, services) {
   let body;
   try {
     body = await request.json();
@@ -75,7 +78,7 @@ async function putSlides(request, env, ctx) {
   if (!slides) return jsonError(400, "slides[] required");
   if (slides.length > 10) return jsonError(400, "Max 10 slides");
 
-  const existing = await d1ListAll(env, TABLE);
+  const existing = await services.heroSlides.listAll();
   const oldUrls = existing.map((r) => r.fields.Image).filter(Boolean);
   const newUrls = new Set(slides.map((s) => s.image).filter(Boolean));
   const orphanUrls = oldUrls.filter((u) => !newUrls.has(u));
@@ -89,11 +92,11 @@ async function putSlides(request, env, ctx) {
       Order: i,
       Active: true,
     }));
-  const created = await d1ReplaceAll(env, TABLE, newRecords);
+  const created = await services.heroSlides.replaceAll(newRecords);
 
   // 고아 이미지 R2 삭제 (응답 지연 방지: waitUntil)
   if (orphanUrls.length > 0) {
-    const task = r2DeleteMany(env.IMAGES, orphanUrls, env.R2_PUBLIC_BASE);
+    const task = services.media.deleteMany(orphanUrls);
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }
@@ -102,18 +105,20 @@ async function putSlides(request, env, ctx) {
   return jsonOk({ saved: created.length, cleaned: orphanUrls.length });
 }
 
-async function uploadImage(request, env) {
+async function uploadImage(request, env, services) {
   const form = await request.formData();
   const file = form.get("file");
   if (!file || typeof file === "string") return jsonError(400, "file required");
   if (file.size > MAX_IMG_BYTES) return jsonError(413, "File too large");
-  const ct = file.type || "image/webp";
-  if (!ct.startsWith("image/")) return jsonError(415, "Only images allowed");
-  const ext = (file.name.split(".").pop() || "webp").toLowerCase().slice(0, 8);
+  try {
+    assertUploadPolicy(file);
+  } catch (e) {
+    return jsonError(e.status || 415, e.message);
+  }
+  const ext = fileExt(file.name) || "webp";
   const key = `hero/${datePrefix()}-${randomId()}/${safeFileName(file.name.replace(/\.[^.]+$/, ""))}.${ext}`;
-  const url = await r2Upload(env.IMAGES, key, await file.arrayBuffer(), {
-    contentType: ct,
-    publicBase: env.R2_PUBLIC_BASE,
+  const url = await services.media.upload(key, await file.arrayBuffer(), {
+    contentType: "image/webp",
   });
   return jsonOk({ url });
 }
