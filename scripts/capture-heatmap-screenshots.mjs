@@ -82,10 +82,51 @@ async function capture() {
       } catch (e) {
         console.warn(`  goto timeout, continuing: ${e.message}`);
       }
-      // 폰트·이미지 안정화
+      // 폰트·초기 렌더 안정화
       await page.waitForTimeout(1500);
-      // 사이트 헤더가 fixed라 첫 스크롤이 다르게 보일 수 있음 — 상단으로 강제
+
+      // Lazy-load 트리거: 끝까지 천천히 스크롤 → 이미지/요소 로드 유도
+      await page.evaluate(async () => {
+        await new Promise((resolve) => {
+          const totalH = Math.max(
+            document.documentElement.scrollHeight,
+            document.body.scrollHeight,
+          );
+          let y = 0;
+          const step = Math.max(200, Math.floor(window.innerHeight * 0.8));
+          const tick = setInterval(() => {
+            window.scrollTo(0, y);
+            y += step;
+            if (y >= totalH + step) {
+              clearInterval(tick);
+              window.scrollTo(0, totalH);
+              setTimeout(resolve, 300);
+            }
+          }, 120);
+        });
+      });
+
+      // 모든 <img>가 디코드 완료될 때까지 대기 (lazy-load 후 네트워크 안정화)
+      try {
+        await page.waitForLoadState("networkidle", { timeout: 15000 });
+      } catch (_) {}
+      await page.evaluate(async () => {
+        const imgs = Array.from(document.images);
+        await Promise.all(
+          imgs.map((img) => {
+            if (img.complete && img.naturalHeight !== 0) return;
+            return new Promise((resolve) => {
+              img.addEventListener("load", resolve, { once: true });
+              img.addEventListener("error", resolve, { once: true });
+              setTimeout(resolve, 4000);
+            });
+          }),
+        );
+      });
+
+      // 상단으로 복귀 + 헤더 등 sticky 정상화
       await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(500);
 
       // 전체 페이지 크기 측정
       const pageSize = await page.evaluate(() => ({
