@@ -1,78 +1,133 @@
 /* ========== PROJECT FLOW ========== */
+
+/* body 가 flex column 이라 width:100% 명시 안 하면 컨텐츠 width 로 줄어듦 */
+.flow-header,
+.flow-steps-pc,
+.flow-steps-mobile {
+  width: 100%;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ===== 페이지 헤더 ===== */
 .flow-header {
   text-align: center;
-  padding: calc(var(--header-height) + 60px) 0 20px;
+  padding: calc(var(--header-height) + 60px) 20px 60px;
 }
 .flow-header h1 {
-  font-size: var(--font-size-xl);
-  font-weight: 400;
+  font-size: 32px;
+  font-weight: 700;
   color: var(--color-text-heading);
-  margin-bottom: 8px;
+  margin: 0 0 14px;
+  letter-spacing: 0.5px;
 }
 .flow-header .flow-badge {
-  display: inline-block;
-  font-size: 12px;
-  letter-spacing: 2px;
+  display: block;
+  font-size: 32px;
+  font-weight: 700;
   color: var(--color-brand-beige);
-  margin-bottom: 16px;
+  letter-spacing: 1px;
+  margin: 0 0 18px;
 }
 .flow-header p {
-  font-size: 13px;
-  color: #888;
-  line-height: 1.7;
-  max-width: 600px;
+  font-size: 14px;
+  color: #555;
+  line-height: 1.85;
   margin: 0 auto;
 }
 
-.flow-steps {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 60px 80px;
-  padding: 60px 0 80px;
+/* ===== PC: 8단계 세로 나열 ===== */
+.flow-steps-pc {
+  display: flex;
+  flex-direction: column;
+  gap: 80px;
+  padding: 0 20px 100px;
 }
 .flow-step {
-  text-align: left;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 48px;
+  align-items: center;
 }
-.flow-step h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-heading);
-  margin-bottom: 4px;
-}
-.flow-step h3 span {
-  font-weight: 700;
-  margin-right: 8px;
-}
-.flow-step .step-highlight {
-  display: inline-block;
-  font-size: 12px;
-  color: #c5371a;
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-.flow-step .step-icon {
-  width: 160px;
-  height: 120px;
-  margin-bottom: 16px;
-}
-.flow-step .step-icon img {
+.flow-step .image {
   width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
-.flow-step ul {
-  list-style: disc;
-  padding-left: 16px;
+.flow-step .image img {
+  width: 100%;
+  height: auto;
+  display: block;
 }
-.flow-step ul li {
+.step-head {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text-heading);
+  margin: 0 0 8px;
+  letter-spacing: 0.5px;
+}
+.step-no {
+  color: var(--color-brand-beige);
+  margin-right: 6px;
+}
+.step-meta {
   font-size: 13px;
-  color: #666;
+  color: #8a8275;
+  margin: 0 0 18px;
+}
+.step-meta .ast {
+  color: #c5371a;
+}
+.step-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+.step-list li {
+  position: relative;
+  padding-left: 14px;
+  font-size: 15px;
+  line-height: 1.85;
+  color: #444;
+  margin: 0;
+}
+.step-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--color-brand-beige);
+}
+.step-note {
+  font-size: 13px;
+  color: #888;
   line-height: 1.8;
+  padding-left: 14px;
+  margin: 0;
+}
+
+/* ===== 모바일 ===== */
+.flow-steps-mobile {
+  display: none;
+}
+.flow-steps-mobile img {
+  width: 100%;
+  display: block;
 }
 
 @media (max-width: 767px) {
-  .flow-steps {
-    grid-template-columns: 1fr;
-    gap: 40px;
+  .flow-steps-pc {
+    display: none;
+  }
+  .flow-steps-mobile {
+    display: block;
+    padding: 0 20px 60px;
+  }
+  .flow-header {
+    padding: calc(var(--header-height) + 40px) 20px 40px;
+  }
+  .flow-header h1 {
+    font-size: 22px;
+  }
+  .flow-header .flow-badge {
+    font-size: 22px;
   }
 }
