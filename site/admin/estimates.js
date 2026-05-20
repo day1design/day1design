@@ -14,6 +14,9 @@ const btnOpenCustomerEdit = document.getElementById("btnOpenCustomerEdit");
 const filterStatus = document.getElementById("filterStatus");
 const filterSource = document.getElementById("filterSource");
 const filterSearch = document.getElementById("filterSearch");
+const filterFrom = document.getElementById("filterFrom");
+const filterTo = document.getElementById("filterTo");
+const btnExportCsv = document.getElementById("btnExportCsv");
 const statDaily = document.getElementById("statDaily");
 const statWeekly = document.getElementById("statWeekly");
 const statMonthly = document.getElementById("statMonthly");
@@ -149,11 +152,23 @@ function filtered() {
   const st = filterStatus.value;
   const src = filterSource ? filterSource.value : "";
   const q = filterSearch.value.trim().toLowerCase();
+  const fromTs = filterFrom?.value
+    ? new Date(filterFrom.value + "T00:00:00").getTime()
+    : null;
+  const toTs = filterTo?.value
+    ? new Date(filterTo.value + "T23:59:59").getTime()
+    : null;
   return records.filter((r) => {
     if (st && r.Status !== st) return false;
     if (src) {
       const s = (r.Source || "homepage").toLowerCase();
       if (s !== src) return false;
+    }
+    if (fromTs || toTs) {
+      const t = Date.parse(r.SubmittedAt || "");
+      if (isNaN(t)) return false;
+      if (fromTs && t < fromTs) return false;
+      if (toTs && t > toTs) return false;
     }
     if (q) {
       const hay =
@@ -162,6 +177,90 @@ function filtered() {
     }
     return true;
   });
+}
+
+// ===== CSV 다운로드 (UTF-8 BOM, 엑셀 호환) =====
+const SOURCE_LABELS_EXPORT = {
+  homepage: "홈페이지",
+  meta: "Meta 광고",
+  google: "Google",
+  naver: "Naver",
+  youtube: "YouTube",
+  kakao: "Kakao",
+  referral: "Referral",
+  other: "기타",
+};
+function csvEscape(v) {
+  const s = v == null ? "" : String(v);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+function exportFilteredCsv() {
+  const list = filtered();
+  if (!list.length) {
+    adminUtil.toast?.("내보낼 접수 데이터가 없습니다", "error");
+    return;
+  }
+  const headers = [
+    "접수일시",
+    "이름",
+    "연락처",
+    "이메일",
+    "출처",
+    "캠페인",
+    "공간유형",
+    "평형",
+    "지점",
+    "주소",
+    "상세주소",
+    "희망일정",
+    "가용예산",
+    "상태",
+    "담당자",
+    "메모",
+    "유입경로",
+  ];
+  const rows = list.map((r) => {
+    const srcKey = (r.Source || "homepage").toLowerCase();
+    return [
+      r.SubmittedAt || "",
+      r.Name || "",
+      r.Phone || "",
+      r.Email || "",
+      SOURCE_LABELS_EXPORT[srcKey] || srcKey,
+      r.Campaign || "",
+      r.SpaceType || "",
+      r.SpaceSize || "",
+      r.Branch || "",
+      r.Address || "",
+      r.AddressDetail || "",
+      r.Schedule || "",
+      r.Budget || r.Detail || "",
+      r.Status || "",
+      r.Assignee || "",
+      r.Memo || "",
+      r.Referral || "",
+    ];
+  });
+  const csv = [headers, ...rows]
+    .map((row) => row.map(csvEscape).join(","))
+    .join("\r\n");
+  const bom = "﻿";
+  const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const fromTxt = filterFrom?.value || "all";
+  const toTxt = filterTo?.value || "all";
+  const fname = `dayone-estimates_${fromTxt}_to_${toTxt}.csv`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 500);
+  adminUtil.toast?.(`${list.length}건 다운로드`, "success");
 }
 
 function customerKey(r) {
@@ -818,6 +917,9 @@ async function deleteMemo(estimateId, memoId) {
 filterStatus.addEventListener("change", render);
 if (filterSource) filterSource.addEventListener("change", render);
 filterSearch.addEventListener("input", render);
+if (filterFrom) filterFrom.addEventListener("change", render);
+if (filterTo) filterTo.addEventListener("change", render);
+if (btnExportCsv) btnExportCsv.addEventListener("click", exportFilteredCsv);
 
 (async () => {
   await adminUtil.ensureAuth();

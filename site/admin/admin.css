@@ -541,7 +541,8 @@
   color: var(--c-text-sub);
 }
 .filter-row select,
-.filter-row input[type="search"] {
+.filter-row input[type="search"],
+.filter-row input[type="date"] {
   padding: 7px 10px;
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
@@ -550,6 +551,18 @@
   background: var(--c-surface);
   min-width: 180px;
   color: var(--c-text);
+}
+.filter-row input[type="date"] {
+  min-width: 140px;
+}
+.filter-row .filter-tilde {
+  font-size: 12px;
+  color: var(--c-text-sub);
+  margin: 0 -4px;
+}
+/* 검색은 우측으로 밀어 정렬 */
+.filter-row .filter-search {
+  margin-left: auto;
 }
 .filter-row select:focus,
 .filter-row input:focus {
@@ -3207,6 +3220,48 @@
   color: var(--c-brand);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.ops-clarity-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e7ebf0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f7f8fb 0%, #eef2f8 100%);
+  color: var(--c-text);
+  text-decoration: none;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.ops-clarity-link:hover {
+  border-color: var(--c-brand);
+  background: #fff;
+}
+.ops-clarity-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ops-clarity-meta strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+.ops-clarity-meta em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+.ops-clarity-cta {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--c-brand);
+  white-space: nowrap;
 }
 .ops-campaign {
   min-width: 0;
