@@ -152,12 +152,22 @@ function filtered() {
   const st = filterStatus.value;
   const src = filterSource ? filterSource.value : "";
   const q = filterSearch.value.trim().toLowerCase();
-  const fromTs = filterFrom?.value
-    ? new Date(filterFrom.value + "T00:00:00").getTime()
-    : null;
-  const toTs = filterTo?.value
-    ? new Date(filterTo.value + "T23:59:59").getTime()
-    : null;
+  // 사용자 로컬(KST) 기준 정확한 일자 경계 — 일부 브라우저가
+  // "YYYY-MM-DDT00:00:00" 을 UTC 로 해석해 하루 어긋나던 문제 방지.
+  const toTsLocal = (ymd, end) => {
+    if (!ymd) return null;
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(
+      y,
+      m - 1,
+      d,
+      end ? 23 : 0,
+      end ? 59 : 0,
+      end ? 59 : 0,
+    ).getTime();
+  };
+  const fromTs = toTsLocal(filterFrom?.value, false);
+  const toTs = toTsLocal(filterTo?.value, true);
   return records.filter((r) => {
     if (st && r.Status !== st) return false;
     if (src) {
