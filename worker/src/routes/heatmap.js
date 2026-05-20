@@ -41,11 +41,15 @@ function clampInt(n, max = 100000) {
 }
 
 function safePage(s) {
-  // 쿼리스트링 제거, 최대 200자
+  // 쿼리스트링·해시 제거, 끝 슬래시 정리, .html 확장자 제거 (cleanUrls 통일)
   const raw = String(s || "");
-  const noQuery = raw.split("?")[0].split("#")[0];
+  let noQuery = raw.split("?")[0].split("#")[0];
   if (!noQuery.startsWith("/")) return "";
-  return noQuery.slice(0, 200);
+  // 끝 슬래시 정리 (단 루트 '/'는 유지)
+  if (noQuery.length > 1) noQuery = noQuery.replace(/\/+$/, "");
+  // .html 제거 (cleanUrls와 일치)
+  if (noQuery.endsWith(".html")) noQuery = noQuery.slice(0, -5);
+  return noQuery.slice(0, 200) || "/";
 }
 
 function safeStr(s, max = 100) {

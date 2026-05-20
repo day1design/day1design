@@ -23,18 +23,35 @@ Module.Module?._initPaths?.();
 const { chromium } = require("playwright");
 
 const BASE = "https://day1design.co.kr";
+// Vercel cleanUrls=true: 브라우저는 .html 없는 path로 접근 → 트래커도 /pages/about 형태로 전송
+// 따라서 storedPath는 트래커 path와 동일한 (.html 제외) 형태로 등록
 const PAGES = [
-  { path: "/", slug: "index" },
-  { path: "/pages/about.html", slug: "about" },
-  { path: "/pages/portfolio.html", slug: "portfolio" },
-  { path: "/pages/community.html", slug: "community" },
-  { path: "/pages/estimates.html", slug: "estimates" },
-  { path: "/pages/project-flow.html", slug: "project-flow" },
-  // community-detail은 idx 쿼리 필요 — 대표 1건 사용
+  { path: "/", slug: "index", storedPath: "/" },
+  { path: "/pages/about.html", slug: "about", storedPath: "/pages/about" },
+  {
+    path: "/pages/portfolio.html",
+    slug: "portfolio",
+    storedPath: "/pages/portfolio",
+  },
+  {
+    path: "/pages/community.html",
+    slug: "community",
+    storedPath: "/pages/community",
+  },
+  {
+    path: "/pages/estimates.html",
+    slug: "estimates",
+    storedPath: "/pages/estimates",
+  },
+  {
+    path: "/pages/project-flow.html",
+    slug: "project-flow",
+    storedPath: "/pages/project-flow",
+  },
   {
     path: "/pages/community-detail.html?idx=170198572",
     slug: "community-detail",
-    storedPath: "/pages/community-detail.html",
+    storedPath: "/pages/community-detail",
   },
 ];
 
