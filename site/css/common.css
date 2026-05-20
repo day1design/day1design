@@ -6,13 +6,6 @@
   width: 100%;
   height: var(--header-height);
   z-index: 100;
-  transition: background 0.3s ease;
-  background: transparent;
-}
-.header:hover {
-  background: rgba(255, 255, 255, 0.95);
-}
-.header.scrolled {
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
@@ -39,13 +32,6 @@
   width: auto;
   max-width: 100%;
   display: block;
-  /* 기본(transparent header) 상태에선 밝은 톤. scrolled/hover면 원래 브랜드 컬러 복원 */
-  filter: brightness(1.6);
-  transition: filter 0.25s ease;
-}
-.header.scrolled .logo a img,
-.header:hover .logo a img {
-  filter: none;
 }
 .nav-list {
   display: flex;
@@ -503,6 +489,38 @@ body {
   max-width: 100vw;
 }
 
+/* ========== 한글 타이포 기본 방어 ==========
+ * 한글은 어절 단위 줄바꿈(keep-all), 긴 영문/URL은 break-word.
+ * 세로 텍스트(break-all) 방지 기본 정책. */
+body {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* 제목·리드 텍스트 고아(orphan) 방지 — 브라우저 지원 시 자동 균형 줄바꿈 */
+h1,
+h2,
+h3,
+.section-title,
+.section-subtitle,
+.brandfilm-lead,
+.brandfilm-desc,
+.about-lead {
+  text-wrap: pretty;
+}
+h1,
+.section-title {
+  text-wrap: balance;
+}
+
+/* 유틸: PC 전용 <br>을 모바일에서 제거 → 모바일에서 어색한 강제 줄바꿈 방지 */
+@media (max-width: 767px) {
+  br.pc-br,
+  .pc-br {
+    display: none;
+  }
+}
+
 /* ========== BOTTOM NAV (모바일 하단 탭바) ========== */
 .bottom-nav {
   display: none;
@@ -658,12 +676,12 @@ body {
   background: rgba(0, 0, 0, 0.06);
   margin: 4px 2px;
 }
-/* 화살표 (탭 방향 가리킴) */
+/* 화살표 (탭 방향 가리킴) — popover가 뷰포트 경계로 밀려도 화살표는 탭 중앙 고정 */
 .bn-popover::after {
   content: "";
   position: absolute;
   bottom: -6px;
-  left: 50%;
+  left: calc(50% + var(--bn-arrow-x, 0px));
   transform: translateX(-50%) rotate(45deg);
   width: 12px;
   height: 12px;

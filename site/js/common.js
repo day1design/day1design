@@ -193,8 +193,7 @@
     path: location.pathname + location.search,
     referrer: document.referrer || "",
     title: document.title || "",
-    timezone:
-      Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Seoul",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Seoul",
   };
 
   const send = () => {
@@ -212,10 +211,7 @@
   else window.addEventListener("load", send, { once: true });
 })();
 
-const header = document.getElementById("header");
-window.addEventListener("scroll", () => {
-  header.classList.toggle("scrolled", window.scrollY > 50);
-});
+// 헤더는 항상 흰색 배경 고정 (스크롤에 따른 색상 변환 없음)
 
 // ========== MOBILE MENU ==========
 const hamburger = document.getElementById("hamburger");
