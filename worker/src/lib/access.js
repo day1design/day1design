@@ -65,6 +65,13 @@ export function classifyAccess(request, opts = {}) {
     return { role: "admin", method, path };
   }
 
+  if (path === "/api/heatmap/track") {
+    return { role: method === "POST" ? "main" : "unknown", method, path };
+  }
+  if (path.startsWith("/api/heatmap")) {
+    return { role: "admin", method, path };
+  }
+
   if (path === "/api/estimates" && method === "POST") {
     return { role: "main", method, path };
   }
