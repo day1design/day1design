@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>히트맵 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link
+      rel="preconnect"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+      crossorigin
+    />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260520-heatmap" />
+    <script>
+      window.ADMIN_PAGE = { title: "히트맵", nav: "heatmap" };
+    </script>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content admin-content--heatmap" id="adminContent">
+        <div class="heatmap-layout">
+          <aside class="heatmap-pages" aria-label="페이지 목록">
+            <div class="heatmap-pages-head">
+              <h3>페이지</h3>
+              <span class="heatmap-pages-count" id="heatmapPagesCount">—</span>
+            </div>
+            <div class="heatmap-pages-list" id="heatmapPagesList">
+              <div class="heatmap-empty">불러오는 중...</div>
+            </div>
+          </aside>
+          <section class="heatmap-main">
+            <div class="heatmap-toolbar">
+              <div class="seg" role="tablist" aria-label="기간">
+                <button type="button" class="seg-btn" data-range="1">
+                  1일
+                </button>
+                <button
+                  type="button"
+                  class="seg-btn active"
+                  data-range="7"
+                  aria-pressed="true"
+                >
+                  7일
+                </button>
+                <button type="button" class="seg-btn" data-range="30">
+                  30일
+                </button>
+                <button type="button" class="seg-btn" data-range="all">
+                  전체
+                </button>
+              </div>
+              <div class="seg" role="tablist" aria-label="유형">
+                <button
+                  type="button"
+                  class="seg-btn active"
+                  data-type="click"
+                  aria-pressed="true"
+                >
+                  클릭
+                </button>
+                <button type="button" class="seg-btn" data-type="scroll">
+                  스크롤
+                </button>
+                <button type="button" class="seg-btn" data-type="both">
+                  둘 다
+                </button>
+              </div>
+              <div class="heatmap-meta" id="heatmapMeta">
+                <span id="heatmapEventCount">이벤트 0</span>
+              </div>
+              <button
+                type="button"
+                class="btn-refresh"
+                id="heatmapRefreshBtn"
+                title="새로고침"
+              >
+                ↻
+              </button>
+            </div>
+            <div class="heatmap-canvases" id="heatmapCanvases">
+              <div class="heatmap-empty">페이지를 선택해주세요</div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script defer src="config.js?v=20260520-heatmap"></script>
+    <script defer src="admin.js?v=20260520-heatmap"></script>
+    <script defer src="heatmap.js?v=20260520"></script>
+  </body>
+</html>

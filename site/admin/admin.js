@@ -230,6 +230,13 @@ const MENU = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg>',
   },
   {
+    nav: "heatmap",
+    href: "heatmap",
+    label: "히트맵",
+    shortLabel: "히트맵",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>',
+  },
+  {
     nav: "marketing-links",
     href: "marketing-links",
     label: "마케팅 슬러그",

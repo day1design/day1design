@@ -4564,3 +4564,229 @@
 .connect-steps li + li {
   margin-top: 2px;
 }
+
+/* ========== HEATMAP ADMIN ========== */
+.admin-content--heatmap {
+  padding: 0;
+}
+.heatmap-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: calc(100vh - 60px);
+  background: #f7f8fb;
+}
+.heatmap-pages {
+  background: #fff;
+  border-right: 1px solid #e7ebf0;
+  padding: 20px 16px;
+  overflow-y: auto;
+  max-height: calc(100vh - 60px);
+}
+.heatmap-pages-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e7ebf0;
+}
+.heatmap-pages-head h3 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-text);
+  margin: 0;
+}
+.heatmap-pages-count {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.heatmap-pages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.heatmap-page-item {
+  appearance: none;
+  border: 1px solid #e7ebf0;
+  background: #fafbfc;
+  border-radius: 8px;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.heatmap-page-item:hover {
+  border-color: var(--c-brand);
+  background: #fff;
+}
+.heatmap-page-item.active {
+  border-color: var(--c-brand);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(17, 24, 39, 0.06);
+}
+.hpi-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-text);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+.hpi-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--c-text-muted);
+  margin-bottom: 2px;
+}
+.hpi-total {
+  font-size: 11px;
+  color: var(--c-brand);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.heatmap-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+
+.heatmap-main {
+  padding: 20px 24px 32px;
+  overflow-x: auto;
+}
+.heatmap-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e7ebf0;
+}
+.heatmap-toolbar .seg {
+  background: #fff;
+}
+.heatmap-meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--c-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.btn-refresh {
+  appearance: none;
+  border: 1px solid #e7ebf0;
+  background: #fff;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  color: var(--c-text-sub);
+  font-size: 14px;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+.btn-refresh:hover {
+  border-color: var(--c-brand);
+  color: var(--c-brand);
+}
+
+.heatmap-canvases {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.heatmap-device-col {
+  flex: 0 0 auto;
+  background: #fff;
+  border: 1px solid #e7ebf0;
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(17, 24, 39, 0.04);
+}
+.heatmap-device-col[data-device="pc"] {
+  width: 720px;
+}
+.heatmap-device-col[data-device="mobile"] {
+  width: 280px;
+}
+.heatmap-device-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e7ebf0;
+}
+.heatmap-device-head strong {
+  font-size: 13px;
+  color: var(--c-text);
+}
+.heatmap-device-head span {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.heatmap-device-head .hdh-events {
+  margin-left: auto;
+  color: var(--c-brand);
+  font-weight: 600;
+}
+.heatmap-stage {
+  position: relative;
+  width: 100%;
+  background: #f3f5f8;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.heatmap-shot {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.heatmap-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: normal;
+}
+.heatmap-scroll-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  background: transparent;
+  pointer-events: none;
+}
+
+@media (max-width: 960px) {
+  .heatmap-layout {
+    grid-template-columns: 1fr;
+  }
+  .heatmap-pages {
+    max-height: 200px;
+    border-right: 0;
+    border-bottom: 1px solid #e7ebf0;
+  }
+  .heatmap-pages-list {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .heatmap-page-item {
+    flex: 0 0 200px;
+  }
+  .heatmap-canvases {
+    flex-direction: column;
+  }
+  .heatmap-device-col[data-device="pc"],
+  .heatmap-device-col[data-device="mobile"] {
+    width: 100%;
+  }
+}
