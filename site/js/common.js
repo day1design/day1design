@@ -378,6 +378,8 @@ if (popupDismiss) popupDismiss.addEventListener("click", dismissPopup);
     const maxCx = vw - margin - pw / 2;
     const cx = Math.max(minCx, Math.min(maxCx, triggerCx));
     pop.style.left = cx + "px";
+    // 탭바가 헤더 아래 상단에 위치 → popover는 트리거 탭 하단에서 아래로 떨어진다.
+    pop.style.top = r.bottom + 14 + "px";
     // 화살표는 여전히 트리거 탭 중앙을 가리키도록 offset 계산
     pop.style.setProperty("--bn-arrow-x", triggerCx - cx + "px");
   }

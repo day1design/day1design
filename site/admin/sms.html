@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>문자발송 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="x-deploy-stamp" content="20260520-iife" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
+    <style>
+      .sms-tabs {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid var(--c-border);
+        margin-bottom: 18px;
+      }
+      .sms-tab {
+        padding: 10px 18px;
+        border: none;
+        background: transparent;
+        color: var(--c-text-sub);
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        border-bottom: 2px solid transparent;
+        transform: translateY(1px);
+      }
+      .sms-tab.active {
+        color: var(--c-text);
+        border-bottom-color: var(--c-brand);
+      }
+      .sms-panel {
+        display: none;
+      }
+      .sms-panel.active {
+        display: block;
+      }
+
+      .sms-banner {
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        color: #92400e;
+        padding: 10px 14px;
+        border-radius: var(--radius-sm);
+        margin-bottom: 16px;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .sms-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+      .sms-toolbar h2 {
+        font-size: 15px;
+        font-weight: 600;
+        margin: 0;
+        color: var(--c-text);
+      }
+
+      .sms-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 14px;
+      }
+      .sms-card {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        padding: 16px;
+        box-shadow: var(--shadow-card);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sms-card-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--c-text);
+      }
+      .sms-card-subject {
+        font-size: 12px;
+        color: var(--c-text-sub);
+      }
+      .sms-card-body {
+        font-size: 12px;
+        color: var(--c-text-sub);
+        line-height: 1.5;
+        background: #fafbfc;
+        border: 1px solid var(--c-border-soft);
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 132px;
+        overflow: hidden;
+        position: relative;
+      }
+      .sms-card-actions {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+        margin-top: auto;
+      }
+
+      .sms-meta {
+        font-size: 11px;
+        color: var(--c-text-muted);
+      }
+
+      .sms-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .sms-table th,
+      .sms-table td {
+        text-align: left;
+        padding: 10px 12px;
+        font-size: 13px;
+        border-bottom: 1px solid var(--c-border-soft);
+      }
+      .sms-table th {
+        background: #f7f8fa;
+        font-weight: 600;
+        color: var(--c-text-sub);
+        font-size: 12px;
+      }
+      .sms-status {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 500;
+      }
+      .sms-status.sent {
+        background: #ecfdf5;
+        color: #047857;
+      }
+      .sms-status.skipped {
+        background: #fff7ed;
+        color: #b45309;
+      }
+      .sms-status.failed {
+        background: #fef2f2;
+        color: #b91c1c;
+      }
+
+      .sms-form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+      .sms-form-field label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--c-text-sub);
+      }
+      .sms-form-field input,
+      .sms-form-field textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        font-size: 14px;
+        font-family: inherit;
+      }
+      .sms-form-field textarea {
+        min-height: 220px;
+        resize: vertical;
+        line-height: 1.55;
+      }
+      .sms-form-counter {
+        font-size: 11px;
+        color: var(--c-text-muted);
+        text-align: right;
+      }
+      .sms-modal-panel {
+        max-width: 640px;
+      }
+    </style>
+    <script>
+      window.ADMIN_PAGE = { title: "문자발송", nav: "sms" };
+    </script>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <div class="sms-banner" id="smsBanner" hidden></div>
+
+        <div class="sms-tabs" role="tablist">
+          <button
+            type="button"
+            class="sms-tab active"
+            data-tab="templates"
+            role="tab"
+          >
+            메시지 템플릿
+          </button>
+          <button type="button" class="sms-tab" data-tab="logs" role="tab">
+            발송 이력
+          </button>
+        </div>
+
+        <section class="sms-panel active" data-panel="templates">
+          <div class="sms-toolbar">
+            <h2>등록된 템플릿</h2>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              id="btnNewTemplate"
+            >
+              + 새 템플릿
+            </button>
+          </div>
+          <div class="sms-grid" id="tplGrid">
+            <div class="empty-state">불러오는 중...</div>
+          </div>
+        </section>
+
+        <section class="sms-panel" data-panel="logs">
+          <div class="sms-toolbar">
+            <h2>최근 발송 이력</h2>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              id="btnRefreshLogs"
+            >
+              새로고침
+            </button>
+          </div>
+          <div id="logsWrap">
+            <div class="empty-state">불러오는 중...</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal" id="tplModal" hidden>
+      <div class="modal-backdrop" data-tpl-close></div>
+      <div
+        class="modal-panel sms-modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tplModalTitle"
+      >
+        <div class="modal-head">
+          <h2 id="tplModalTitle">새 템플릿</h2>
+          <button
+            class="icon-btn"
+            data-tpl-close
+            type="button"
+            aria-label="닫기"
+          >
+            ✕
+          </button>
+        </div>
+        <form class="modal-body" id="tplForm">
+          <div class="sms-form-field">
+            <label for="tplName">템플릿 이름</label>
+            <input
+              id="tplName"
+              name="Name"
+              type="text"
+              maxlength="60"
+              required
+            />
+          </div>
+          <div class="sms-form-field">
+            <label for="tplSubject">LMS 제목 (최대 40자)</label>
+            <input
+              id="tplSubject"
+              name="Subject"
+              type="text"
+              maxlength="40"
+              required
+            />
+            <div class="sms-form-counter">
+              <span id="tplSubjectLen">0</span> / 40
+            </div>
+          </div>
+          <div class="sms-form-field">
+            <label for="tplContent">본문</label>
+            <textarea id="tplContent" name="Content" required></textarea>
+            <div class="sms-form-counter">
+              <span id="tplContentBytes">0</span> bytes ·
+              <span id="tplContentLen">0</span> 자
+            </div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px">
+            <button type="button" class="btn btn-ghost" data-tpl-close>
+              취소
+            </button>
+            <button type="submit" class="btn btn-primary" id="btnSaveTpl">
+              저장
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script defer src="config.js"></script>
+    <script defer src="admin.js"></script>
+    <script defer src="sms.js?v=20260520-iife"></script>
+  </body>
+</html>

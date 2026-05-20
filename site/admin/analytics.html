@@ -13,7 +13,7 @@
     />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260514-ipdetail" />
+    <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
     <script>
       window.ADMIN_PAGE = { title: "유입통계", nav: "analytics" };
     </script>
@@ -30,15 +30,16 @@
       <main class="admin-content" id="adminContent">
         <div class="analytics-toolbar">
           <div class="seg" role="tablist" aria-label="기간">
-            <button type="button" class="seg-btn" data-range="7">7일</button>
             <button
               type="button"
               class="seg-btn active"
-              data-range="30"
+              data-range="today"
               aria-pressed="true"
             >
-              30일
+              당일
             </button>
+            <button type="button" class="seg-btn" data-range="7">7일</button>
+            <button type="button" class="seg-btn" data-range="30">30일</button>
             <button type="button" class="seg-btn" data-range="prev-month">
               전월
             </button>
@@ -63,7 +64,7 @@
               적용
             </button>
           </div>
-          <div class="analytics-compare" id="rangeLabel">최근 30일</div>
+          <div class="analytics-compare" id="rangeLabel">오늘</div>
         </div>
 
         <section class="analytics-row ops-dashboard" aria-labelledby="opsTitle">
@@ -392,7 +393,7 @@
         <div class="modal-head visitor-detail-head">
           <div>
             <h2 id="visitorLocationModalTitle">IP 접속 상세기록</h2>
-            <p id="visitorDetailRangeLabel">최근 30일</p>
+            <p id="visitorDetailRangeLabel">오늘</p>
           </div>
           <button
             type="button"
@@ -412,6 +413,14 @@
             >
               <button
                 type="button"
+                class="seg-btn active"
+                data-visitor-detail-range="today"
+                aria-pressed="true"
+              >
+                당일
+              </button>
+              <button
+                type="button"
                 class="seg-btn"
                 data-visitor-detail-range="7"
               >
@@ -419,9 +428,8 @@
               </button>
               <button
                 type="button"
-                class="seg-btn active"
+                class="seg-btn"
                 data-visitor-detail-range="30"
-                aria-pressed="true"
               >
                 30일
               </button>
@@ -484,7 +492,7 @@
       src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
     ></script>
     <script defer src="config.js?v=20260514-heatmap"></script>
-    <script defer src="admin.js?v=20260422b"></script>
-    <script defer src="analytics.js?v=20260514-ipdetail"></script>
+    <script defer src="admin.js?v=20260520-2row"></script>
+    <script defer src="analytics.js?v=20260520-today-default"></script>
   </body>
 </html>

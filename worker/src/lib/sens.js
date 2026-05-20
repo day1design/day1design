@@ -59,7 +59,11 @@ function readSensEnv(env) {
 
 // 검수 통과 / 발신번호 등록 전에는 skipped:true 로 안전 리턴.
 // 운영 시점 디버그용으로 reason 도 같이.
-export async function sendNcpSens(env, { to, content, subject } = {}) {
+//   type: "LMS" | "SMS" | "auto"(default) — auto 는 본문 길이 기준 자동 선택
+export async function sendNcpSens(
+  env,
+  { to, content, subject, type: forcedType = "auto" } = {},
+) {
   const { accessKey, secretKey, serviceId, from } = readSensEnv(env);
   const cleanTo = normalizePhone(to);
 
@@ -86,7 +90,10 @@ export async function sendNcpSens(env, { to, content, subject } = {}) {
     secretKey,
   });
 
-  const type = pickSmsType(content);
+  const type =
+    forcedType === "LMS" || forcedType === "SMS"
+      ? forcedType
+      : pickSmsType(content);
   const payload = {
     type,
     contentType: "COMM",

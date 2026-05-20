@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>마케팅 슬러그 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="x-deploy-stamp" content="20260520-archive" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
+    <style>
+      .mkt-toolbar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      .mkt-toolbar .sep {
+        flex: 1;
+      }
+      .mkt-form {
+        background: #fafaf7;
+        border: 1px solid #e8e3d8;
+        border-radius: 6px;
+        padding: 18px 20px;
+        margin-bottom: 18px;
+      }
+      .mkt-form .row {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .mkt-form .row > label {
+        font-size: 13px;
+        color: #555;
+        font-weight: 500;
+      }
+      .mkt-form input[type="text"],
+      .mkt-form input[type="url"] {
+        width: 100%;
+        padding: 9px 12px;
+        border: 1px solid #d4cdb8;
+        border-radius: 4px;
+        font-size: 14px;
+        font-family: inherit;
+      }
+      .mkt-form .actions {
+        text-align: right;
+        margin-top: 8px;
+      }
+      .mkt-form .hint {
+        color: #888;
+        font-size: 12px;
+        margin-top: 4px;
+        grid-column: 2;
+      }
+      .mkt-form .preview-url {
+        font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+        font-size: 13px;
+        color: #6b5b3e;
+        word-break: break-all;
+      }
+      table.mkt-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      table.mkt-table th,
+      table.mkt-table td {
+        padding: 10px 8px;
+        border-bottom: 1px solid #ece8de;
+        text-align: left;
+        vertical-align: middle;
+      }
+      table.mkt-table th {
+        background: #faf8f3;
+        font-weight: 600;
+        color: #555;
+        font-size: 12px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+      }
+      table.mkt-table .num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      table.mkt-table .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .badge.on {
+        background: #e8f3ea;
+        color: #2f6a3a;
+      }
+      .badge.off {
+        background: #f1ece2;
+        color: #8a7a4f;
+      }
+      .mkt-actions button {
+        background: none;
+        border: 1px solid #d4cdb8;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        margin-right: 4px;
+      }
+      .mkt-actions button:hover {
+        background: #f5f0e8;
+      }
+      .mkt-actions button.danger:hover {
+        background: #fdeaea;
+        color: #b03030;
+        border-color: #e0a0a0;
+      }
+      .slug-cell code {
+        background: #f5f0e8;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .slug-cell .label {
+        display: block;
+        color: #1a1a1a;
+        font-weight: 600;
+        margin-top: 2px;
+      }
+      .target-cell {
+        max-width: 260px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #6b5b3e;
+        font-size: 12px;
+      }
+      .empty-row td {
+        text-align: center;
+        color: #999;
+        padding: 40px 0;
+      }
+      #copyToast {
+        position: fixed;
+        bottom: 32px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #1a1a1a;
+        color: #fff;
+        padding: 10px 18px;
+        border-radius: 4px;
+        font-size: 13px;
+        opacity: 0;
+        transition: opacity 0.2s;
+        pointer-events: none;
+        z-index: 9999;
+      }
+      #copyToast.show {
+        opacity: 1;
+      }
+
+      .mkt-tabs {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid #e8e3d8;
+        margin-bottom: 16px;
+      }
+      .mkt-tab {
+        padding: 9px 18px;
+        border: none;
+        background: transparent;
+        color: #888;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        border-bottom: 2px solid transparent;
+        transform: translateY(1px);
+      }
+      .mkt-tab.active {
+        color: #1a1a1a;
+        border-bottom-color: #5a5448;
+      }
+      .mkt-tab .count {
+        opacity: 0.6;
+        margin-left: 4px;
+        font-variant-numeric: tabular-nums;
+      }
+      .archived-row td {
+        color: #999;
+      }
+      .archived-row .slug-cell code {
+        text-decoration: line-through;
+        opacity: 0.7;
+      }
+
+      /* 일별 통계 모달 */
+      .daily-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9998;
+      }
+      .daily-modal.show {
+        display: flex;
+      }
+      .daily-panel {
+        background: #fff;
+        max-width: 540px;
+        width: calc(100% - 32px);
+        max-height: 80vh;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .daily-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 18px;
+        border-bottom: 1px solid #e8e3d8;
+      }
+      .daily-head h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .daily-head button {
+        background: none;
+        border: none;
+        font-size: 18px;
+        cursor: pointer;
+        color: #888;
+      }
+      .daily-body {
+        padding: 12px 18px;
+        overflow-y: auto;
+      }
+      .daily-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .daily-table th,
+      .daily-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #f0ebe0;
+        text-align: left;
+      }
+      .daily-table th {
+        background: #faf8f3;
+        font-weight: 600;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: #666;
+      }
+      .daily-table .num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .daily-empty {
+        padding: 32px 0;
+        text-align: center;
+        color: #999;
+      }
+    </style>
+    <script>
+      window.ADMIN_PAGE = { title: "마케팅 슬러그", nav: "marketing-links" };
+    </script>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <section class="admin-section">
+          <p class="admin-sub" style="margin-bottom: 14px">
+            네이버 블로그·인스타·유튜브·구글 광고 등에 깔 추적용 URL을 만듭니다.
+            여기서 만든 <code>day1design.co.kr/r/&lt;슬러그&gt;</code>로
+            들어오면 지정한 <strong>출처명</strong>이 30일 쿠키로 기록되고, 상담
+            접수 시 출처가 자동 표시됩니다.
+          </p>
+
+          <form class="mkt-form" id="createForm">
+            <div class="row">
+              <label for="slugInput">슬러그 (URL 꼬리표)</label>
+              <div>
+                <input
+                  type="text"
+                  id="slugInput"
+                  placeholder="예: naver-blog-may2025"
+                  required
+                />
+                <div class="hint preview-url" id="urlPreview">
+                  https://day1design.co.kr/r/&lt;슬러그&gt;
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <label for="labelInput">출처명 (통계 라벨)</label>
+              <div>
+                <input
+                  type="text"
+                  id="labelInput"
+                  placeholder="예: 네이버 블로그 5월 캠페인"
+                  required
+                />
+                <div class="hint">
+                  상담 접수 카드에 이 이름이 그대로 표시돼요.
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <label for="targetInput">대상 URL</label>
+              <div>
+                <input
+                  type="url"
+                  id="targetInput"
+                  placeholder="https://day1design.co.kr/pages/estimates"
+                  value="https://day1design.co.kr/"
+                  required
+                />
+                <div class="hint">방문자가 실제로 도착할 페이지.</div>
+              </div>
+            </div>
+            <div class="actions">
+              <button type="submit" class="btn btn-primary" id="btnCreate">
+                + 슬러그 만들기
+              </button>
+            </div>
+          </form>
+
+          <div class="mkt-tabs" role="tablist">
+            <button
+              type="button"
+              class="mkt-tab active"
+              data-view="active"
+              role="tab"
+            >
+              활성<span class="count" id="countActive"></span>
+            </button>
+            <button
+              type="button"
+              class="mkt-tab"
+              data-view="archived"
+              role="tab"
+            >
+              보관함<span class="count" id="countArchived"></span>
+            </button>
+          </div>
+
+          <div class="mkt-toolbar">
+            <strong id="countLabel">등록된 슬러그: 0개</strong>
+            <span class="sep"></span>
+            <button type="button" class="btn btn-ghost" id="btnReload">
+              새로고침
+            </button>
+          </div>
+
+          <table class="mkt-table">
+            <thead>
+              <tr>
+                <th style="width: 30%">슬러그 / 출처명</th>
+                <th>대상 URL</th>
+                <th class="num" style="width: 80px">클릭</th>
+                <th class="num" style="width: 80px">상담 접수</th>
+                <th style="width: 70px">상태</th>
+                <th style="width: 200px">관리</th>
+              </tr>
+            </thead>
+            <tbody id="rows">
+              <tr class="empty-row">
+                <td colspan="6">불러오는 중…</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </main>
+    </div>
+    <div id="copyToast">복사됨</div>
+
+    <div class="daily-modal" id="dailyModal" aria-hidden="true">
+      <div class="daily-panel" role="dialog" aria-modal="true">
+        <div class="daily-head">
+          <h3 id="dailyTitle">일별 클릭 통계</h3>
+          <button type="button" id="dailyClose" aria-label="닫기">✕</button>
+        </div>
+        <div class="daily-body" id="dailyBody">
+          <div class="daily-empty">불러오는 중…</div>
+        </div>
+      </div>
+    </div>
+
+    <script defer src="config.js?v=20260520-archive"></script>
+    <script defer src="admin.js?v=20260520-2row"></script>
+    <script defer src="marketing-links.js?v=20260520-archive"></script>
+  </body>
+</html>

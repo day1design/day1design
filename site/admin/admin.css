@@ -1716,34 +1716,39 @@
   body {
     overflow-x: hidden;
   }
-  /* 사이드바 → 하단 고정 가로 탭바로 전환 */
+  /* 사이드바 → 하단 고정 2단 그리드 탭바 (5x2, 메뉴 10개) */
   .admin-sidebar {
     top: auto !important;
-    bottom: 0;
+    bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
     width: auto !important;
     max-width: 100vw;
-    height: 58px;
+    height: 112px; /* 2단 (56px x 2) */
     transform: none !important;
     background: #fff;
     border-right: none;
+    border-bottom: none;
     border-top: 1px solid var(--c-border);
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
     padding: 0 !important;
     z-index: 40;
     display: flex !important;
-    flex-direction: row;
+    flex-direction: column;
     overflow: hidden;
     box-sizing: border-box;
+    /* iOS safe-area 보정 */
+    padding-bottom: env(safe-area-inset-bottom, 0) !important;
   }
   .sidebar-brand,
   .sidebar-footer {
     display: none !important;
   }
   .sidebar-nav {
-    display: flex;
-    flex-direction: row;
+    /* 5x2 그리드 — 한 줄 5개, 2단 */
+    display: grid !important;
+    grid-template-columns: repeat(5, 1fr);
+    grid-auto-rows: 1fr;
     padding: 0;
     margin: 0;
     width: 100%;
@@ -1752,15 +1757,16 @@
     overflow: visible;
   }
   .sidebar-link {
-    flex: 1 1 0;
+    /* grid item: flex 속성 무효화. 셀 내부에서 가운데 정렬 */
+    flex: initial;
     min-width: 0;
-    width: 0;
+    width: auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    padding: 6px 2px;
+    gap: 2px;
+    padding: 4px 2px;
     margin: 0;
     border-radius: 0;
     font-size: 10px;
@@ -1768,10 +1774,20 @@
     color: var(--c-text-sub, #64748b);
     background: transparent !important;
     position: relative;
-    line-height: 1;
+    line-height: 1.1;
     white-space: nowrap;
     overflow: hidden;
     box-sizing: border-box;
+    border-right: 1px solid var(--c-border-soft, #eef0f3);
+    border-bottom: 1px solid var(--c-border-soft, #eef0f3);
+  }
+  /* 5n번째: 우측 끝 → 오른쪽 보더 제거 */
+  .sidebar-link:nth-child(5n) {
+    border-right: none;
+  }
+  /* 마지막 줄(6~10번): 아래쪽 보더 제거 */
+  .sidebar-link:nth-child(n + 6) {
+    border-bottom: none;
   }
   .sidebar-link:hover {
     background: transparent !important;
@@ -1790,6 +1806,7 @@
     opacity: 1;
   }
   .sidebar-link.active::before {
+    /* 활성 표시 라인: 하단 nav 이므로 카드 상단에 라인 */
     content: "";
     position: absolute;
     top: 0;
@@ -1807,12 +1824,36 @@
     font-size: 10px;
   }
 
-  /* 레이아웃: 하단 nav 만큼 본문 여백 */
+  /* 레이아웃: 상단 nav 만큼 본문 위쪽 여백 */
   .admin-layout {
     margin-left: 0 !important;
   }
   .admin-content {
-    padding-bottom: 200px;
+    padding-top: 20px;
+    padding-bottom: 130px !important; /* 하단 nav 112px + 여유 18px */
+  }
+
+  /* iOS Safari: focus 시 자동확대 방지 — input/textarea/select font-size ≥ 16px */
+  .admin-content
+    input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+  .admin-content textarea,
+  .admin-content select,
+  .modal input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+  .modal textarea,
+  .modal select {
+    font-size: 16px;
+  }
+
+  /* 터치 타깃 최소 사이즈 (Apple HIG 44, 보수적으로 38px) */
+  .icon-btn,
+  .topbar-logout {
+    min-width: 38px;
+    min-height: 38px;
+  }
+  /* 카드/리스트의 인라인 액션 버튼 (수정/삭제) — admin.css 기본 .btn-sm 도 모바일에서 36px 이상 */
+  .btn-sm,
+  .mkt-actions button {
+    min-height: 36px;
   }
 
   /* 햄버거/백드롭 숨김 */
@@ -1953,12 +1994,12 @@
   .filter-row select {
     min-width: 0;
     flex: 1 1 45%;
-    font-size: 13px;
+    font-size: 16px; /* iOS 자동확대 방지 */
   }
   .filter-row input[type="search"] {
     min-width: 0;
     flex: 1 1 100%;
-    font-size: 13px;
+    font-size: 16px; /* iOS 자동확대 방지 */
   }
 
   /* 상세 영역 - 여백 축소, overflow 방지, 헤더 줄바꿈, dl 블록 레이아웃 */
@@ -2305,7 +2346,7 @@
     display: inline-flex;
   }
   .admin-content {
-    padding: 20px 16px 200px;
+    padding: 20px 16px 24px;
   }
   .admin-topbar {
     padding: 0 16px;

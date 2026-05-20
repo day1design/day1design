@@ -212,8 +212,8 @@ let currentTrafficSourceRows = [];
 let currentTopPagesRows = [];
 let currentSubmissionRows = [];
 let currentVisitorLocationRows = null;
-let currentRangeKey = "30";
-let visitorDetailRangeKey = "30";
+let currentRangeKey = "today";
+let visitorDetailRangeKey = "today";
 let submissionPeriodKey = "month";
 let customStart = null; // Date (KST 자정)
 let customEnd = null; // Date (KST 23:59)
@@ -482,6 +482,15 @@ function syncTargetControl(forecastStats, effectiveTarget) {
 // ========== 기간 범위 해석 ==========
 function resolveRange(key) {
   const today = startOfDay(new Date());
+  if (key === "today") {
+    return {
+      key,
+      start: today,
+      end: endOfDay(today),
+      days: 1,
+      label: "오늘",
+    };
+  }
   if (key === "7" || key === "30") {
     const days = Number(key);
     const start = new Date(today);

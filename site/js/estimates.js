@@ -333,6 +333,40 @@ const ESTIMATES_ENDPOINT =
     : null;
 const PENDING_KEY = "day1_pending_estimates";
 
+// 마케팅 슬러그 추적: /r/<slug> 경유 시 Worker가 d1d_src 쿠키(30일)에
+// {label, slug, utm:{source,medium,campaign}, ts}를 저장한다. 폼 송신 시
+// 이 정보를 utm_*/campaign/referral 필드로 첨부해 attribution을 보존.
+function readMarketingAttribution() {
+  const result = {
+    label: "",
+    utm_source: "",
+    utm_medium: "",
+    utm_campaign: "",
+  };
+  try {
+    const raw = document.cookie
+      .split(/;\s*/)
+      .find((p) => p.startsWith("d1d_src="));
+    if (raw) {
+      const decoded = decodeURIComponent(raw.slice("d1d_src=".length));
+      const obj = JSON.parse(decoded);
+      result.label = String(obj.label || "");
+      result.utm_source = String(obj.utm?.source || "");
+      result.utm_medium = String(obj.utm?.medium || "");
+      result.utm_campaign = String(obj.utm?.campaign || "");
+    }
+  } catch {}
+  try {
+    const qs = new URLSearchParams(location.search);
+    // URL 쿼리가 있으면 쿠키보다 우선 (가장 최근 클릭 우선)
+    if (qs.get("utm_source")) result.utm_source = qs.get("utm_source");
+    if (qs.get("utm_medium")) result.utm_medium = qs.get("utm_medium");
+    if (qs.get("utm_campaign")) result.utm_campaign = qs.get("utm_campaign");
+    if (qs.get("src")) result.label = qs.get("src");
+  } catch {}
+  return result;
+}
+
 function buildSubmitPayload() {
   const f = form;
   const val = (name) => {
@@ -347,6 +381,14 @@ function buildSubmitPayload() {
   const emailDomain = val("email_domain");
   const email = emailId && emailDomain ? `${emailId}@${emailDomain}` : "";
 
+  const attribution = readMarketingAttribution();
+  // 슬러그 라벨이 있으면 Referral을 덮어쓴다.
+  // 이유: 광고 클릭으로 들어온 사용자는 폼의 referral 옵션을 안 누르거나
+  // 누르더라도 캠페인명("네이버 블로그 5월")이 채널명("네이버")보다 더 구체적이라
+  // 관리자 대시보드의 슬러그별 전환수 집계(Referral === sourceLabel)가 작동하려면
+  // 캠페인 라벨이 우선 들어가야 함.
+  const referralValue = attribution.label || selections.referral || "";
+
   const fields = {
     submittedAt: new Date().toISOString(),
     name: val("name"),
@@ -358,12 +400,16 @@ function buildSubmitPayload() {
     address: val("address"),
     address_detail: val("address_detail"),
     schedule: val("schedule"),
-    referral: selections.referral || "",
+    referral: referralValue,
     branch: selections.branch || "",
     detail: val("detail"),
     privacy_agreed: !!f.querySelector('input[name="privacy"]').checked,
     concept_files_count: compressedFiles.concept_files.length,
     floor_plans_count: compressedFiles.floor_plans.length,
+    utm_source: attribution.utm_source,
+    utm_medium: attribution.utm_medium,
+    utm_campaign: attribution.utm_campaign,
+    campaign: attribution.label,
   };
 
   const fd = new FormData();
