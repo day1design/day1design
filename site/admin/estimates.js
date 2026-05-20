@@ -82,9 +82,10 @@ function statusBadge(s) {
 
 function sourceBadge(src) {
   const s = String(src || "homepage").toLowerCase();
+  // 드롭다운 필터(estimates.html)의 옵션 라벨과 1:1 일치
   const labels = {
     homepage: "홈페이지",
-    meta: "Meta",
+    meta: "Meta 광고",
     google: "Google",
     naver: "Naver",
     youtube: "YouTube",
@@ -92,8 +93,8 @@ function sourceBadge(src) {
     referral: "Referral",
     other: "기타",
   };
-  if (s === "meta") return `<span class="src-badge src-meta">Meta</span>`;
-  return `<span class="src-badge src-${labels[s] ? s : "other"}">${escapeHtml(labels[s] || labels.other)}</span>`;
+  const key = labels[s] ? s : "other";
+  return `<span class="src-badge src-${key}">${escapeHtml(labels[key])}</span>`;
 }
 
 function fmtDateTime(iso) {
@@ -122,7 +123,11 @@ function renderQuickStats() {
   const todayStart = startOfDay(now);
   const weekStart = new Date(todayStart);
   weekStart.setDate(weekStart.getDate() - 6);
-  const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+  const monthStart = new Date(
+    todayStart.getFullYear(),
+    todayStart.getMonth(),
+    1,
+  );
   let daily = 0;
   let weekly = 0;
   let monthly = 0;
@@ -162,9 +167,13 @@ function filtered() {
 function customerKey(r) {
   const phone = String(r.Phone || "").replace(/\D/g, "");
   if (phone) return `p:${phone}`;
-  const email = String(r.Email || "").trim().toLowerCase();
+  const email = String(r.Email || "")
+    .trim()
+    .toLowerCase();
   if (email) return `e:${email}`;
-  return `n:${String(r.Name || "").trim().toLowerCase()}`;
+  return `n:${String(r.Name || "")
+    .trim()
+    .toLowerCase()}`;
 }
 
 function buildSessionMap(sourceRecords) {
@@ -700,7 +709,8 @@ async function loadHistory(id) {
   }
   if (selectedId === id) {
     const slot = detail.querySelector("#detailSessionSlot");
-    if (slot) slot.innerHTML = sessionBadgeHtml(historyCache[id]?.sessionNo || 1);
+    if (slot)
+      slot.innerHTML = sessionBadgeHtml(historyCache[id]?.sessionNo || 1);
     const historyBox = detail.querySelector("#historyBox");
     if (historyBox) historyBox.innerHTML = historyHtml(historyCache[id]);
   }

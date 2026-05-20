@@ -70,6 +70,8 @@
               <option value="naver">Naver</option>
               <option value="youtube">YouTube</option>
               <option value="kakao">Kakao</option>
+              <option value="referral">Referral</option>
+              <option value="other">기타</option>
             </select>
             <input
               type="search"
@@ -88,14 +90,30 @@
     </div>
     <div class="modal est-modal" id="estDetailModal" hidden>
       <div class="modal-backdrop" data-est-close></div>
-      <div class="modal-panel est-modal-panel" role="dialog" aria-modal="true" aria-labelledby="estModalTitle">
+      <div
+        class="modal-panel est-modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="estModalTitle"
+      >
         <div class="modal-head est-modal-head">
           <h2 id="estModalTitle">접수 상세</h2>
           <div class="modal-head-actions">
-            <button class="btn btn-ghost" id="btnOpenCustomerEdit" type="button">
+            <button
+              class="btn btn-ghost"
+              id="btnOpenCustomerEdit"
+              type="button"
+            >
               고객정보 수정
             </button>
-            <button class="icon-btn" data-est-close type="button" aria-label="상세 닫기">✕</button>
+            <button
+              class="icon-btn"
+              data-est-close
+              type="button"
+              aria-label="상세 닫기"
+            >
+              ✕
+            </button>
           </div>
         </div>
         <div class="modal-body est-detail-body" id="estDetail"></div>
@@ -103,10 +121,22 @@
     </div>
     <div class="modal est-modal est-edit-modal" id="estCustomerModal" hidden>
       <div class="modal-backdrop" data-customer-close></div>
-      <div class="modal-panel est-edit-panel" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle">
+      <div
+        class="modal-panel est-edit-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="customerModalTitle"
+      >
         <div class="modal-head">
           <h2 id="customerModalTitle">고객정보 수정</h2>
-          <button class="icon-btn" data-customer-close type="button" aria-label="수정 닫기">✕</button>
+          <button
+            class="icon-btn"
+            data-customer-close
+            type="button"
+            aria-label="수정 닫기"
+          >
+            ✕
+          </button>
         </div>
         <form class="modal-body customer-edit-form" id="estCustomerForm"></form>
       </div>
