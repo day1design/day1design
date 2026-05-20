@@ -44,33 +44,37 @@
   margin: 0 auto;
   padding: 40px 40px 60px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 60px;
+  grid-template-columns: minmax(420px, 0.98fr) minmax(520px, 1.02fr);
+  gap: 56px;
   align-items: center;
+}
+.hero-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
 }
 .keywords {
   display: flex;
-  gap: 12px;
-  margin-bottom: 40px;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  margin-bottom: 38px;
 }
 .keywords img {
-  width: 90px;
-  height: 90px;
+  width: 88px;
+  height: 88px;
   object-fit: contain;
 }
 .hero-title-kr {
-  font-size: 32px;
+  font-size: 36px;
   font-weight: 300;
   color: var(--color-text-heading);
   line-height: 1.45;
-  letter-spacing: -0.5px;
+  letter-spacing: 0;
   margin: 0;
-}
-.hero-divider {
-  width: 48px;
-  height: 1px;
-  background: #bfb8a7;
-  margin: 36px 0 0;
+  max-width: 100%;
+  white-space: nowrap;
 }
 .hero-right img {
   width: 100%;
@@ -80,34 +84,45 @@
 
 /* ========== PHILOSOPHY SECTION ========== */
 .philosophy-section {
-  max-width: 760px;
+  max-width: var(--max-width);
   margin: 0 auto;
   padding: 20px 40px 120px;
 }
 .philosophy-pillar {
-  padding: 56px 0;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  column-gap: 60px;
+  align-items: start;
+  padding: 46px 0;
   border-top: 1px solid #e5e1d6;
 }
 .philosophy-pillar:last-child {
   border-bottom: 1px solid #e5e1d6;
 }
+.pillar-heading {
+  text-align: right;
+}
 .pillar-label {
   font-size: 11px;
   letter-spacing: 4px;
   color: #9a9488;
-  margin-bottom: 14px;
+  margin: 0;
   text-transform: uppercase;
+  text-align: right;
 }
 .pillar-title {
   font-size: 30px;
+  line-height: 1.2;
   font-weight: 500;
   color: var(--color-text-heading);
-  letter-spacing: -0.3px;
-  margin: 0 0 24px;
+  letter-spacing: 0;
+  margin: 6px 0 0;
+  text-align: right;
 }
 .pillar-desc {
-  font-size: 15px;
-  line-height: 1.9;
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.85;
   color: #555;
 }
 
@@ -347,6 +362,29 @@
     grid-template-columns: 1fr;
     gap: 40px;
   }
+  .hero-left {
+    align-items: flex-start;
+    text-align: left;
+  }
+  .keywords {
+    justify-content: flex-start;
+  }
+  .hero-title-kr {
+    white-space: normal;
+  }
+  .philosophy-pillar {
+    grid-template-columns: 1fr;
+    row-gap: 24px;
+  }
+  .pillar-heading,
+  .pillar-label,
+  .pillar-title,
+  .pillar-desc {
+    text-align: left;
+  }
+  .pillar-title {
+    margin-top: 0;
+  }
   .brand-grid {
     grid-template-columns: 1fr;
     gap: 56px;
@@ -377,9 +415,6 @@
   }
   .hero-title-kr {
     font-size: 24px;
-  }
-  .hero-divider {
-    margin-top: 28px;
   }
   .philosophy-section {
     padding: 20px 20px 80px;
@@ -443,4 +478,20 @@
     padding: 12px 30px;
     font-size: 12px;
   }
+}
+
+/* ========== ABOUT US 본문 영역 wrap (헤더/푸터와 동일 1200px) ========== */
+/* 콘텐츠 박스 자체를 1200px로 가운데 정렬, 외곽은 흰색 배경. */
+/* brandfilm-section (영상) 은 제외 — full-width 유지. */
+body {
+  background: #fff;
+}
+.about-hero,
+.philosophy-section,
+.brand-section,
+.color-section,
+.branches-section {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
 }
