@@ -23,6 +23,12 @@
   width: 640px;
   min-width: 0;
 }
+.wizard-layout.is-complete {
+  display: block;
+}
+.wizard-layout.is-complete .wizard-main {
+  margin: 0 auto;
+}
 
 /* Summary Panel */
 .wizard-summary {
@@ -238,6 +244,16 @@
   border-color: var(--color-brand-beige);
   outline: none;
   background: #fff;
+}
+.form-group.is-invalid input,
+.form-group.is-invalid textarea,
+.option-cards.is-invalid .option-card {
+  border-color: #c5371a;
+  background: #fff7f3;
+}
+.option-cards.is-invalid .option-card.selected {
+  background: var(--color-brand-beige);
+  border-color: var(--color-brand-beige);
 }
 .form-group textarea {
   min-height: 120px;
