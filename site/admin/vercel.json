@@ -5,8 +5,8 @@
   "rewrites": [
     { "source": "/", "destination": "/login.html" },
     {
-      "source": "/api/:path*",
-      "destination": "https://day1design-api.day1design-co.workers.dev/api/:path*"
+      "source": "/api/(.*)",
+      "destination": "https://day1design-api.day1design-co.workers.dev/api/$1"
     }
   ],
   "headers": [
