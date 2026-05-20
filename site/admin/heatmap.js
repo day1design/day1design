@@ -172,15 +172,17 @@
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1단계: 알파 누적
-    const radius = Math.max(20, Math.floor(naturalW * 0.025));
+    // 1단계: 알파 누적 (반지름 작고 초기 알파 낮음 → 누적될수록 진해지는 밀집 계층화)
+    const radius = Math.max(10, Math.floor(naturalW * 0.012));
     ctx.globalCompositeOperation = "lighter";
     for (const e of events) {
       if (e.EventType !== "click" || e.XPct == null || e.YPct == null) continue;
       const x = e.XPct * naturalW;
       const y = e.YPct * naturalH;
       const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
-      g.addColorStop(0, "rgba(255,255,255,0.55)");
+      // 단일 클릭은 옅게(0.22) → 같은 위치 누적 시 lighter 합성으로 자연스럽게 진해짐
+      g.addColorStop(0, "rgba(255,255,255,0.22)");
+      g.addColorStop(0.4, "rgba(255,255,255,0.12)");
       g.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
@@ -189,7 +191,7 @@
     }
     ctx.globalCompositeOperation = "source-over";
 
-    // 2단계: 그레이스케일을 컬러 그라데이션으로 치환
+    // 2단계: 그레이스케일을 컬러 그라데이션으로 치환 + 밀집 강조
     if (!events.length) return;
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
@@ -197,26 +199,32 @@
     for (let i = 0; i < data.length; i += 4) {
       const a = data[i]; // R=G=B=A 이므로 R만 봐도 됨
       if (a === 0) continue;
-      const idx = Math.min(255, a);
+      // 감마 보정: 저밀도(단일 클릭)는 더 옅게, 고밀도는 더 빠르게 진해짐
+      const norm = a / 255;
+      const boosted = Math.pow(norm, 0.75); // <1 → 고밀도 가속
+      const idx = Math.min(255, Math.floor(boosted * 255));
       const c = palette[idx];
       data[i] = c[0];
       data[i + 1] = c[1];
       data[i + 2] = c[2];
-      data[i + 3] = Math.min(220, idx + 30);
+      // 알파: 저밀도일수록 반투명, 고밀도일수록 불투명에 가깝게
+      data[i + 3] = Math.min(230, Math.floor(40 + idx * 0.78));
     }
     ctx.putImageData(imageData, 0, 0);
   }
 
-  // 256 step gradient: 투명 → 파랑 → 초록 → 노랑 → 빨강
+  // 256 step gradient: 옅은 시안 → 파랑 → 초록 → 노랑 → 빨강
+  // 저밀도 구간(0~80)을 옅은 시안 톤으로 길게 늘려 단일 클릭이 자극적이지 않게
   let _paletteCache = null;
   function colorPalette() {
     if (_paletteCache) return _paletteCache;
     const stops = [
-      { p: 0, c: [0, 0, 200] },
-      { p: 90, c: [0, 200, 220] },
-      { p: 150, c: [0, 220, 0] },
-      { p: 200, c: [255, 230, 0] },
-      { p: 255, c: [220, 0, 0] },
+      { p: 0, c: [120, 180, 230] }, // 옅은 시안 — 단일·저밀도
+      { p: 60, c: [60, 130, 220] }, // 파랑
+      { p: 120, c: [40, 200, 130] }, // 초록
+      { p: 180, c: [255, 220, 60] }, // 노랑
+      { p: 230, c: [255, 130, 30] }, // 주황
+      { p: 255, c: [220, 30, 30] }, // 빨강 — 고밀도
     ];
     const arr = new Array(256);
     for (let i = 0; i < 256; i++) {
