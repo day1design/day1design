@@ -6,6 +6,7 @@ import { handleAuth } from "./routes/auth.js";
 import { handleUpload } from "./routes/upload.js";
 import { handleMetaLead } from "./routes/meta-lead.js";
 import { handleAnalytics } from "./routes/analytics.js";
+import { handleHeatmap } from "./routes/heatmap.js";
 import { handleAudit } from "./routes/audit.js";
 import { handleMemos, handleHistory } from "./routes/memos.js";
 import { handleSms } from "./routes/sms.js";
@@ -18,6 +19,7 @@ import { jsonError } from "./lib/response.js";
 import { notifyTelegram } from "./lib/telegram.js";
 import { createServices } from "./lib/services.js";
 import { accessDenied, authorizeRequest } from "./lib/access.js";
+import { queueAudit } from "./lib/audit-log.js";
 
 const API_HOST = "api.day1design.co.kr";
 const WORKERS_DEV_HOST = "day1design-api.day1design-co.workers.dev";
@@ -158,6 +160,8 @@ async function handleApi(request, env, ctx, path) {
     res = await handleAuth(request, env, ctx);
   } else if (path.startsWith("/api/analytics")) {
     res = await handleAnalytics(request, env, ctx, services);
+  } else if (path.startsWith("/api/heatmap")) {
+    res = await handleHeatmap(request, env, ctx, services);
   } else if (path.startsWith("/api/upload")) {
     res = await handleUpload(request, env, ctx, services);
   } else if (path.startsWith("/api/sms")) {
@@ -197,7 +201,8 @@ export default {
       }
 
       // 공개 마케팅 슬러그 리다이렉트: day1design.co.kr/r/<slug>
-      if (path.startsWith("/r/") && (isMainHost(host) || isLocalHost(host))) {
+      // Vercel 프록시 경유 시 호스트가 workers.dev/api.* 일 수 있어 호스트 무관 매칭.
+      if (path.startsWith("/r/")) {
         return handleSlugRedirect(request, env, ctx, path.slice(3));
       }
 
@@ -214,6 +219,16 @@ export default {
           `[day1design${path}] 500\n${e.message?.slice(0, 200) || "unknown"}`,
         ),
       );
+      queueAudit(ctx, env, request, {
+        type: "error_5xx",
+        severity: "error",
+        status: 500,
+        message: e?.message?.slice(0, 200) || "unknown error",
+        payload: {
+          name: e?.name || "",
+          stack: (e?.stack || "").slice(0, 4000),
+        },
+      });
       return cors(jsonError(500, "Internal Server Error"), request, env);
     }
   },
