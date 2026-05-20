@@ -219,45 +219,69 @@
 .color-section {
   padding: 0;
 }
-/* 두 컬러 박스를 정사각형 비율로 좌우 배치 */
+/* 두 컬러 박스를 세로로 쌓고 그 경계에 BRAND COLOR overlay */
 .color-bands {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin: 0;
-}
-.color-band {
-  aspect-ratio: 1 / 1;
+  position: relative;
+  max-width: 920px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
+}
+.color-band {
+  aspect-ratio: 4.5 / 1;
+  display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 20px;
+  padding: 16px;
 }
 .color-band.beige {
   background: var(--color-bg-cream);
-  color: #3c3733;
+  color: var(--color-text-primary);
 }
 .color-band.grey {
   background: var(--color-brand-beige);
   color: #fff;
 }
-.color-label {
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 4px;
-  opacity: 0.78;
-  margin-bottom: 16px;
-}
 .color-name {
-  font-size: 38px;
+  font-size: 48px;
   font-weight: 700;
   letter-spacing: 5px;
 }
-/* 컬러 설명문은 흰색 배경 */
+
+/* BRAND COLOR — 두 박스 경계에 정확히 걸침. 두 레이어 겹쳐 정확히 50% 분기.
+   --bc-shift 로 글자 element 와 clip-path 분기점을 연동해, 시각 중심은 위로
+   올라가되 색 경계는 박스 경계에 고정. */
+.brand-color-overlay {
+  --bc-shift: 0.08em;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, calc(-50% - var(--bc-shift)));
+  font-size: clamp(36px, 5vw, 62px);
+  font-weight: 700;
+  letter-spacing: 5px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.bc-layer {
+  display: block;
+}
+.bc-dark {
+  color: var(--color-text-primary);
+}
+.bc-light {
+  position: absolute;
+  inset: 0;
+  color: #ffffff;
+  clip-path: inset(calc(50% + var(--bc-shift)) 0 0 0);
+}
+
+/* 컬러 설명문 — 흰색 배경 */
 .color-desc-wrap {
   background: #fff;
-  padding: 70px 20px 90px;
+  padding: 32px 20px 80px;
 }
 .color-desc {
   max-width: 960px;
@@ -446,17 +470,16 @@
   .cta-section {
     padding: 70px 20px 90px;
   }
-  .color-label {
-    font-size: 14px;
-    letter-spacing: 3px;
-    margin-bottom: 10px;
+  .color-band {
+    aspect-ratio: 4 / 1;
+    padding: 12px;
   }
   .color-name {
-    font-size: 22px;
+    font-size: 30px;
     letter-spacing: 3px;
   }
   .color-desc-wrap {
-    padding: 50px 20px 70px;
+    padding: 22px 20px 50px;
   }
   .color-desc {
     font-size: 13px;
