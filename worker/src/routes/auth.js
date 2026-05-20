@@ -67,10 +67,8 @@ async function loginWithPassword(request, env, ctx) {
     timingSafeEqual(username, expectedUsername) &&
     timingSafeEqual(password, expectedPassword);
   if (!ok) {
-    queueTask(
-      ctx,
-      notifyTelegram(env, `[day1design/auth] 관리자 로그인 실패\nIP: ${ip}`),
-    );
+    // 로그인 실패는 텔레그램 알림 안 함 (일상 오타 노이즈 + rate-limit 가 비정상 패턴 차단).
+    // 향후 audit log 메뉴에 영속 기록 예정.
     return jsonError(401, "Invalid credentials");
   }
 
@@ -82,9 +80,6 @@ async function loginWithPassword(request, env, ctx) {
   // cookie + body token 이중 발급 (cross-site cookie 차단 시 클라가 localStorage 토큰으로 fallback)
   const res = jsonOk({ loggedIn: true, token: jwt });
   res.headers.append("set-cookie", setSessionCookie(jwt));
-  queueTask(
-    ctx,
-    notifyTelegram(env, `[day1design/auth] 관리자 로그인 성공\nIP: ${ip}`),
-  );
+  // 접속 성공 알림은 사용자 요청으로 제거. 향후 audit log 에서만 영속 기록.
   return res;
 }
