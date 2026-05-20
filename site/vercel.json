@@ -2,6 +2,156 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
   "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/admin/:path*",
+      "has": [{ "type": "host", "value": "day1design.co.kr" }],
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/admin/:path*",
+      "has": [{ "type": "host", "value": "www.day1design.co.kr" }],
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/admin",
+      "has": [{ "type": "host", "value": "day1design.co.kr" }],
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/admin",
+      "has": [{ "type": "host", "value": "www.day1design.co.kr" }],
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/login",
+      "has": [{ "type": "host", "value": "day1design.co.kr" }],
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/login",
+      "has": [{ "type": "host", "value": "www.day1design.co.kr" }],
+      "destination": "/",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/PORTFOLIO",
+      "destination": "/pages/portfolio"
+    },
+    {
+      "source": "/PORTFOLIO/:path*",
+      "destination": "/pages/portfolio"
+    },
+    {
+      "source": "/HOUSE",
+      "destination": "/pages/portfolio"
+    },
+    {
+      "source": "/HOUSE/:path*",
+      "destination": "/pages/portfolio"
+    },
+    {
+      "source": "/OFFICE",
+      "destination": "/pages/portfolio"
+    },
+    {
+      "source": "/OFFICE/:path*",
+      "destination": "/pages/portfolio"
+    },
+    {
+      "source": "/ABOUT",
+      "destination": "/pages/about"
+    },
+    {
+      "source": "/ABOUT/:path*",
+      "destination": "/pages/about"
+    },
+    {
+      "source": "/56",
+      "destination": "/pages/project-flow"
+    },
+    {
+      "source": "/56/:path*",
+      "destination": "/pages/project-flow"
+    },
+    {
+      "source": "/57",
+      "destination": "/pages/about"
+    },
+    {
+      "source": "/57/:path*",
+      "destination": "/pages/about"
+    },
+    {
+      "source": "/ESTIMATES",
+      "destination": "/pages/estimates"
+    },
+    {
+      "source": "/ESTIMATES/:path*",
+      "destination": "/pages/estimates"
+    },
+    {
+      "source": "/COMMUNITY",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail"
+    },
+    {
+      "source": "/COMMUNITY/:path*",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail"
+    },
+    {
+      "source": "/COMMUNITY",
+      "destination": "/pages/community"
+    },
+    {
+      "source": "/COMMUNITY/:path*",
+      "destination": "/pages/community"
+    },
+    {
+      "source": "/Residential",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail"
+    },
+    {
+      "source": "/Residential/:path*",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail"
+    },
+    {
+      "source": "/Residential",
+      "destination": "/pages/community"
+    },
+    {
+      "source": "/Residential/:path*",
+      "destination": "/pages/community"
+    },
+    {
+      "source": "/Commercial",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail"
+    },
+    {
+      "source": "/Commercial/:path*",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail"
+    },
+    {
+      "source": "/Commercial",
+      "destination": "/pages/community"
+    },
+    {
+      "source": "/Commercial/:path*",
+      "destination": "/pages/community"
+    }
+  ],
   "headers": [
     {
       "source": "/admin/:path*",
@@ -9,6 +159,33 @@
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.(css|js)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
+      "source": "/data/(.*)\\.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)\\.(webp|jpg|jpeg|png|gif|svg|ico)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000"
+        }
       ]
     }
   ]
