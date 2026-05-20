@@ -47,14 +47,10 @@
       };
       const fmtPct = (v) =>
         typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—";
-      $("dashVisitors").textContent = fmt(
-        s.totalUsers ?? s.activeUsers ?? s.users,
-      );
-      $("dashPageviews").textContent = fmt(s.screenPageViews ?? s.pageViews);
+      $("dashVisitors").textContent = fmt(s.visitors);
+      $("dashPageviews").textContent = fmt(s.pageviews);
       $("dashDuration").textContent =
-        s.averageSessionDuration != null
-          ? fmtDur(s.averageSessionDuration)
-          : "—";
+        s.avgDurationSec != null ? fmtDur(s.avgDurationSec) : "—";
       $("dashBounce").textContent =
         s.bounceRate != null ? fmtPct(s.bounceRate) : "—";
     } catch (e) {
