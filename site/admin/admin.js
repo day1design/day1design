@@ -230,18 +230,18 @@ const MENU = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg>',
   },
   {
-    nav: "audit",
-    href: "audit-logs",
-    label: "관리자 로그",
-    shortLabel: "로그",
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v4H4z"/><path d="M4 12h16v4H4z"/><path d="M4 20h10"/></svg>',
-  },
-  {
     nav: "marketing-links",
     href: "marketing-links",
     label: "마케팅 슬러그",
     shortLabel: "슬러그",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 1 0-7.07-7.07L11 5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 1 0 7.07 7.07L13 19"/></svg>',
+  },
+  {
+    nav: "audit",
+    href: "audit-logs",
+    label: "관리자 로그",
+    shortLabel: "로그",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v4H4z"/><path d="M4 12h16v4H4z"/><path d="M4 20h10"/></svg>',
   },
 ];
 
