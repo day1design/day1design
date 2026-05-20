@@ -37,6 +37,18 @@
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://day1design.vercel.app/pages/terms.html</loc>
+    <lastmod>2026-05-20</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://day1design.vercel.app/pages/privacy.html</loc>
+    <lastmod>2026-05-20</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
     <loc>https://day1design.vercel.app/pages/community-detail.html?idx=170198572</loc>
     <lastmod>2026-02-27</lastmod>
     <changefreq>monthly</changefreq>
