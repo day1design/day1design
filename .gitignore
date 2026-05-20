@@ -33,5 +33,12 @@ __pycache__/
 # Data backups
 *.json.bak
 
+# Local scratch artifacts (캡쳐·임시 미리보기 등)
+.scratch-*/
+.scratch-*.py
+.scratch-*.png
+.scratch-*.webp
+.preview-*.html
+
 # VS Code AI rules (legacy)
 .github/instructions/codacy.instructions.md
