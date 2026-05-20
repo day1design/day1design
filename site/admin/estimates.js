@@ -11,6 +11,18 @@ const customerModal = document.getElementById("estCustomerModal");
 const customerForm = document.getElementById("estCustomerForm");
 const modalTitle = document.getElementById("estModalTitle");
 const btnOpenCustomerEdit = document.getElementById("btnOpenCustomerEdit");
+const btnSendSms = document.getElementById("btnSendSms");
+const smsModal = document.getElementById("estSmsModal");
+const smsForm = document.getElementById("estSmsForm");
+const smsTo = document.getElementById("smsTo");
+const smsTemplate = document.getElementById("smsTemplate");
+const smsSubject = document.getElementById("smsSubject");
+const smsContent = document.getElementById("smsContent");
+const smsSubjectLen = document.getElementById("smsSubjectLen");
+const smsContentLen = document.getElementById("smsContentLen");
+const smsContentBytes = document.getElementById("smsContentBytes");
+const smsHint = document.getElementById("smsHint");
+let smsTemplatesCache = null;
 const filterStatus = document.getElementById("filterStatus");
 const filterSource = document.getElementById("filterSource");
 const filterSearch = document.getElementById("filterSearch");
@@ -24,7 +36,8 @@ const statMonthly = document.getElementById("statMonthly");
 function syncModalLock() {
   const hasOpenModal =
     (detailModal && !detailModal.hidden) ||
-    (customerModal && !customerModal.hidden);
+    (customerModal && !customerModal.hidden) ||
+    (smsModal && !smsModal.hidden);
   document.body.style.overflow = hasOpenModal ? "hidden" : "";
 }
 
@@ -49,14 +62,25 @@ function closeCustomerModal() {
   if (customerForm) customerForm.innerHTML = "";
 }
 
+function closeSmsModal() {
+  closeModal(smsModal);
+}
+
 detailModal
   ?.querySelectorAll("[data-est-close]")
   .forEach((el) => el.addEventListener("click", closeDetailModal));
 customerModal
   ?.querySelectorAll("[data-customer-close]")
   .forEach((el) => el.addEventListener("click", closeCustomerModal));
+smsModal
+  ?.querySelectorAll("[data-sms-close]")
+  .forEach((el) => el.addEventListener("click", closeSmsModal));
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  if (smsModal && !smsModal.hidden) {
+    closeSmsModal();
+    return;
+  }
   if (customerModal && !customerModal.hidden) {
     closeCustomerModal();
     return;
@@ -79,6 +103,12 @@ function statusBadge(s) {
     견적완료: "badge status-estimate",
     계약완료: "badge status-done",
     취소: "badge status-cancel",
+    "고객 부재중": "badge status-pending",
+    "진행불가 (예산/범위/지역/일정등)": "badge status-cancel",
+    "전화상담 후 미진행": "badge status-muted",
+    "전화상담 후 미팅예약": "badge status-done",
+    "전화상담 후 대기중": "badge status-contact",
+    보류: "badge status-muted",
   };
   return `<span class="${map[s] || "badge"}">${escapeHtml(s || "—")}</span>`;
 }
@@ -573,6 +603,9 @@ async function openDetail(id) {
   if (btnOpenCustomerEdit) {
     btnOpenCustomerEdit.onclick = () => openCustomerEdit(id);
   }
+  if (btnSendSms) {
+    btnSendSms.onclick = () => openSmsModal(id);
+  }
 
   detail.innerHTML = `
     <div class="detail-head">
@@ -606,6 +639,7 @@ async function openDetail(id) {
           <dt>상세내용</dt><dd><div class="detail-note">${escapeHtml(r.Detail || "—")}</div></dd>
           <dt>컨셉파일</dt><dd>${filesList(r.ConceptFiles)}</dd>
           <dt>평면도</dt><dd>${filesList(r.FloorPlans)}</dd>
+          <dt>지점</dt><dd>${escapeHtml(r.Branch || "—")}</dd>
         </dl>
       </section>
 
@@ -615,7 +649,14 @@ async function openDetail(id) {
           <div class="field">
             <label>상태</label>
             <select id="editStatus">
-              ${["접수대기", "상담중", "견적완료", "계약완료", "취소"]
+              ${[
+                "고객 부재중",
+                "진행불가 (예산/범위/지역/일정등)",
+                "전화상담 후 미진행",
+                "전화상담 후 미팅예약",
+                "전화상담 후 대기중",
+                "보류",
+              ]
                 .map(
                   (s) =>
                     `<option ${r.Status === s ? "selected" : ""}>${s}</option>`,
@@ -954,3 +995,131 @@ if (btnExportCsv) btnExportCsv.addEventListener("click", exportFilteredCsv);
     });
   }
 })();
+
+// ========== SMS (LMS) 발송 모달 ==========
+function utf8ByteLength(s) {
+  return new TextEncoder().encode(String(s || "")).length;
+}
+
+function updateSmsCounters() {
+  if (smsSubjectLen)
+    smsSubjectLen.textContent = String((smsSubject?.value || "").length);
+  if (smsContentLen)
+    smsContentLen.textContent = String((smsContent?.value || "").length);
+  if (smsContentBytes)
+    smsContentBytes.textContent = String(utf8ByteLength(smsContent?.value));
+}
+
+smsSubject?.addEventListener("input", updateSmsCounters);
+smsContent?.addEventListener("input", updateSmsCounters);
+
+async function loadSmsTemplatesOnce() {
+  if (smsTemplatesCache) return smsTemplatesCache;
+  try {
+    const data = await adminUtil.api("/api/sms/templates");
+    smsTemplatesCache = data.records || [];
+  } catch (e) {
+    smsTemplatesCache = [];
+    adminUtil.toast("템플릿 목록 로드 실패: " + (e.message || ""), "error");
+  }
+  return smsTemplatesCache;
+}
+
+function fillSmsTemplateOptions(list) {
+  if (!smsTemplate) return;
+  smsTemplate.innerHTML =
+    '<option value="">— 직접 작성 —</option>' +
+    list
+      .map(
+        (t) =>
+          `<option value="${escapeHtml(t.id)}">${escapeHtml(t.Name || "이름 없음")}</option>`,
+      )
+      .join("");
+}
+
+smsTemplate?.addEventListener("change", () => {
+  const id = smsTemplate.value;
+  if (!id || !smsTemplatesCache) return;
+  const tpl = smsTemplatesCache.find((t) => t.id === id);
+  if (!tpl) return;
+  smsSubject.value = tpl.Subject || "";
+  smsContent.value = tpl.Content || "";
+  updateSmsCounters();
+});
+
+async function openSmsModal(estimateId) {
+  const r = records.find((x) => x.id === estimateId);
+  if (!r) return;
+  smsForm.dataset.estimateId = estimateId;
+  smsTo.value = r.Phone || "";
+  smsSubject.value = "";
+  smsContent.value = "";
+  if (smsTemplate) smsTemplate.value = "";
+  updateSmsCounters();
+  if (smsHint) smsHint.hidden = true;
+
+  // 템플릿 로딩은 모달 띄운 뒤 비동기
+  openModal(smsModal);
+  setTimeout(() => smsTo.focus(), 30);
+  const list = await loadSmsTemplatesOnce();
+  fillSmsTemplateOptions(list);
+}
+
+smsForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const estimateId = smsForm.dataset.estimateId || "";
+  const to = (smsTo.value || "").replace(/\D/g, "");
+  const subject = (smsSubject.value || "").trim();
+  const content = (smsContent.value || "").replace(/\r\n/g, "\n").trim();
+  if (!/^010\d{7,8}$/.test(to)) {
+    adminUtil.toast("올바른 전화번호를 입력하세요 (010으로 시작)", "warn");
+    return;
+  }
+  if (!subject) {
+    adminUtil.toast("제목을 입력하세요.", "warn");
+    return;
+  }
+  if (!content) {
+    adminUtil.toast("본문을 입력하세요.", "warn");
+    return;
+  }
+  const btn = document.getElementById("btnSendSmsSubmit");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "발송 중...";
+  }
+  try {
+    const res = await adminUtil.api("/api/sms/send", {
+      method: "POST",
+      json: {
+        to,
+        subject,
+        content,
+        estimateId,
+        templateId: smsTemplate?.value || "",
+      },
+    });
+    if (res.status === "sent") {
+      adminUtil.toast("문자를 발송했습니다.");
+      closeSmsModal();
+    } else if (res.status === "skipped") {
+      if (smsHint) {
+        smsHint.hidden = false;
+        smsHint.textContent =
+          "발신번호 검수 대기 중이라 실제 문자는 전송되지 않았습니다. 이력에는 기록됩니다. (사유: " +
+          (res.detail || "") +
+          ")";
+      }
+      adminUtil.toast("검수 통과 전 — 실제 전송 없이 이력만 기록", "warn");
+    } else {
+      adminUtil.toast("발송 실패: " + (res.detail || "알 수 없음"), "error");
+    }
+  } catch (e) {
+    adminUtil.toast("발송 요청 실패: " + (e.message || ""), "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "발송";
+    }
+  }
+});

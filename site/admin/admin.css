@@ -873,6 +873,10 @@
   background: #fee2e2;
   color: #991b1b;
 }
+.status-muted {
+  background: #e5e7eb;
+  color: #4b5563;
+}
 .src-badge {
   display: inline-block;
   padding: 1px 6px;
