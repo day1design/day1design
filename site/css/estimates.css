@@ -509,21 +509,32 @@
   visibility: hidden;
 }
 
-/* Intro section */
+/* Intro section — 박스형 정보 요소 (입력폼 영역과 같은 가로폭) */
 .wizard-intro {
-  text-align: center;
-  margin-bottom: 40px;
+  background: var(--color-bg-cream);
+  border-left: 3px solid var(--color-brand-beige);
+  padding: 22px 28px;
+  margin-bottom: 32px;
+  border-radius: 4px;
 }
 .wizard-intro p {
   font-size: 14px;
   color: var(--color-text-primary);
-  line-height: 1.8;
-  margin-bottom: 10px;
+  line-height: 1.85;
+  margin: 0 0 12px;
+  text-align: left;
+}
+.wizard-intro p:last-child {
+  margin-bottom: 0;
 }
 .wizard-intro .notice {
   font-size: 12px;
   color: #c5371a;
-  line-height: 1.7;
+  line-height: 1.75;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(90, 84, 72, 0.18);
+  margin-top: 14px;
+  text-align: left;
 }
 
 /* Completion */
