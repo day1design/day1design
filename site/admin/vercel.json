@@ -2,7 +2,13 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
   "trailingSlash": false,
-  "rewrites": [{ "source": "/", "destination": "/login.html" }],
+  "rewrites": [
+    { "source": "/", "destination": "/login.html" },
+    {
+      "source": "/api/:path*",
+      "destination": "https://day1design-api.day1design-co.workers.dev/api/:path*"
+    }
+  ],
   "headers": [
     {
       "source": "/:path*",
