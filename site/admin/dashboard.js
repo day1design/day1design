@@ -23,12 +23,43 @@
     }
   }
 
-  // 유입 요약 — GA4 연동 대기 중이므로 빈 상태로 표시
-  function renderAnalyticsSummary() {
-    $("dashVisitors").textContent = "—";
-    $("dashPageviews").textContent = "—";
-    $("dashDuration").textContent = "—";
-    $("dashBounce").textContent = "—";
+  // 유입 요약 — GA4 summary 가져와 4종 KPI 표시
+  async function renderAnalyticsSummary() {
+    const setLoading = () => {
+      $("dashVisitors").textContent = "—";
+      $("dashPageviews").textContent = "—";
+      $("dashDuration").textContent = "—";
+      $("dashBounce").textContent = "—";
+    };
+    setLoading();
+    try {
+      const d = await adminUtil.apiCached("/api/analytics/summary", {
+        ttl: 60_000,
+      });
+      const s = d?.summary || {};
+      const fmt = (v) =>
+        typeof v === "number" ? v.toLocaleString("ko-KR") : v ? String(v) : "—";
+      const fmtDur = (sec) => {
+        const n = Number(sec) || 0;
+        const m = Math.floor(n / 60);
+        const r = Math.floor(n % 60);
+        return `${m}:${String(r).padStart(2, "0")}`;
+      };
+      const fmtPct = (v) =>
+        typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—";
+      $("dashVisitors").textContent = fmt(
+        s.totalUsers ?? s.activeUsers ?? s.users,
+      );
+      $("dashPageviews").textContent = fmt(s.screenPageViews ?? s.pageViews);
+      $("dashDuration").textContent =
+        s.averageSessionDuration != null
+          ? fmtDur(s.averageSessionDuration)
+          : "—";
+      $("dashBounce").textContent =
+        s.bounceRate != null ? fmtPct(s.bounceRate) : "—";
+    } catch (e) {
+      console.warn("[dashboard] analytics summary load failed", e);
+    }
   }
 
   async function loadSubmissionSummary() {

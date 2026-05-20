@@ -2,11 +2,7 @@ import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { randomId } from "../lib/r2.js";
 import { createServices } from "../lib/services.js";
-import {
-  clientIP,
-  rateLimit,
-  validateContentType,
-} from "../lib/security.js";
+import { clientIP, rateLimit, validateContentType } from "../lib/security.js";
 
 const SOURCE = "google";
 const SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
@@ -65,7 +61,10 @@ export async function handleAnalytics(
     return getSummary(request, env, services);
   }
 
-  if (path === "/target" && (request.method === "GET" || request.method === "PUT")) {
+  if (
+    path === "/target" &&
+    (request.method === "GET" || request.method === "PUT")
+  ) {
     if (!(await verifyAdmin(request, env))) {
       return jsonError(401, "Unauthorized");
     }
@@ -79,7 +78,9 @@ async function handleTarget(request, services) {
   if (!services.adminSettings) return jsonError(500, "Settings unavailable");
   if (request.method === "GET") {
     const url = new URL(request.url);
-    const monthKey = normalizeMonthKey(url.searchParams.get("month"));
+    const raw =
+      url.searchParams.get("month") || new Date().toISOString().slice(0, 7);
+    const monthKey = normalizeMonthKey(raw);
     if (!monthKey) return jsonError(400, "Invalid month");
     return jsonOk(await readTargetSetting(services, monthKey));
   }
@@ -191,10 +192,11 @@ async function buildVisitorEvent(request, env, body, ip) {
   const region = cleanGeo(cf.region || cf.regionCode);
   const city = cleanGeo(cf.city);
   const timezone = cleanGeo(cf.timezone) || "Asia/Seoul";
-  const locationKey = [country, region, city]
-    .map((value) => value.toLowerCase())
-    .filter(Boolean)
-    .join("|") || "unknown";
+  const locationKey =
+    [country, region, city]
+      .map((value) => value.toLowerCase())
+      .filter(Boolean)
+      .join("|") || "unknown";
   const path = safeText(body?.path || "/", 240);
   const rawR2Key = `analytics/ip-checks/${eventDayKey}/${hourKey.slice(11)}-${Date.now()}-${randomId(10)}.json`;
   const salt = env.IP_HASH_SALT || env.JWT_SECRET || "";
@@ -251,7 +253,11 @@ function referrerHost(value) {
 
 function isSkippableVisitPath(path) {
   const p = String(path || "").toLowerCase();
-  return p.startsWith("/admin") || p.startsWith("/api") || /\.(css|js|png|jpe?g|webp|gif|svg|ico|woff2?)$/.test(p);
+  return (
+    p.startsWith("/admin") ||
+    p.startsWith("/api") ||
+    /\.(css|js|png|jpe?g|webp|gif|svg|ico|woff2?)$/.test(p)
+  );
 }
 
 function kstKeys(date) {
@@ -287,24 +293,22 @@ function maskIp(ip) {
 
 async function writeVisitorD1(env, event) {
   if (!env.DB) return false;
-  const existing = await env.DB
-    .prepare(
-      `SELECT 1 FROM VisitorLocationIpHourly
+  const existing = await env.DB.prepare(
+    `SELECT 1 FROM VisitorLocationIpHourly
        WHERE HourKey = ? AND LocationKey = ? AND IpHash = ?
        LIMIT 1`,
-    )
+  )
     .bind(event.hourKey, event.locationKey, event.ipHash)
     .first();
   const uniqueDelta = existing ? 0 : 1;
 
-  await env.DB
-    .prepare(
-      `INSERT INTO VisitorIpEvents (
+  await env.DB.prepare(
+    `INSERT INTO VisitorIpEvents (
         id, EventAt, DayKey, HourKey, IpHash, IpPrefix, Country, Region, City,
         Timezone, Latitude, Longitude, LocationKey, Path, ReferrerHost,
         UserAgentHash, RawR2Key, CreatedAt
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+  )
     .bind(
       event.id,
       event.eventAt,
@@ -328,19 +332,17 @@ async function writeVisitorD1(env, event) {
     .run();
 
   if (!existing) {
-    await env.DB
-      .prepare(
-        `INSERT INTO VisitorLocationIpHourly
+    await env.DB.prepare(
+      `INSERT INTO VisitorLocationIpHourly
           (HourKey, LocationKey, IpHash, SeenAt)
          VALUES (?, ?, ?, ?)`,
-      )
+    )
       .bind(event.hourKey, event.locationKey, event.ipHash, event.createdAt)
       .run();
   }
 
-  await env.DB
-    .prepare(
-      `INSERT INTO VisitorLocationHourly (
+  await env.DB.prepare(
+    `INSERT INTO VisitorLocationHourly (
         HourKey, LocationKey, DayKey, Country, Region, City, Timezone,
         Visits, UniqueIps, UpdatedAt
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
@@ -348,7 +350,7 @@ async function writeVisitorD1(env, event) {
         Visits = Visits + 1,
         UniqueIps = UniqueIps + excluded.UniqueIps,
         UpdatedAt = excluded.UpdatedAt`,
-    )
+  )
     .bind(
       event.hourKey,
       event.locationKey,
@@ -387,7 +389,9 @@ function archiveVisitorEvent(ctx, services, event) {
   };
   const task = services.analyticsRaw
     .putJson(event.rawR2Key, payload)
-    .catch((e) => console.warn("[analytics/visit] R2 archive skipped:", e?.message || e));
+    .catch((e) =>
+      console.warn("[analytics/visit] R2 archive skipped:", e?.message || e),
+    );
   if (ctx?.waitUntil) ctx.waitUntil(task);
 }
 
@@ -399,9 +403,8 @@ async function getVisitorLocations(request, env) {
   }
 
   try {
-    const result = await env.DB
-      .prepare(
-        `SELECT
+    const result = await env.DB.prepare(
+      `SELECT
           LocationKey,
           MAX(Country) AS Country,
           MAX(Region) AS Region,
@@ -415,7 +418,7 @@ async function getVisitorLocations(request, env) {
         GROUP BY LocationKey
         ORDER BY Visits DESC, UniqueIps DESC, LastSeenAt DESC
         LIMIT ?`,
-      )
+    )
       .bind(range.startDate, range.endDate, VISITOR_LOCATION_LIMIT)
       .all();
     const rows = result.results || [];
@@ -473,9 +476,8 @@ async function getVisitorLocationDetail(request, env) {
   if (!env.DB) return jsonOk({ ...empty, configured: false });
 
   try {
-    const cumulative = await env.DB
-      .prepare(
-        `SELECT
+    const cumulative = await env.DB.prepare(
+      `SELECT
           COUNT(*) AS Visits,
           COUNT(DISTINCT IpHash) AS UniqueIps,
           COUNT(DISTINCT LocationKey) AS Locations,
@@ -483,13 +485,12 @@ async function getVisitorLocationDetail(request, env) {
           MAX(EventAt) AS LastSeenAt
         FROM VisitorIpEvents
         WHERE DayKey >= ? AND DayKey <= ?`,
-      )
+    )
       .bind(range.startDate, range.endDate)
       .first();
 
-    const top = await env.DB
-      .prepare(
-        `SELECT
+    const top = await env.DB.prepare(
+      `SELECT
           LocationKey,
           MAX(Country) AS Country,
           MAX(Region) AS Region,
@@ -503,13 +504,12 @@ async function getVisitorLocationDetail(request, env) {
         GROUP BY LocationKey
         ORDER BY Visits DESC, UniqueIps DESC, LastSeenAt DESC
         LIMIT ?`,
-      )
+    )
       .bind(range.startDate, range.endDate, VISITOR_LOCATION_LIMIT)
       .all();
 
-    const monthly = await env.DB
-      .prepare(
-        `SELECT
+    const monthly = await env.DB.prepare(
+      `SELECT
           substr(DayKey, 1, 7) AS MonthKey,
           COUNT(*) AS Visits,
           COUNT(DISTINCT IpHash) AS UniqueIps,
@@ -519,13 +519,12 @@ async function getVisitorLocationDetail(request, env) {
         GROUP BY substr(DayKey, 1, 7)
         ORDER BY MonthKey DESC
         LIMIT ?`,
-      )
+    )
       .bind(range.startDate, range.endDate, VISITOR_DETAIL_MONTH_LIMIT)
       .all();
 
-    const dayRows = await env.DB
-      .prepare(
-        `SELECT
+    const dayRows = await env.DB.prepare(
+      `SELECT
           substr(DayKey, 1, 7) AS MonthKey,
           DayKey,
           COUNT(*) AS Visits,
@@ -536,13 +535,12 @@ async function getVisitorLocationDetail(request, env) {
         GROUP BY DayKey
         ORDER BY DayKey DESC
         LIMIT ?`,
-      )
+    )
       .bind(range.startDate, range.endDate, VISITOR_DETAIL_DAY_LIMIT)
       .all();
 
-    const recent = await env.DB
-      .prepare(
-        `SELECT
+    const recent = await env.DB.prepare(
+      `SELECT
           EventAt,
           DayKey,
           HourKey,
@@ -558,7 +556,7 @@ async function getVisitorLocationDetail(request, env) {
         WHERE DayKey >= ? AND DayKey <= ?
         ORDER BY EventAt DESC
         LIMIT ?`,
-      )
+    )
       .bind(range.startDate, range.endDate, VISITOR_DETAIL_EVENT_LIMIT)
       .all();
 
@@ -583,7 +581,10 @@ async function getVisitorLocationDetail(request, env) {
         uniqueIps: Number(row.UniqueIps || 0),
         lastSeenAt: row.LastSeenAt || "",
       })),
-      months: groupVisitorDetailDays(dayRows.results || [], monthly.results || []),
+      months: groupVisitorDetailDays(
+        dayRows.results || [],
+        monthly.results || [],
+      ),
       recentEvents: (recent.results || []).map((row) => ({
         eventAt: row.EventAt || "",
         dayKey: row.DayKey || "",
@@ -647,15 +648,14 @@ function groupVisitorDetailDays(dayRows, monthRows = []) {
 }
 
 async function visitorLocationPeak(env, range, locationKey) {
-  const row = await env.DB
-    .prepare(
-      `SELECT substr(HourKey, 12, 2) AS Hour, SUM(Visits) AS Visits
+  const row = await env.DB.prepare(
+    `SELECT substr(HourKey, 12, 2) AS Hour, SUM(Visits) AS Visits
        FROM VisitorLocationHourly
        WHERE DayKey >= ? AND DayKey <= ? AND LocationKey = ?
        GROUP BY substr(HourKey, 12, 2)
        ORDER BY Visits DESC, Hour ASC
        LIMIT 1`,
-    )
+  )
     .bind(range.startDate, range.endDate, locationKey)
     .first();
   const hour = row?.Hour || "";
@@ -687,7 +687,11 @@ async function getSummary(request, env, services) {
   const latest = await latestSnapshot(services, range);
 
   if (!forceRefresh && latest && !isExpired(latest.createdAt)) {
-    return jsonOk({ ...latest.payload, persisted: latest.persisted, cached: true });
+    return jsonOk({
+      ...latest.payload,
+      persisted: latest.persisted,
+      cached: true,
+    });
   }
 
   const fresh = await collectGoogleSummary(env, range);
@@ -829,7 +833,9 @@ async function persistSnapshot(services, range, payload) {
 }
 
 function hasOauth(env, refreshToken) {
-  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && refreshToken);
+  return Boolean(
+    env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && refreshToken,
+  );
 }
 
 function ga4RefreshToken(env) {
@@ -928,7 +934,9 @@ async function collectGoogleSummary(env, range) {
 }
 
 function safeErrorCode(error) {
-  return String(error?.message || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+  return String(error?.message || "unknown")
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, 80);
 }
 
 async function collectGa4(env, propertyId, refreshToken, range) {
@@ -1067,7 +1075,11 @@ function classifyTrafficSource({ source, medium, channelGroup }) {
   ) {
     return sourceChannel("direct");
   }
-  if (/(facebook|instagram|meta|fb\.|fb_|ig\.|ig_|threads|l\.facebook|lm\.facebook|m\.facebook)/.test(haystack)) {
+  if (
+    /(facebook|instagram|meta|fb\.|fb_|ig\.|ig_|threads|l\.facebook|lm\.facebook|m\.facebook)/.test(
+      haystack,
+    )
+  ) {
     return sourceChannel("meta");
   }
   if (/(youtube|youtu\.be)/.test(haystack)) return sourceChannel("youtube");
