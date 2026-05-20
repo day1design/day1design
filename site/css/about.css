@@ -528,7 +528,8 @@ body {
 .philosophy-section,
 .brand-section,
 .color-section,
-.branches-section {
+.branches-section,
+.brandfilm-section {
   max-width: 1200px;
   margin-left: auto;
   margin-right: auto;
