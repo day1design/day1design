@@ -7,6 +7,10 @@
     {
       "source": "/api/(.*)",
       "destination": "https://day1design-api.day1design-co.workers.dev/api/$1"
+    },
+    {
+      "source": "/api",
+      "destination": "https://day1design-api.day1design-co.workers.dev/api"
     }
   ],
   "headers": [
