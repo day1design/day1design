@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>커뮤니티 | 데이원디자인</title>
+    <base href="/pages/" />
     <meta
       name="description"
       content="데이원디자인 커뮤니티 게시글. 인테리어 시공 사례·디자인 제안·상업 공간 리포트."
@@ -19,7 +20,7 @@
     <link
       id="canonicalLink"
       rel="canonical"
-      href="https://day1design.vercel.app/pages/community.html"
+      href="https://day1design.co.kr/pages/community.html"
     />
 
     <meta property="og:type" content="article" />
@@ -172,13 +173,20 @@
     </nav>
 
     <script src="../js/config.js"></script>
-    <script defer src="../js/common.js"></script>
+    <script defer src="../js/common.js?v=20260520-passgate-removed"></script>
     <script>
       const params = new URLSearchParams(window.location.search);
       const idx = params.get("idx");
       const mainEl = document.getElementById("detailMain");
       const sideEl = document.getElementById("detailSide");
       const navEl = document.getElementById("detailNav");
+      const IMWEB_BOARD_QUERY =
+        "YToxOntzOjEyOiJrZXl3b3JkX3R5cGUiO3M6MzoiYWxsIjt9";
+
+      function getCommunityDetailHref(post) {
+        const board = post.board === "Commercial" ? "Commercial" : "Residential";
+        return `/${board}/?q=${IMWEB_BOARD_QUERY}&bmode=view&idx=${encodeURIComponent(post.idx)}&t=board`;
+      }
 
       function getCateClass(cat) {
         if (!cat) return "";
@@ -274,7 +282,7 @@
         const images = post.images || [];
 
         // SEO/AEO/GEO: dynamically inject BlogPosting structured data + canonical + og:url
-        const canonicalUrl = `https://day1design.vercel.app/pages/community-detail.html?idx=${post.idx}`;
+        const canonicalUrl = `https://day1design.co.kr${getCommunityDetailHref(post)}`;
         const canonicalLink = document.getElementById("canonicalLink");
         if (canonicalLink) canonicalLink.href = canonicalUrl;
 
@@ -312,7 +320,7 @@
           author: {
             "@type": "Organization",
             name: "데이원디자인",
-            url: "https://day1design.vercel.app/",
+            url: "https://day1design.co.kr/",
           },
           publisher: {
             "@type": "Organization",
@@ -343,13 +351,13 @@
               "@type": "ListItem",
               position: 1,
               name: "홈",
-              item: "https://day1design.vercel.app/",
+              item: "https://day1design.co.kr/",
             },
             {
               "@type": "ListItem",
               position: 2,
               name: "커뮤니티",
-              item: "https://day1design.vercel.app/pages/community.html",
+              item: "https://day1design.co.kr/pages/community.html",
             },
             {
               "@type": "ListItem",
@@ -505,7 +513,7 @@
               // slim list: `thumb` is already an absolute URL.
               let src = rp.thumb || "";
               if (src && !src.startsWith("http")) src = "https:" + src;
-              return `<a href="community-detail.html?idx=${rp.idx}" class="side-slide${ri === 0 ? " active" : ""}">
+              return `<a href="${getCommunityDetailHref(rp)}" class="side-slide${ri === 0 ? " active" : ""}">
                 <img src="${src}" alt="${rp.title}" loading="lazy" decoding="async">
                 <div class="overlay">
                   <span class="cate">${rp.category || ""}</span>
@@ -564,8 +572,8 @@
         const prevPost = postIdx > 0 ? posts[postIdx - 1] : null;
         const nextPost = postIdx < posts.length - 1 ? posts[postIdx + 1] : null;
         navEl.innerHTML = `
-            ${prevPost ? `<a href="community-detail.html?idx=${prevPost.idx}">← 이전 글</a>` : "<span></span>"}
-            ${nextPost ? `<a href="community-detail.html?idx=${nextPost.idx}">다음 글 →</a>` : "<span></span>"}
+            ${prevPost ? `<a href="${getCommunityDetailHref(prevPost)}">← 이전 글</a>` : "<span></span>"}
+            ${nextPost ? `<a href="${getCommunityDetailHref(nextPost)}">다음 글 →</a>` : "<span></span>"}
           `;
       });
     </script>
