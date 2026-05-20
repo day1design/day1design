@@ -8,6 +8,7 @@ import {
 import { sign as signJwt } from "../lib/jwt.js";
 import { clientIP, rateLimit } from "../lib/security.js";
 import { notifyTelegram } from "../lib/telegram.js";
+import { queueAudit } from "../lib/audit-log.js";
 
 const SESSION_TTL = 60 * 60 * 12; // 12h
 const DEFAULT_ADMIN_USERNAME = "admin";
@@ -46,6 +47,12 @@ async function loginWithPassword(request, env, ctx) {
         `[day1design/auth] rate-limit 초과\nIP: ${ip} (${rl.count}회)`,
       ),
     );
+    queueAudit(ctx, env, request, {
+      type: "rate_limit",
+      severity: "warn",
+      status: 429,
+      message: `로그인 rate-limit 초과 (${rl.count}회)`,
+    });
     return jsonError(429, "Too many requests");
   }
   let body;
@@ -67,8 +74,13 @@ async function loginWithPassword(request, env, ctx) {
     timingSafeEqual(username, expectedUsername) &&
     timingSafeEqual(password, expectedPassword);
   if (!ok) {
-    // 로그인 실패는 텔레그램 알림 안 함 (일상 오타 노이즈 + rate-limit 가 비정상 패턴 차단).
-    // 향후 audit log 메뉴에 영속 기록 예정.
+    queueAudit(ctx, env, request, {
+      type: "login_fail",
+      severity: "warn",
+      status: 401,
+      username,
+      message: "관리자 로그인 실패",
+    });
     return jsonError(401, "Invalid credentials");
   }
 
@@ -80,6 +92,12 @@ async function loginWithPassword(request, env, ctx) {
   // cookie + body token 이중 발급 (cross-site cookie 차단 시 클라가 localStorage 토큰으로 fallback)
   const res = jsonOk({ loggedIn: true, token: jwt });
   res.headers.append("set-cookie", setSessionCookie(jwt));
-  // 접속 성공 알림은 사용자 요청으로 제거. 향후 audit log 에서만 영속 기록.
+  queueAudit(ctx, env, request, {
+    type: "login_ok",
+    severity: "info",
+    status: 200,
+    username,
+    message: "관리자 로그인 성공",
+  });
   return res;
 }
