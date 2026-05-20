@@ -320,7 +320,7 @@ async function doDelete(id) {
   if (!r) return;
   if (
     !confirm(
-      `"${r.name}" 을(를) 삭제할까요?\n썸네일 + 갤러리 이미지 ${(r.images || []).length}장이 R2에서 함께 삭제됩니다.`,
+      `"${r.name}" 을(를) 삭제할까요?\n썸네일과 갤러리 이미지 ${(r.images || []).length}장도 함께 삭제됩니다.`,
     )
   )
     return;

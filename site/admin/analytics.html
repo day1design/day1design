@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>유입통계 · DAYONE ADMIN</title>
     <meta name="robots" content="noindex,nofollow" />
-    <link rel="preconnect" href="https://day1design.vercel.app" crossorigin />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
     <link
       rel="preconnect"
       href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
       crossorigin
     />
-    <link rel="stylesheet" href="https://day1design.vercel.app/css/fonts.css" />
-    <link rel="stylesheet" href="https://day1design.vercel.app/css/reset.css" />
-    <link rel="stylesheet" href="admin.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260514-ipdetail" />
     <script>
       window.ADMIN_PAGE = { title: "유입통계", nav: "analytics" };
     </script>
@@ -28,11 +28,6 @@
     <div class="admin-layout">
       <header class="admin-topbar" id="adminTopbar"></header>
       <main class="admin-content" id="adminContent">
-        <div class="notice-banner" role="note" aria-label="데이터 연결 안내">
-          <strong>ⓘ 유입통계(상단)는 GA4 연동 대기 중입니다.</strong>
-          <strong>접수 통계(하단)는 실데이터</strong>로 기간 필터가 적용됩니다.
-        </div>
-
         <div class="analytics-toolbar">
           <div class="seg" role="tablist" aria-label="기간">
             <button type="button" class="seg-btn" data-range="7">7일</button>
@@ -71,26 +66,223 @@
           <div class="analytics-compare" id="rangeLabel">최근 30일</div>
         </div>
 
+        <section class="analytics-row ops-dashboard" aria-labelledby="opsTitle">
+          <div class="ops-head">
+            <div>
+              <p class="ops-eyebrow">상담 접수 운영판단</p>
+              <h2 id="opsTitle">접수량 추이와 처리 우선순위</h2>
+            </div>
+            <div
+              class="ops-period"
+              role="tablist"
+              aria-label="접수 집계 단위"
+            >
+              <button
+                type="button"
+                class="ops-period-btn active"
+                data-period="month"
+                aria-pressed="true"
+              >
+                월별
+              </button>
+              <button type="button" class="ops-period-btn" data-period="week">
+                주별
+              </button>
+              <button type="button" class="ops-period-btn" data-period="day">
+                일별
+              </button>
+            </div>
+          </div>
+
+          <div class="ops-kpi-grid">
+            <article class="ops-kpi">
+              <span>현재 접수</span>
+              <strong id="opsCurrent">—</strong>
+              <em id="opsCurrentSub">—</em>
+            </article>
+            <article class="ops-kpi">
+              <span>월말 예상</span>
+              <strong id="opsForecast">—</strong>
+              <em id="opsForecastSub">—</em>
+            </article>
+            <article class="ops-kpi">
+              <span>목표 달성률</span>
+              <strong id="opsTargetRate">—</strong>
+              <em id="opsTargetSub">—</em>
+            </article>
+            <article class="ops-kpi is-alert">
+              <span>필요 처리</span>
+              <strong id="opsPending">—</strong>
+              <em id="opsPendingSub">—</em>
+            </article>
+          </div>
+
+          <div class="ops-target-control" aria-label="접수 목표량 설정">
+            <div class="ops-target-copy">
+              <strong>목표량 설정</strong>
+              <span id="opsTargetDefaultText">기본: 지난달 접수량 기준</span>
+            </div>
+            <label class="ops-target-manual">
+              <input type="checkbox" id="opsTargetManual" />
+              <span>수동조정</span>
+            </label>
+            <label class="ops-target-input">
+              <input
+                type="number"
+                id="opsTargetInput"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                disabled
+              />
+              <span>건</span>
+            </label>
+          </div>
+
+          <div class="ops-layout">
+            <div class="ops-main-stack">
+              <div class="panel ops-panel ops-main-panel">
+                <div class="panel-head">
+                  <h3 id="opsBarTitle">월별 접수량 + 예상치</h3>
+                  <span class="panel-sub" id="opsBarSub">기간 내 접수 기준</span>
+                </div>
+                <div class="ops-bars" id="opsBars">
+                  <div class="empty-state">불러오는 중...</div>
+                </div>
+                <div class="ops-target" id="opsTarget"></div>
+              </div>
+              <div
+                class="panel ops-panel ops-heatmap-panel ops-heatmap-desktop"
+                aria-labelledby="opsHeatmapTitleDesktop"
+              >
+                <div class="panel-head">
+                  <h3 id="opsHeatmapTitleDesktop">방문·접수 히트맵</h3>
+                  <span class="panel-sub" data-ops-heatmap-sub>최근 활동 밀도</span>
+                </div>
+                <div class="ops-heatmap" data-ops-heatmap>
+                  <div class="ops-empty">불러오는 중...</div>
+                </div>
+                <div
+                  class="ops-heatmap-summary"
+                  data-ops-heatmap-summary
+                ></div>
+              </div>
+              <div class="ops-insights-stack">
+                <div class="panel ops-panel ops-insight-panel">
+                  <div class="panel-head">
+                    <h3>전환 퍼널</h3>
+                    <span class="panel-sub">방문 → 견적페이지 → 접수</span>
+                  </div>
+                  <div class="ops-funnel" id="opsConversionFunnel">
+                    <div class="ops-empty">불러오는 중...</div>
+                  </div>
+                  <div
+                    class="ops-funnel-summary"
+                    id="opsConversionSummary"
+                  ></div>
+                </div>
+                <div class="ops-insight-two">
+                  <div class="panel ops-panel ops-insight-panel">
+                    <div class="panel-head">
+                      <h3>소스별 전환율</h3>
+                      <span class="panel-sub">방문자 대비 접수</span>
+                    </div>
+                    <div class="ops-conversion-list" id="sourceConversion">
+                      <div class="ops-empty">불러오는 중...</div>
+                    </div>
+                  </div>
+                  <div class="panel ops-panel ops-insight-panel">
+                    <div class="panel-head">
+                      <h3>시간대별 접수 패턴</h3>
+                      <span class="panel-sub">상담 인입 시간</span>
+                    </div>
+                    <div class="ops-hour-grid" id="hourlySubmissions">
+                      <div class="ops-empty">불러오는 중...</div>
+                    </div>
+                    <div class="ops-hour-summary" id="hourlySubmissionSummary"></div>
+                    <div class="ops-location-top" aria-labelledby="visitorLocationTitle">
+                      <div class="ops-location-head">
+                        <strong id="visitorLocationTitle">접속위치 TOP 5</strong>
+                        <span>IP 기반 · 시단위 집계</span>
+                      </div>
+                      <div class="ops-location-list" id="visitorLocationTop">
+                        <div class="ops-empty">불러오는 중...</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="ops-side">
+              <div class="panel ops-panel">
+                <div class="panel-head">
+                  <h3>요일별 접수 패턴</h3>
+                  <span class="panel-sub">상담 인입 집중일</span>
+                </div>
+                <div class="ops-weekdays" id="opsWeekdays"></div>
+              </div>
+              <div class="panel ops-panel">
+                <div class="panel-head">
+                  <h3>운영 판단</h3>
+                  <span class="panel-sub">오늘 확인할 항목</span>
+                </div>
+                <div class="ops-actions" id="opsActions"></div>
+              </div>
+              <div class="panel ops-panel">
+                <div class="panel-head">
+                  <h3>광고별 효율</h3>
+                  <span class="panel-sub">접수량 기준</span>
+                </div>
+                <div class="ops-campaigns" id="opsCampaigns"></div>
+              </div>
+              <div class="panel ops-panel">
+                <div class="panel-head">
+                  <h3>출처/지점 TOP</h3>
+                  <span class="panel-sub">접수 기여도</span>
+                </div>
+                <div class="ops-mini-ranks" id="opsMiniRanks"></div>
+              </div>
+            </div>
+            <div
+              class="panel ops-panel ops-heatmap-panel ops-heatmap-mobile"
+              aria-labelledby="opsHeatmapTitleMobile"
+            >
+              <div class="panel-head">
+                <h3 id="opsHeatmapTitleMobile">방문·접수 히트맵</h3>
+                <span class="panel-sub" data-ops-heatmap-sub>최근 활동 밀도</span>
+              </div>
+              <div class="ops-heatmap" data-ops-heatmap>
+                <div class="ops-empty">불러오는 중...</div>
+              </div>
+              <div
+                class="ops-heatmap-summary"
+                data-ops-heatmap-summary
+              ></div>
+            </div>
+          </div>
+        </section>
+
         <section class="kpi-grid">
           <article class="kpi-card">
             <div class="kpi-label">방문자</div>
             <div class="kpi-value" id="kpiVisitors">—</div>
-            <div class="kpi-delta" id="kpiVisitorsDelta">—</div>
+            <div class="kpi-delta" id="kpiVisitorsDelta"></div>
           </article>
           <article class="kpi-card">
             <div class="kpi-label">페이지뷰</div>
             <div class="kpi-value" id="kpiPageviews">—</div>
-            <div class="kpi-delta" id="kpiPageviewsDelta">—</div>
+            <div class="kpi-delta" id="kpiPageviewsDelta"></div>
           </article>
           <article class="kpi-card">
             <div class="kpi-label">평균 체류</div>
             <div class="kpi-value" id="kpiDuration">—</div>
-            <div class="kpi-delta" id="kpiDurationDelta">—</div>
+            <div class="kpi-delta" id="kpiDurationDelta"></div>
           </article>
           <article class="kpi-card">
             <div class="kpi-label">이탈률</div>
             <div class="kpi-value" id="kpiBounce">—</div>
-            <div class="kpi-delta" id="kpiBounceDelta">—</div>
+            <div class="kpi-delta" id="kpiBounceDelta"></div>
           </article>
         </section>
 
@@ -127,40 +319,15 @@
           <div class="panel">
             <div class="panel-head">
               <h3>유입 경로</h3>
-              <span class="panel-sub">세션 비율</span>
+              <span class="panel-sub">출처별 세션 수</span>
             </div>
+            <div
+              class="source-kpi"
+              id="sourceSummary"
+              aria-label="출처별 세션 수"
+            ></div>
             <div class="chart-wrap">
               <canvas id="chartSources" height="260"></canvas>
-            </div>
-          </div>
-        </section>
-
-        <section class="analytics-row">
-          <div class="panel">
-            <div class="panel-head">
-              <h3>상담 접수 통계 · 실데이터</h3>
-              <span class="panel-sub">출처별 · 기간별 접수 건수</span>
-            </div>
-            <div class="sub-kpi" id="subKpi">
-              <div class="sub-kpi-item">
-                <div class="sub-kpi-label">총 접수</div>
-                <div class="sub-kpi-value" id="subTotal">—</div>
-              </div>
-              <div class="sub-kpi-item">
-                <div class="sub-kpi-label">홈페이지</div>
-                <div class="sub-kpi-value" id="subHomepage">—</div>
-              </div>
-              <div class="sub-kpi-item">
-                <div class="sub-kpi-label">Meta 광고</div>
-                <div class="sub-kpi-value" id="subMeta">—</div>
-              </div>
-              <div class="sub-kpi-item">
-                <div class="sub-kpi-label">Meta 비중</div>
-                <div class="sub-kpi-value" id="subMetaRatio">—</div>
-              </div>
-            </div>
-            <div class="chart-wrap" style="margin-top: 16px">
-              <canvas id="chartSubmissions" height="240"></canvas>
             </div>
           </div>
         </section>
@@ -177,7 +344,7 @@
           </div>
           <div class="panel">
             <div class="panel-head">
-              <h3>Meta 캠페인 TOP 5</h3>
+              <h3>캠페인 TOP 5</h3>
               <span class="panel-sub">접수 건수</span>
             </div>
             <table class="top-table" id="topCampaignsTable">
@@ -196,15 +363,101 @@
             </table>
           </div>
         </section>
+
       </main>
+    </div>
+    <div class="modal visitor-detail-modal" id="visitorLocationModal" hidden>
+      <div class="modal-backdrop" data-visitor-location-close></div>
+      <div
+        class="modal-panel visitor-detail-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="visitorLocationModalTitle"
+      >
+        <div class="modal-head visitor-detail-head">
+          <div>
+            <h2 id="visitorLocationModalTitle">IP 접속 상세기록</h2>
+            <p id="visitorDetailRangeLabel">최근 30일</p>
+          </div>
+          <button
+            type="button"
+            class="btn-icon visitor-detail-close"
+            data-visitor-location-close
+            aria-label="닫기"
+          >
+            ×
+          </button>
+        </div>
+        <div class="modal-body visitor-detail-body">
+          <div class="visitor-detail-filter">
+            <div
+              class="seg visitor-detail-seg"
+              role="tablist"
+              aria-label="IP 접속 상세 기간"
+            >
+              <button type="button" class="seg-btn" data-visitor-detail-range="7">
+                7일
+              </button>
+              <button
+                type="button"
+                class="seg-btn active"
+                data-visitor-detail-range="30"
+                aria-pressed="true"
+              >
+                30일
+              </button>
+              <button
+                type="button"
+                class="seg-btn"
+                data-visitor-detail-range="prev-month"
+              >
+                전월
+              </button>
+              <button
+                type="button"
+                class="seg-btn"
+                data-visitor-detail-range="cur-month"
+              >
+                당월
+              </button>
+              <button type="button" class="seg-btn" data-visitor-detail-range="all">
+                전체
+              </button>
+              <button
+                type="button"
+                class="seg-btn"
+                data-visitor-detail-range="custom"
+              >
+                선택기간
+              </button>
+            </div>
+            <div class="visitor-detail-picker" id="visitorDetailPicker" hidden>
+              <label>
+                <span>시작</span>
+                <input type="date" id="visitorDetailStart" />
+              </label>
+              <label>
+                <span>종료</span>
+                <input type="date" id="visitorDetailEnd" />
+              </label>
+              <button type="button" class="btn-apply-range" id="visitorDetailApply">
+                적용
+              </button>
+            </div>
+          </div>
+          <div class="visitor-detail-content" id="visitorLocationDetail">
+            <div class="ops-empty">불러오는 중...</div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="toast" id="toast"></div>
     <script
       defer
       src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
     ></script>
-    <script defer src="config.js?v=20260422b"></script>
+    <script defer src="config.js?v=20260514-heatmap"></script>
     <script defer src="admin.js?v=20260422b"></script>
-    <script defer src="analytics.js?v=20260422b"></script>
+    <script defer src="analytics.js?v=20260514-ipdetail"></script>
   </body>
 </html>

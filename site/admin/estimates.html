@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>상담신청 · DAYONE ADMIN</title>
     <meta name="robots" content="noindex,nofollow" />
-    <link rel="preconnect" href="https://day1design.vercel.app" crossorigin />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
     <link
       rel="preconnect"
       href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
       crossorigin
     />
-    <link rel="stylesheet" href="https://day1design.vercel.app/css/fonts.css" />
-    <link rel="stylesheet" href="https://day1design.vercel.app/css/reset.css" />
-    <link rel="stylesheet" href="admin.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260512-bottompad" />
     <script>
       window.ADMIN_PAGE = { title: "상담신청", nav: "estimates" };
     </script>
@@ -28,6 +28,28 @@
     <div class="admin-layout">
       <header class="admin-topbar" id="adminTopbar"></header>
       <main class="admin-content" id="adminContent">
+        <section
+          class="est-quick-stats"
+          id="estQuickStats"
+          aria-label="상담 접수량 간단 통계"
+        >
+          <article class="est-stat-card">
+            <span class="est-stat-label">일간</span>
+            <strong id="statDaily">—</strong>
+            <em>오늘 접수</em>
+          </article>
+          <article class="est-stat-card">
+            <span class="est-stat-label">주간</span>
+            <strong id="statWeekly">—</strong>
+            <em>최근 7일</em>
+          </article>
+          <article class="est-stat-card">
+            <span class="est-stat-label">월간</span>
+            <strong id="statMonthly">—</strong>
+            <em>이번 달</em>
+          </article>
+        </section>
+
         <div class="admin-toolbar" style="margin-bottom: 16px">
           <div class="filter-row">
             <label>상태</label>
@@ -44,6 +66,10 @@
               <option value="">전체</option>
               <option value="homepage">홈페이지</option>
               <option value="meta">Meta 광고</option>
+              <option value="google">Google</option>
+              <option value="naver">Naver</option>
+              <option value="youtube">YouTube</option>
+              <option value="kakao">Kakao</option>
             </select>
             <input
               type="search"
@@ -54,35 +80,40 @@
         </div>
 
         <div class="est-layout">
-          <div class="data-table-wrap est-list">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th style="width: 90px">접수일</th>
-                  <th style="width: 60px">출처</th>
-                  <th>이름</th>
-                  <th style="width: 120px">연락처</th>
-                  <th style="width: 160px">유형/평수</th>
-                  <th style="width: 80px">지점</th>
-                  <th style="width: 90px">상태</th>
-                </tr>
-              </thead>
-              <tbody id="estBody">
-                <tr>
-                  <td colspan="7" class="empty-state">불러오는 중...</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="est-list" id="estBody">
+            <div class="empty-state">불러오는 중...</div>
           </div>
-          <aside class="est-detail" id="estDetail">
-            <div class="empty-state">좌측에서 항목을 선택하세요</div>
-          </aside>
         </div>
       </main>
+    </div>
+    <div class="modal est-modal" id="estDetailModal" hidden>
+      <div class="modal-backdrop" data-est-close></div>
+      <div class="modal-panel est-modal-panel" role="dialog" aria-modal="true" aria-labelledby="estModalTitle">
+        <div class="modal-head est-modal-head">
+          <h2 id="estModalTitle">접수 상세</h2>
+          <div class="modal-head-actions">
+            <button class="btn btn-ghost" id="btnOpenCustomerEdit" type="button">
+              고객정보 수정
+            </button>
+            <button class="icon-btn" data-est-close type="button" aria-label="상세 닫기">✕</button>
+          </div>
+        </div>
+        <div class="modal-body est-detail-body" id="estDetail"></div>
+      </div>
+    </div>
+    <div class="modal est-modal est-edit-modal" id="estCustomerModal" hidden>
+      <div class="modal-backdrop" data-customer-close></div>
+      <div class="modal-panel est-edit-panel" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle">
+        <div class="modal-head">
+          <h2 id="customerModalTitle">고객정보 수정</h2>
+          <button class="icon-btn" data-customer-close type="button" aria-label="수정 닫기">✕</button>
+        </div>
+        <form class="modal-body customer-edit-form" id="estCustomerForm"></form>
+      </div>
     </div>
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
     <script defer src="admin.js"></script>
-    <script defer src="estimates.js"></script>
+    <script defer src="estimates.js?v=20260513-livefetch"></script>
   </body>
 </html>
