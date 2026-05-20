@@ -532,12 +532,15 @@
 body {
   background: #fff;
 }
+/* body 가 flex column 이라 각 섹션이 flex item — width 명시 안 하면
+   컨텐츠 width 로 줄어듦. width:100% + max-width:1200 로 본문 폭 고정. */
 .about-hero,
 .philosophy-section,
 .brand-section,
 .color-section,
 .branches-section,
 .brandfilm-section {
+  width: 100%;
   max-width: 1200px;
   margin-left: auto;
   margin-right: auto;
