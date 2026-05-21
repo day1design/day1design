@@ -214,7 +214,16 @@ let currentSubmissionRows = [];
 let currentVisitorLocationRows = null;
 let currentRangeKey = "today";
 let visitorDetailRangeKey = "today";
-let submissionPeriodKey = "month";
+// 차트 집계 단위는 최상단 필터(currentRangeKey + range 길이)로 자동 결정
+// 사용자가 선택한 기간에 맞춰 day/week/month 자동 선택, 별도 필터 없음
+function autoPeriodForRange(range) {
+  if (!range || !range.start || !range.end) return "day";
+  const ms = range.end - range.start;
+  const days = Math.max(1, Math.ceil(ms / 86400000) + 1);
+  if (days <= 14) return "day";
+  if (days <= 95) return "week";
+  return "month";
+}
 let customStart = null; // Date (KST 자정)
 let customEnd = null; // Date (KST 23:59)
 let visitorDetailStart = null;
@@ -1379,9 +1388,10 @@ function buildPeriodRows(rows, period) {
     }
     buckets[key].count++;
   }
+  // 최상단 필터로 range가 이미 정해져 있으므로 슬라이싱 없이 전체 반환
+  // (자동 단위 결정으로 막대 수 폭주는 이미 예방됨)
   return Object.values(buckets)
     .sort((a, b) => a.sort - b.sort)
-    .slice(-PERIOD_LIMITS[period])
     .reverse();
 }
 
@@ -1448,13 +1458,14 @@ function getPreviousRangeStats(range, total) {
   return `이전 동일기간 ${sign}${delta}%`;
 }
 
-function renderOpsBars(rows, forecastStats) {
+function renderOpsBars(rows, forecastStats, range) {
   const wrap = document.getElementById("opsBars");
   if (!wrap) return;
-  const periodRows = buildPeriodRows(rows, submissionPeriodKey);
+  const period = autoPeriodForRange(range);
+  const periodRows = buildPeriodRows(rows, period);
   const displayRows = [...periodRows];
   if (
-    submissionPeriodKey === "month" &&
+    period === "month" &&
     forecastStats?.isCurrentMonth &&
     forecastStats.forecast > forecastStats.monthCount
   ) {
@@ -2245,7 +2256,8 @@ function renderOpsDashboard(
     week: "주별 접수량 추이",
     day: "일별 접수량 추이",
   };
-  setText("opsBarTitle", titleMap[submissionPeriodKey]);
+  const period = autoPeriodForRange(range);
+  setText("opsBarTitle", titleMap[period]);
   setText("opsBarSub", `${range.label} 기준`);
 
   const prevText = getPreviousRangeStats(range, total);
@@ -2259,7 +2271,7 @@ function renderOpsDashboard(
   }
 
   syncTargetControl(forecastStats, effectiveTarget);
-  renderOpsBars(rowsInRange, forecastStats);
+  renderOpsBars(rowsInRange, forecastStats, range);
   renderOpsWeekdays(rowsInRange);
   renderOpsActions(rowsInRange, sourceCounts, statusCount, branchCounts);
   renderOpsCampaigns(campaigns, total);
@@ -2442,23 +2454,8 @@ function applyRange(key) {
   renderSubmissionStats(range);
 }
 
-function setSubmissionPeriod(period) {
-  if (!PERIOD_LIMITS[period]) return;
-  submissionPeriodKey = period;
-  document.querySelectorAll(".ops-period-btn").forEach((btn) => {
-    const on = btn.dataset.period === period;
-    btn.classList.toggle("active", on);
-    btn.setAttribute("aria-pressed", on ? "true" : "false");
-  });
-  renderSubmissionStats(resolveRange(currentRangeKey));
-}
-
 document.querySelectorAll(".seg-btn[data-range]").forEach((btn) => {
   btn.addEventListener("click", () => applyRange(btn.dataset.range));
-});
-
-document.querySelectorAll(".ops-period-btn").forEach((btn) => {
-  btn.addEventListener("click", () => setSubmissionPeriod(btn.dataset.period));
 });
 
 (function initVisitorLocationDetailModal() {

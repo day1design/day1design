@@ -917,7 +917,9 @@ function resolveRange(url) {
   let end = endOfDay(today);
   let rangeKey = key;
 
-  if (key === "7" || key === "30") {
+  if (key === "today") {
+    // start = today, end = endOfDay(today) — 초기값 그대로
+  } else if (key === "7" || key === "30") {
     const days = Number(key);
     start.setDate(start.getDate() - (days - 1));
   } else if (key === "cur-month") {
@@ -933,6 +935,7 @@ function resolveRange(url) {
     start = qsStart || today;
     end = endOfDay(qsEnd || today);
   } else {
+    // 알 수 없는 키 → 30일 fallback
     rangeKey = "30";
     start.setDate(start.getDate() - 29);
   }
