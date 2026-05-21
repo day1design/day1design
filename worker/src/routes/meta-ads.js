@@ -60,10 +60,14 @@ export async function handleMetaAds(request, env, ctx) {
   return jsonError(404, "Not Found");
 }
 
-// ─── 어제 자동 sync (cron 호출용 — verifyAdmin 우회) ───────
+// ─── Cron 자동 sync — 최근 3일치 (attribution window 보정) ──
+// Meta 광고는 며칠 뒤에 전환이 소급 추가될 수 있어서 매일 3일치 UPSERT.
+// 같은 (Date, Level, EntityId) 는 덮어쓰기라 row 수 안 늘어남, 수치만 보정.
+// API 호출은 time_range 한 번에 처리라 비용 동일.
 export async function runScheduledSync(env, ctx) {
-  const yesterday = kstYesterday();
-  return syncRange(env, ctx, yesterday, yesterday, "cron");
+  const end = kstYesterday();
+  const start = kstDaysAgo(3);
+  return syncRange(env, ctx, start, end, "cron");
 }
 
 // ─── 사용자 응답 (D1 read-only) ───────────────────────────
@@ -530,6 +534,11 @@ function kstNow() {
 function kstYesterday() {
   const d = kstNow();
   d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+function kstDaysAgo(n) {
+  const d = kstNow();
+  d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString().slice(0, 10);
 }
 function kstToday() {
