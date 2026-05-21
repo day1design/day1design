@@ -736,60 +736,63 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     );
     log.ApiCallsUsed++;
 
-    // UPSERT
+    // UPSERT — D1 batch로 묶어 subrequest 절약 (수백 statement → 몇 subrequest)
     const fetchedAt = new Date().toISOString();
-    let updated = 0;
+    const stmts = [];
 
     for (const row of accountRows) {
-      await upsertDaily(env, {
-        Date: row.date_start,
-        Level: "account",
-        EntityId: `act_${accountId}`,
-        EntityName: "day1design_marketing",
-        Status: "",
-        Objective: "",
-        ...mapInsight(row),
-        FetchedAt: fetchedAt,
-      });
-      updated++;
+      stmts.push(
+        buildDailyStmt(env, {
+          Date: row.date_start,
+          Level: "account",
+          EntityId: `act_${accountId}`,
+          EntityName: "day1design_marketing",
+          Status: "",
+          Objective: "",
+          ...mapInsight(row),
+          FetchedAt: fetchedAt,
+        }),
+      );
     }
 
     for (const row of campaignRows) {
       const meta = campaignMeta[row.campaign_id] || {};
-      await upsertDaily(env, {
-        Date: row.date_start,
-        Level: "campaign",
-        EntityId: String(row.campaign_id || ""),
-        EntityName: String(row.campaign_name || meta.name || ""),
-        Status: String(meta.status || ""),
-        Objective: String(meta.objective || ""),
-        ...mapInsight(row),
-        FetchedAt: fetchedAt,
-      });
-      updated++;
+      stmts.push(
+        buildDailyStmt(env, {
+          Date: row.date_start,
+          Level: "campaign",
+          EntityId: String(row.campaign_id || ""),
+          EntityName: String(row.campaign_name || meta.name || ""),
+          Status: String(meta.status || ""),
+          Objective: String(meta.objective || ""),
+          ...mapInsight(row),
+          FetchedAt: fetchedAt,
+        }),
+      );
     }
 
     for (const row of adRows) {
       const meta = adMeta[row.ad_id] || {};
       const creative = meta.creative || {};
-      await upsertAd(env, {
-        Date: row.date_start,
-        AdId: String(row.ad_id || ""),
-        AdName: String(row.ad_name || meta.name || ""),
-        AdsetId: String(row.adset_id || ""),
-        AdsetName: String(row.adset_name || ""),
-        CampaignId: String(row.campaign_id || ""),
-        CampaignName: String(row.campaign_name || ""),
-        CreativeId: String(creative.id || ""),
-        CreativeType: String(creative.object_type || ""),
-        ThumbnailUrl: String(
-          creative.thumbnail_url || creative.image_url || "",
-        ),
-        Status: String(meta.status || ""),
-        ...mapInsight(row),
-        FetchedAt: fetchedAt,
-      });
-      updated++;
+      stmts.push(
+        buildAdStmt(env, {
+          Date: row.date_start,
+          AdId: String(row.ad_id || ""),
+          AdName: String(row.ad_name || meta.name || ""),
+          AdsetId: String(row.adset_id || ""),
+          AdsetName: String(row.adset_name || ""),
+          CampaignId: String(row.campaign_id || ""),
+          CampaignName: String(row.campaign_name || ""),
+          CreativeId: String(creative.id || ""),
+          CreativeType: String(creative.object_type || ""),
+          ThumbnailUrl: String(
+            creative.thumbnail_url || creative.image_url || "",
+          ),
+          Status: String(meta.status || ""),
+          ...mapInsight(row),
+          FetchedAt: fetchedAt,
+        }),
+      );
     }
 
     const breakdowns = [
@@ -822,17 +825,21 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       for (const row of rows) {
         const [val, sub] = keyFn(row);
         if (!val) continue;
-        await upsertBreakdown(env, {
-          Date: row.date_start,
-          Dimension: dim,
-          DimensionValue: val,
-          DimensionSub: sub,
-          ...mapInsight(row),
-          FetchedAt: fetchedAt,
-        });
-        updated++;
+        stmts.push(
+          buildBreakdownStmt(env, {
+            Date: row.date_start,
+            Dimension: dim,
+            DimensionValue: val,
+            DimensionSub: sub,
+            ...mapInsight(row),
+            FetchedAt: fetchedAt,
+          }),
+        );
       }
     }
+
+    await runBatch(env, stmts);
+    const updated = stmts.length;
 
     log.Status = "success";
     log.RecordsUpdated = updated;
@@ -1034,59 +1041,143 @@ function mapInsight(row) {
 }
 
 // ─── D1 UPSERT (UNIQUE INDEX 활용) ────────────────────────
-// SCHEMA 기반 UPSERT — 새 컬럼 추가돼도 자동 반영
-async function upsertDaily(env, fields) {
-  const existing = await env.DB.prepare(
-    `SELECT id FROM MetaAdsDaily WHERE Date=? AND Level=? AND EntityId=? LIMIT 1`,
-  )
-    .bind(fields.Date, fields.Level, fields.EntityId)
-    .first();
-  if (existing?.id) {
-    await d1Update(env, "MetaAdsDaily", existing.id, fields);
-    return;
-  }
-  await d1Create(env, "MetaAdsDaily", {
-    ...fields,
-    CreatedAt: new Date().toISOString(),
-  });
+// ON CONFLICT UPSERT statement 빌더 — D1 batch 친화적 (subrequest 절약)
+// UNIQUE INDEX(idx_meta_ads_daily_dedupe / idx_meta_ads_ad_dedupe / idx_meta_breakdown_dedupe)
+// 기반으로 동일 키 시 UPDATE, 신규 키 시 INSERT.
+
+const DAILY_COLS = [
+  "EntityName",
+  "Status",
+  "Objective",
+  "Impressions",
+  "Clicks",
+  "LinkClicks",
+  "Spend",
+  "Ctr",
+  "Cpc",
+  "Reach",
+  "Frequency",
+  "Leads",
+  "ActionsJson",
+  "VideoP25Watched",
+  "VideoP50Watched",
+  "VideoP75Watched",
+  "VideoP100Watched",
+  "VideoAvgWatchSec",
+  "ThruPlay",
+  "UniqueClicks",
+  "UniqueLinkClicks",
+  "CostPerLinkClick",
+  "FetchedAt",
+];
+function buildDailyStmt(env, fields) {
+  const id = generateId();
+  const now = new Date().toISOString();
+  const setClause = DAILY_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
+  const placeholders = [
+    "?",
+    "?",
+    "?",
+    "?",
+    ...DAILY_COLS.map(() => "?"),
+    "?",
+  ].join(",");
+  const sql = `INSERT INTO MetaAdsDaily
+      (id, Date, Level, EntityId, ${DAILY_COLS.join(",")}, CreatedAt)
+     VALUES (${placeholders})
+     ON CONFLICT(Date, Level, EntityId) DO UPDATE SET ${setClause}`;
+  const values = [id, fields.Date, fields.Level, fields.EntityId];
+  for (const c of DAILY_COLS)
+    values.push(fields[c] ?? (typeof fields[c] === "number" ? 0 : ""));
+  values.push(now);
+  return env.DB.prepare(sql).bind(...values);
 }
 
-async function upsertAd(env, fields) {
-  const existing = await env.DB.prepare(
-    `SELECT id FROM MetaAdsAd WHERE Date=? AND AdId=? LIMIT 1`,
-  )
-    .bind(fields.Date, fields.AdId)
-    .first();
-  if (existing?.id) {
-    await d1Update(env, "MetaAdsAd", existing.id, fields);
-    return;
-  }
-  await d1Create(env, "MetaAdsAd", {
-    ...fields,
-    CreatedAt: new Date().toISOString(),
-  });
+const AD_COLS = [
+  "AdName",
+  "AdsetId",
+  "AdsetName",
+  "CampaignId",
+  "CampaignName",
+  "CreativeId",
+  "CreativeType",
+  "ThumbnailUrl",
+  "Status",
+  "Impressions",
+  "Clicks",
+  "LinkClicks",
+  "Spend",
+  "Ctr",
+  "Cpc",
+  "Reach",
+  "Leads",
+  "ThruPlay",
+  "VideoAvgWatchSec",
+  "FetchedAt",
+];
+function buildAdStmt(env, fields) {
+  const id = generateId();
+  const now = new Date().toISOString();
+  const setClause = AD_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
+  const placeholders = ["?", "?", "?", ...AD_COLS.map(() => "?"), "?"].join(
+    ",",
+  );
+  const sql = `INSERT INTO MetaAdsAd
+      (id, Date, AdId, ${AD_COLS.join(",")}, CreatedAt)
+     VALUES (${placeholders})
+     ON CONFLICT(Date, AdId) DO UPDATE SET ${setClause}`;
+  const values = [id, fields.Date, fields.AdId];
+  for (const c of AD_COLS) values.push(fields[c] ?? "");
+  values.push(now);
+  return env.DB.prepare(sql).bind(...values);
 }
 
-async function upsertBreakdown(env, fields) {
-  const existing = await env.DB.prepare(
-    `SELECT id FROM MetaAdsBreakdown
-     WHERE Date=? AND Dimension=? AND DimensionValue=? AND DimensionSub=? LIMIT 1`,
-  )
-    .bind(
-      fields.Date,
-      fields.Dimension,
-      fields.DimensionValue,
-      fields.DimensionSub || "",
-    )
-    .first();
-  if (existing?.id) {
-    await d1Update(env, "MetaAdsBreakdown", existing.id, fields);
-    return;
+const BRK_COLS = [
+  "Impressions",
+  "Clicks",
+  "LinkClicks",
+  "Spend",
+  "Ctr",
+  "Cpc",
+  "Reach",
+  "Leads",
+  "FetchedAt",
+];
+function buildBreakdownStmt(env, fields) {
+  const id = generateId();
+  const now = new Date().toISOString();
+  const setClause = BRK_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
+  const placeholders = [
+    "?",
+    "?",
+    "?",
+    "?",
+    "?",
+    ...BRK_COLS.map(() => "?"),
+    "?",
+  ].join(",");
+  const sql = `INSERT INTO MetaAdsBreakdown
+      (id, Date, Dimension, DimensionValue, DimensionSub, ${BRK_COLS.join(",")}, CreatedAt)
+     VALUES (${placeholders})
+     ON CONFLICT(Date, Dimension, DimensionValue, DimensionSub) DO UPDATE SET ${setClause}`;
+  const values = [
+    id,
+    fields.Date,
+    fields.Dimension,
+    fields.DimensionValue,
+    fields.DimensionSub || "",
+  ];
+  for (const c of BRK_COLS) values.push(fields[c] ?? "");
+  values.push(now);
+  return env.DB.prepare(sql).bind(...values);
+}
+
+// batch 분할 실행 — D1 batch는 statement 수 한도 있음 (안전하게 100개씩)
+async function runBatch(env, stmts) {
+  const CHUNK = 100;
+  for (let i = 0; i < stmts.length; i += CHUNK) {
+    await env.DB.batch(stmts.slice(i, i + CHUNK));
   }
-  await d1Create(env, "MetaAdsBreakdown", {
-    ...fields,
-    CreatedAt: new Date().toISOString(),
-  });
 }
 
 async function writeLog(env, fields) {
