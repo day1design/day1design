@@ -196,7 +196,10 @@ export default {
       }
 
       if (isApiPath(path)) {
-        if (!isApiHost(host)) return jsonError(404, "Not Found");
+        // admin host는 CF route가 Worker로 직접 보내므로 여기서도 처리
+        // (Vercel rewrite는 CF route에 가려서 동작 안 함)
+        if (!isApiHost(host) && !isAdminHost(host))
+          return jsonError(404, "Not Found");
         return handleApi(request, env, ctx, path);
       }
 
