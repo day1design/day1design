@@ -22,9 +22,10 @@
   var API_BASE =
     window.DAY1_API_BASE || "https://day1design-api.day1design-co.workers.dev";
 
-  // ─── 세션 ID (localStorage UUID, 7일 TTL) ──────────────
+  // ─── 세션 ID (localStorage UUID, 30일 TTL) ─────────────
+  // 30일 윈도우 내 같은 SessionId 재등장 = 재방문(returning) 판정
   var SESSION_KEY = "_d1_hm_sid";
-  var SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  var SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
   function uuid() {
     if (crypto && crypto.randomUUID) return crypto.randomUUID();
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(

@@ -686,14 +686,20 @@ async function getSummary(request, env, services) {
   const forceRefresh = url.searchParams.get("refresh") === "1";
   const latest = await latestSnapshot(services, range);
 
-  // 캐시 hit 시에도 "터치"는 D1에서 실시간 머지 (GA4 캐시와 별개로 항상 최신)
-  const liveTouches = await fetchLiveTouches(env, range);
+  // 캐시 hit 시에도 자체측정 통계는 D1에서 실시간 머지 (GA4 캐시와 별개로 항상 최신)
+  const selfStats = await fetchSelfStats(env, range);
 
   if (!forceRefresh && latest && !isExpired(latest.createdAt)) {
     const cached = latest.payload || {};
     return jsonOk({
       ...cached,
-      summary: { ...(cached.summary || {}), touches: liveTouches },
+      summary: {
+        ...(cached.summary || {}),
+        touches: selfStats.touches,
+        newVisitors: selfStats.newVisitors,
+        returningVisitors: selfStats.returningVisitors,
+      },
+      self: selfStats,
       persisted: latest.persisted,
       cached: true,
     });
@@ -705,7 +711,13 @@ async function getSummary(request, env, services) {
       const cached = latest.payload || {};
       return jsonOk({
         ...cached,
-        summary: { ...(cached.summary || {}), touches: liveTouches },
+        summary: {
+          ...(cached.summary || {}),
+          touches: selfStats.touches,
+          newVisitors: selfStats.newVisitors,
+          returningVisitors: selfStats.returningVisitors,
+        },
+        self: selfStats,
         persisted: latest.persisted,
         cached: true,
         stale: true,
@@ -715,6 +727,7 @@ async function getSummary(request, env, services) {
     return jsonOk(fresh);
   }
 
+  fresh.self = selfStats;
   const persisted = await persistSnapshot(services, range, fresh);
   return jsonOk({ ...fresh, persisted, cached: false });
 }
@@ -725,7 +738,8 @@ async function fetchLiveTouches(env, range) {
       `SELECT COUNT(DISTINCT SessionId) AS Touches
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?`,
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND SessionId != ''`,
     )
       .bind(range.startDate, range.endDate)
       .first();
@@ -733,6 +747,167 @@ async function fetchLiveTouches(env, range) {
   } catch {
     return 0;
   }
+}
+
+// 자체측정 통계 — 30일 SessionId 기준 신규/재방문 + 보조 지표 6종
+async function fetchSelfStats(env, range) {
+  const startDate = range.startDate;
+  const endDate = range.endDate;
+  const result = {
+    touches: 0,
+    newVisitors: 0,
+    returningVisitors: 0,
+    avgPageviewsPerSession: 0,
+    avgDwellSec: 0,
+    peakHour: null,
+    devices: { pc: 0, mobile: 0 },
+    topLocations: [],
+    submissions: 0,
+    conversionRate: 0,
+  };
+
+  // 1) 터치 + 신규 + 재방문 (단순 정의: 기간 시작 이전 등장 이력 유무)
+  try {
+    const row = await env.DB.prepare(
+      `WITH InRange AS (
+         SELECT DISTINCT SessionId
+         FROM HeatmapEvents
+         WHERE EventType = 'page_view'
+           AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+           AND SessionId != ''
+       ),
+       BeforeRange AS (
+         SELECT DISTINCT SessionId
+         FROM HeatmapEvents
+         WHERE EventType = 'page_view'
+           AND substr(CreatedAt, 1, 10) < ?
+           AND SessionId != ''
+       )
+       SELECT
+         (SELECT COUNT(*) FROM InRange) AS Touches,
+         (SELECT COUNT(*) FROM InRange WHERE SessionId IN (SELECT SessionId FROM BeforeRange)) AS Returning,
+         (SELECT COUNT(*) FROM InRange WHERE SessionId NOT IN (SELECT SessionId FROM BeforeRange)) AS NewVisitors`,
+    )
+      .bind(startDate, endDate, startDate)
+      .first();
+    result.touches = Number(row?.Touches || 0);
+    result.returningVisitors = Number(row?.Returning || 0);
+    result.newVisitors = Number(row?.NewVisitors || 0);
+  } catch {}
+
+  // 2) 평균 페이지뷰 / 세션
+  try {
+    const row = await env.DB.prepare(
+      `SELECT
+         COUNT(*) AS TotalPv,
+         COUNT(DISTINCT SessionId) AS Sessions
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND SessionId != ''`,
+    )
+      .bind(startDate, endDate)
+      .first();
+    const tot = Number(row?.TotalPv || 0);
+    const sess = Number(row?.Sessions || 0);
+    result.avgPageviewsPerSession = sess > 0 ? tot / sess : 0;
+  } catch {}
+
+  // 3) 평균 접속시간 (SessionId·날짜별 첫·마지막 이벤트 차이의 평균, 초)
+  try {
+    const row = await env.DB.prepare(
+      `SELECT AVG(DwellSec) AS AvgDwell FROM (
+         SELECT
+           (julianday(MAX(CreatedAt)) - julianday(MIN(CreatedAt))) * 86400 AS DwellSec
+         FROM HeatmapEvents
+         WHERE substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+           AND SessionId != ''
+         GROUP BY SessionId, substr(CreatedAt, 1, 10)
+         HAVING COUNT(*) > 1
+       )`,
+    )
+      .bind(startDate, endDate)
+      .first();
+    result.avgDwellSec = Number(row?.AvgDwell || 0);
+  } catch {}
+
+  // 4) 피크 시간대 (UTC 기준 — 표시 시 KST 보정 필요)
+  try {
+    const row = await env.DB.prepare(
+      `SELECT substr(CreatedAt, 12, 2) AS Hour, COUNT(*) AS Cnt
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+       GROUP BY Hour
+       ORDER BY Cnt DESC
+       LIMIT 1`,
+    )
+      .bind(startDate, endDate)
+      .first();
+    if (row?.Hour) {
+      const utcHour = parseInt(row.Hour, 10);
+      const kstHour = (utcHour + 9) % 24;
+      result.peakHour = kstHour;
+    }
+  } catch {}
+
+  // 5) 디바이스 비중 (세션 단위)
+  try {
+    const res = await env.DB.prepare(
+      `SELECT Device, COUNT(DISTINCT SessionId) AS Cnt
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND SessionId != ''
+       GROUP BY Device`,
+    )
+      .bind(startDate, endDate)
+      .all();
+    for (const r of res.results || []) {
+      if (r.Device === "pc" || r.Device === "mobile") {
+        result.devices[r.Device] = Number(r.Cnt || 0);
+      }
+    }
+  } catch {}
+
+  // 6) 접속 위치 TOP 5 (CF cf.city·country, 세션 단위)
+  try {
+    const res = await env.DB.prepare(
+      `SELECT
+         COALESCE(NULLIF(City, ''), 'Unknown') AS City,
+         COALESCE(NULLIF(Country, ''), '') AS Country,
+         COUNT(DISTINCT SessionId) AS Cnt
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND SessionId != ''
+       GROUP BY City, Country
+       ORDER BY Cnt DESC
+       LIMIT 5`,
+    )
+      .bind(startDate, endDate)
+      .all();
+    result.topLocations = (res.results || []).map((r) => ({
+      city: String(r.City || "Unknown"),
+      country: String(r.Country || ""),
+      sessions: Number(r.Cnt || 0),
+    }));
+  } catch {}
+
+  // 7) 전환율 (Estimates 접수 / 터치)
+  try {
+    const row = await env.DB.prepare(
+      `SELECT COUNT(*) AS Cnt FROM Estimates
+       WHERE substr(SubmittedAt, 1, 10) BETWEEN ? AND ?`,
+    )
+      .bind(startDate, endDate)
+      .first();
+    result.submissions = Number(row?.Cnt || 0);
+    result.conversionRate =
+      result.touches > 0 ? result.submissions / result.touches : 0;
+  } catch {}
+
+  return result;
 }
 
 function resolveRange(url) {

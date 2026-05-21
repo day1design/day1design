@@ -280,40 +280,131 @@
           </div>
         </section>
 
-        <section class="kpi-grid">
+        <section class="kpi-grid kpi-grid-6">
           <article class="kpi-card">
             <div class="kpi-label">
-              방문자
+              <span class="badge-source badge-self">자체측정</span>
+              터치
               <span
                 class="kpi-help"
-                title="터치: 자체 트래커 page_view 기준 — 페이지 진입만 해도 카운트(1초 미만 이탈 포함). 체류: GA4 활성 사용자 — 10초 이상 머무름 또는 2페이지 이상 또는 전환 1건 이상."
-                aria-label="방문자 정의"
+                title="자체 트래커 page_view 기준 — 페이지 진입만 해도 카운트(1초 미만 이탈 포함). 30일 윈도우 SessionId 기반."
+                aria-label="터치 정의"
+                >ⓘ</span
+              >
+            </div>
+            <div class="kpi-value" id="kpiTouches">—</div>
+            <div class="kpi-delta" id="kpiTouchesDelta"></div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-ga4">GA4</span>
+              체류
+              <span
+                class="kpi-help"
+                title="GA4 활성 사용자 — 10초 이상 머무름 또는 2페이지 이상 또는 전환 1건 이상."
+                aria-label="체류 정의"
+                >ⓘ</span
+              >
+            </div>
+            <div class="kpi-value" id="kpiVisitors">—</div>
+            <div class="kpi-delta" id="kpiVisitorsDelta"></div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-self">자체측정</span>
+              재방문
+              <span
+                class="kpi-help"
+                title="30일 윈도우 내 같은 SessionId가 기간 시작 이전에 등장한 적 있으면 재방문. 신규/재방문 비율 게이지로 표시."
+                aria-label="재방문 정의"
                 >ⓘ</span
               >
             </div>
             <div class="kpi-value kpi-split">
-              <span id="kpiTouches">—</span>
+              <span id="kpiNew">—</span>
               <span class="kpi-divider">/</span>
-              <span id="kpiVisitors">—</span>
+              <span id="kpiReturning">—</span>
             </div>
-            <div class="kpi-sub">터치 · 체류</div>
-            <div class="kpi-delta" id="kpiVisitorsDelta"></div>
+            <div class="kpi-sub">신규 · 재방문</div>
+            <div class="gauge-bar" aria-label="신규/재방문 비율">
+              <div class="gauge-fill gauge-fill-new" id="gaugeNew"></div>
+              <div
+                class="gauge-fill gauge-fill-returning"
+                id="gaugeReturning"
+              ></div>
+            </div>
+            <div class="kpi-delta" id="kpiReturningDelta"></div>
           </article>
           <article class="kpi-card">
-            <div class="kpi-label">페이지뷰</div>
+            <div class="kpi-label">
+              <span class="badge-source badge-ga4">GA4</span>
+              페이지뷰
+            </div>
             <div class="kpi-value" id="kpiPageviews">—</div>
             <div class="kpi-delta" id="kpiPageviewsDelta"></div>
           </article>
           <article class="kpi-card">
-            <div class="kpi-label">평균 체류</div>
+            <div class="kpi-label">
+              <span class="badge-source badge-ga4">GA4</span>
+              평균 체류
+            </div>
             <div class="kpi-value" id="kpiDuration">—</div>
             <div class="kpi-delta" id="kpiDurationDelta"></div>
           </article>
           <article class="kpi-card">
-            <div class="kpi-label">이탈률</div>
+            <div class="kpi-label">
+              <span class="badge-source badge-ga4">GA4</span>
+              이탈률
+            </div>
             <div class="kpi-value" id="kpiBounce">—</div>
             <div class="kpi-delta" id="kpiBounceDelta"></div>
           </article>
+        </section>
+
+        <section class="self-panel">
+          <div class="panel-head">
+            <h3>
+              자체측정 상세
+              <span class="badge-source badge-self">자체측정</span>
+            </h3>
+            <span class="panel-sub">IP 기반 위치·디바이스·시간대 분석</span>
+          </div>
+          <div class="self-grid">
+            <div class="self-item">
+              <div class="self-label">접속 위치 TOP 5</div>
+              <ol class="self-locations" id="selfLocations">
+                <li class="empty-state">데이터 없음</li>
+              </ol>
+            </div>
+            <div class="self-item">
+              <div class="self-label">디바이스</div>
+              <div class="device-bar" id="selfDevices">
+                <span class="empty-state">데이터 없음</span>
+              </div>
+            </div>
+            <div class="self-item">
+              <div class="self-label">피크 시간대</div>
+              <div class="self-big" id="selfPeakHour">—</div>
+              <div class="self-sub">KST 기준 가장 많이 접속된 시간</div>
+            </div>
+            <div class="self-item">
+              <div class="self-label">평균 페이지뷰</div>
+              <div class="self-big" id="selfAvgPv">—</div>
+              <div class="self-sub">세션 1회당 페이지 수</div>
+            </div>
+            <div class="self-item">
+              <div class="self-label">평균 접속시간</div>
+              <div class="self-big" id="selfAvgDwell">—</div>
+              <div class="self-sub">첫·마지막 이벤트 간격 평균</div>
+            </div>
+            <div class="self-item">
+              <div class="self-label">전환율</div>
+              <div class="self-big" id="selfConversion">—</div>
+              <div class="self-sub" id="selfConversionSub">
+                견적 접수 / 터치
+              </div>
+            </div>
+          </div>
         </section>
 
         <section class="analytics-row">
@@ -506,6 +597,6 @@
     ></script>
     <script defer src="config.js?v=20260514-heatmap"></script>
     <script defer src="admin.js?v=20260520-2row"></script>
-    <script defer src="analytics.js?v=20260521-touch-engaged"></script>
+    <script defer src="analytics.js?v=20260521-self-stats"></script>
   </body>
 </html>

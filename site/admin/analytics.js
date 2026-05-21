@@ -593,10 +593,19 @@ function renderAnalyticsEmpty() {
     "kpiPageviews",
     "kpiDuration",
     "kpiBounce",
+    "kpiNew",
+    "kpiReturning",
   ].forEach((id) => {
     const el = document.getElementById(id);
-    if (el) el.textContent = "";
+    if (el) el.textContent = "—";
   });
+  // 게이지 초기화
+  ["gaugeNew", "gaugeReturning"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.width = "0%";
+  });
+  // 자체측정 패널 빈 상태
+  renderSelfPanel(null);
   [
     "kpiVisitorsDelta",
     "kpiPageviewsDelta",
@@ -637,7 +646,7 @@ function renderTrafficAnalytics(data) {
     return;
   }
 
-  // 방문자 카드: 터치(자체 init) / 체류(GA4 기반)
+  // KPI 카드 6개 — 자체측정(터치·재방문) + GA4(체류·페이지뷰·평균체류·이탈률)
   const touchEl = document.getElementById("kpiTouches");
   if (touchEl) touchEl.textContent = fmtInt(summary.touches || 0);
   document.getElementById("kpiVisitors").textContent = fmtInt(
@@ -653,11 +662,33 @@ function renderTrafficAnalytics(data) {
     summary.bounceRate,
   );
 
+  // 재방문 카드 (신규/재방문 + 게이지)
+  const newCnt = Number(summary.newVisitors || 0);
+  const retCnt = Number(summary.returningVisitors || 0);
+  const total = newCnt + retCnt;
+  const newEl = document.getElementById("kpiNew");
+  const retEl = document.getElementById("kpiReturning");
+  if (newEl) newEl.textContent = fmtInt(newCnt);
+  if (retEl) retEl.textContent = fmtInt(retCnt);
+  const gNew = document.getElementById("gaugeNew");
+  const gRet = document.getElementById("gaugeReturning");
+  if (gNew && gRet) {
+    const newPct = total > 0 ? (newCnt / total) * 100 : 0;
+    const retPct = total > 0 ? (retCnt / total) * 100 : 0;
+    gNew.style.width = newPct.toFixed(1) + "%";
+    gRet.style.width = retPct.toFixed(1) + "%";
+  }
+
+  // 자체측정 상세 패널
+  renderSelfPanel(data.self);
+
   [
+    "kpiTouchesDelta",
     "kpiVisitorsDelta",
     "kpiPageviewsDelta",
     "kpiDurationDelta",
     "kpiBounceDelta",
+    "kpiReturningDelta",
   ].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.textContent = "";
@@ -673,6 +704,102 @@ function renderTrafficAnalytics(data) {
   renderTopPages(currentTopPagesRows);
   renderOpsActivityHeatmap(resolveRange(currentRangeKey));
   renderOpsInsights(resolveRange(currentRangeKey));
+}
+
+// 자체측정 상세 패널 렌더 (접속위치/디바이스/피크시간/평균PV/평균접속시간/전환율)
+function renderSelfPanel(self) {
+  const locEl = document.getElementById("selfLocations");
+  const devEl = document.getElementById("selfDevices");
+  const peakEl = document.getElementById("selfPeakHour");
+  const avgPvEl = document.getElementById("selfAvgPv");
+  const dwellEl = document.getElementById("selfAvgDwell");
+  const convEl = document.getElementById("selfConversion");
+  const convSubEl = document.getElementById("selfConversionSub");
+
+  if (!self) {
+    if (locEl) locEl.innerHTML = '<li class="empty-state">데이터 없음</li>';
+    if (devEl) devEl.innerHTML = '<span class="empty-state">데이터 없음</span>';
+    if (peakEl) peakEl.textContent = "—";
+    if (avgPvEl) avgPvEl.textContent = "—";
+    if (dwellEl) dwellEl.textContent = "—";
+    if (convEl) convEl.textContent = "—";
+    return;
+  }
+
+  // 접속 위치 TOP 5
+  if (locEl) {
+    const rows = self.topLocations || [];
+    if (!rows.length) {
+      locEl.innerHTML = '<li class="empty-state">데이터 없음</li>';
+    } else {
+      locEl.innerHTML = rows
+        .map((r) => {
+          const place = r.country
+            ? `${adminUtil.escapeHtml(r.city)} <span class="loc-country">${adminUtil.escapeHtml(r.country)}</span>`
+            : adminUtil.escapeHtml(r.city);
+          return `<li><span class="loc-name">${place}</span><span class="loc-cnt">${fmtInt(r.sessions)}</span></li>`;
+        })
+        .join("");
+    }
+  }
+
+  // 디바이스 비중
+  if (devEl) {
+    const pc = Number(self.devices?.pc || 0);
+    const mo = Number(self.devices?.mobile || 0);
+    const tot = pc + mo;
+    if (!tot) {
+      devEl.innerHTML = '<span class="empty-state">데이터 없음</span>';
+    } else {
+      const pcPct = (pc / tot) * 100;
+      const moPct = (mo / tot) * 100;
+      devEl.innerHTML = `
+        <div class="device-row">
+          <span class="device-name">PC</span>
+          <span class="device-bar-track"><span class="device-bar-fill device-pc" style="width:${pcPct.toFixed(1)}%"></span></span>
+          <span class="device-val">${pcPct.toFixed(0)}% · ${fmtInt(pc)}</span>
+        </div>
+        <div class="device-row">
+          <span class="device-name">모바일</span>
+          <span class="device-bar-track"><span class="device-bar-fill device-mo" style="width:${moPct.toFixed(1)}%"></span></span>
+          <span class="device-val">${moPct.toFixed(0)}% · ${fmtInt(mo)}</span>
+        </div>`;
+    }
+  }
+
+  // 피크 시간대 (KST 기준 — Worker에서 보정 완료)
+  if (peakEl) {
+    if (self.peakHour === null || self.peakHour === undefined) {
+      peakEl.textContent = "—";
+    } else {
+      const h = Number(self.peakHour);
+      const hh = String(h).padStart(2, "0");
+      peakEl.textContent = `${hh}시`;
+    }
+  }
+
+  // 평균 페이지뷰
+  if (avgPvEl) {
+    const pv = Number(self.avgPageviewsPerSession || 0);
+    avgPvEl.textContent = pv > 0 ? pv.toFixed(1) : "—";
+  }
+
+  // 평균 접속시간
+  if (dwellEl) {
+    const sec = Number(self.avgDwellSec || 0);
+    dwellEl.textContent = sec > 0 ? fmtDuration(sec) : "—";
+  }
+
+  // 전환율
+  if (convEl) {
+    const rate = Number(self.conversionRate || 0);
+    convEl.textContent = rate > 0 ? (rate * 100).toFixed(2) + "%" : "—";
+  }
+  if (convSubEl) {
+    const subs = Number(self.submissions || 0);
+    const touches = Number(self.touches || 0);
+    convSubEl.textContent = `${fmtInt(subs)} 건 / 터치 ${fmtInt(touches)}`;
+  }
 }
 
 function renderTrendChart(rows) {
