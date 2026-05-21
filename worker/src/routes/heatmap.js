@@ -40,6 +40,21 @@ function clampInt(n, max = 100000) {
   return v;
 }
 
+// 단축 URL → 본래 페이지로 정규화 (vercel.json rewrites 동일).
+// 사용자가 본 페이지 기준으로 통합 집계.
+const PAGE_ALIAS = {
+  "/HOUSE": "/pages/portfolio",
+  "/OFFICE": "/pages/portfolio",
+  "/PORTFOLIO": "/pages/portfolio",
+  "/COMMUNITY": "/pages/community",
+  "/Residential": "/pages/community",
+  "/Commercial": "/pages/community",
+  "/ESTIMATES": "/pages/estimates",
+  "/ABOUT": "/pages/about",
+  "/56": "/pages/project-flow",
+  "/57": "/pages/about",
+};
+
 function safePage(s) {
   // 쿼리스트링·해시 제거, 끝 슬래시 정리, .html 확장자 제거 (cleanUrls 통일)
   const raw = String(s || "");
@@ -49,6 +64,8 @@ function safePage(s) {
   if (noQuery.length > 1) noQuery = noQuery.replace(/\/+$/, "");
   // .html 제거 (cleanUrls와 일치)
   if (noQuery.endsWith(".html")) noQuery = noQuery.slice(0, -5);
+  // 단축 URL → 본래 페이지 정규화 (이중 안전망 — tracker가 못 잡은 경우 대비)
+  if (PAGE_ALIAS[noQuery]) noQuery = PAGE_ALIAS[noQuery];
   return noQuery.slice(0, 200) || "/";
 }
 

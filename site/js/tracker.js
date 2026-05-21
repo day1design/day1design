@@ -64,8 +64,24 @@
   function getDevice() {
     return window.innerWidth < 768 ? "mobile" : "pc";
   }
+  // 단축 URL → 본래 페이지로 정규화 (사용자가 본 페이지 기준 통합 집계)
+  // vercel.json rewrites와 동일한 매핑. 사용자가 /HOUSE 로 들어와도
+  // 실제로 본 화면은 /pages/portfolio 이므로 본래 페이지에 합산.
+  var PAGE_ALIAS = {
+    "/HOUSE": "/pages/portfolio",
+    "/OFFICE": "/pages/portfolio",
+    "/PORTFOLIO": "/pages/portfolio",
+    "/COMMUNITY": "/pages/community",
+    "/Residential": "/pages/community",
+    "/Commercial": "/pages/community",
+    "/ESTIMATES": "/pages/estimates",
+    "/ABOUT": "/pages/about",
+    "/56": "/pages/project-flow",
+    "/57": "/pages/about",
+  };
   function getPagePath() {
-    return location.pathname.replace(/\/+$/, "") || "/";
+    var p = location.pathname.replace(/\/+$/, "") || "/";
+    return PAGE_ALIAS[p] || p;
   }
   function getReferrerHost() {
     try {
