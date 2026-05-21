@@ -27,7 +27,7 @@
     <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
     <div class="admin-layout">
       <header class="admin-topbar" id="adminTopbar"></header>
-      <main class="admin-content" id="adminContent">
+      <main class="admin-content analytics-layout" id="adminContent">
         <div class="analytics-toolbar">
           <div class="seg" role="tablist" aria-label="기간">
             <button
@@ -67,7 +67,11 @@
           <div class="analytics-compare" id="rangeLabel">오늘</div>
         </div>
 
-        <section class="analytics-row ops-dashboard" aria-labelledby="opsTitle">
+        <section
+          class="analytics-row ops-dashboard"
+          aria-labelledby="opsTitle"
+          data-order="3"
+        >
           <div class="ops-head">
             <div>
               <p class="ops-eyebrow">상담 접수 운영판단</p>
@@ -264,17 +268,19 @@
           </div>
         </section>
 
-        <section class="kpi-grid kpi-grid-6">
+        <section class="kpi-grid kpi-grid-6" data-order="1">
           <article class="kpi-card">
             <div class="kpi-label">
               <span class="badge-source badge-self">자체측정</span>
               터치
-              <span
+              <button
+                type="button"
                 class="kpi-help"
-                title="자체 트래커 page_view 기준 — 페이지 진입만 해도 카운트(1초 미만 이탈 포함). 30일 윈도우 SessionId 기반."
+                data-info="자체 트래커 page_view 기준 — 페이지 진입만 해도 카운트(1초 미만 이탈 포함). 30일 윈도우 SessionId 기반."
                 aria-label="터치 정의"
-                >ⓘ</span
               >
+                ⓘ
+              </button>
             </div>
             <div class="kpi-value" id="kpiTouches">—</div>
             <div class="kpi-delta" id="kpiTouchesDelta"></div>
@@ -283,12 +289,14 @@
             <div class="kpi-label">
               <span class="badge-source badge-ga4">GA4</span>
               체류
-              <span
+              <button
+                type="button"
                 class="kpi-help"
-                title="GA4 활성 사용자 — 10초 이상 머무름 또는 2페이지 이상 또는 전환 1건 이상."
+                data-info="GA4 활성 사용자 — 10초 이상 머무름 또는 2페이지 이상 또는 전환 1건 이상."
                 aria-label="체류 정의"
-                >ⓘ</span
               >
+                ⓘ
+              </button>
             </div>
             <div class="kpi-value" id="kpiVisitors">—</div>
             <div class="kpi-delta" id="kpiVisitorsDelta"></div>
@@ -297,12 +305,14 @@
             <div class="kpi-label">
               <span class="badge-source badge-self">자체측정</span>
               재방문
-              <span
+              <button
+                type="button"
                 class="kpi-help"
-                title="30일 윈도우 내 같은 SessionId가 기간 시작 이전에 등장한 적 있으면 재방문. 신규/재방문 비율 게이지로 표시."
+                data-info="30일 윈도우 내 같은 SessionId가 기간 시작 이전에 등장한 적 있으면 재방문. 신규/재방문 비율 게이지로 표시."
                 aria-label="재방문 정의"
-                >ⓘ</span
               >
+                ⓘ
+              </button>
             </div>
             <div class="kpi-value kpi-split">
               <span id="kpiNew">—</span>
@@ -345,7 +355,7 @@
           </article>
         </section>
 
-        <section class="self-panel">
+        <section class="self-panel" data-order="4">
           <div class="panel-head">
             <h3>
               자체측정 상세
@@ -391,7 +401,7 @@
           </div>
         </section>
 
-        <section class="analytics-row">
+        <section class="analytics-row" data-order="2">
           <div class="panel">
             <div class="panel-head">
               <h3>일별 방문 추이</h3>
@@ -403,7 +413,7 @@
           </div>
         </section>
 
-        <section class="analytics-row two-col">
+        <section class="analytics-row two-col" data-order="5">
           <div class="panel">
             <div class="panel-head">
               <h3>인기 페이지 TOP 10</h3>
@@ -437,7 +447,44 @@
           </div>
         </section>
 
-        <section class="analytics-row two-col">
+        <section class="analytics-row funnel-section" data-order="6">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>
+                퍼널 이동경로
+                <span class="badge-source badge-self">자체측정</span>
+              </h3>
+              <span class="panel-sub"
+                >최초 진입 → 추가로 본 곳 → 폼 제출 도달</span
+              >
+            </div>
+            <div class="funnel-stages" id="funnelStages">
+              <div class="funnel-stage" data-stage="1">
+                <div class="funnel-stage-head">1단계 · 최초 진입</div>
+                <ol class="funnel-list" id="funnelStage1">
+                  <li class="empty-state">데이터 없음</li>
+                </ol>
+              </div>
+              <div class="funnel-arrow" aria-hidden="true">→</div>
+              <div class="funnel-stage" data-stage="2">
+                <div class="funnel-stage-head">2단계 · 추가로 본 페이지</div>
+                <ol class="funnel-list" id="funnelStage2">
+                  <li class="empty-state">데이터 없음</li>
+                </ol>
+              </div>
+              <div class="funnel-arrow" aria-hidden="true">→</div>
+              <div class="funnel-stage" data-stage="3">
+                <div class="funnel-stage-head">3단계 · 폼 제출 도달</div>
+                <div class="funnel-conversion" id="funnelStage3">
+                  <div class="funnel-conv-val">—</div>
+                  <div class="funnel-conv-sub">터치 대비 견적 접수율</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="analytics-row two-col" data-order="7">
           <div class="panel">
             <div class="panel-head">
               <h3>상태별 분포</h3>
@@ -575,12 +622,22 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
+    <!-- 툴팁 팝오버 (클릭 트리거, 단일 인스턴스) -->
+    <div
+      class="info-popover"
+      id="infoPopover"
+      hidden
+      role="dialog"
+      aria-modal="false"
+    >
+      <div class="info-popover-content" id="infoPopoverContent"></div>
+    </div>
     <script
       defer
       src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
     ></script>
     <script defer src="config.js?v=20260514-heatmap"></script>
     <script defer src="admin.js?v=20260520-2row"></script>
-    <script defer src="analytics.js?v=20260521-filter-unify"></script>
+    <script defer src="analytics.js?v=20260521-funnel-tooltip"></script>
   </body>
 </html>

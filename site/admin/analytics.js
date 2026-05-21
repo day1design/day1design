@@ -2451,6 +2451,7 @@ function applyRange(key) {
   renderVisitorLocations(null);
   loadTrafficAnalytics(range);
   loadVisitorLocations(range);
+  loadFunnel(range);
   renderSubmissionStats(range);
 }
 
@@ -2606,3 +2607,118 @@ window.addEventListener("resize", () => {
 
 applyRange("today");
 loadSubmissionRecords();
+
+// ─── 클릭 트리거 ⓘ 툴팁 ─────────────────────────────
+(function initInfoPopover() {
+  const pop = document.getElementById("infoPopover");
+  const content = document.getElementById("infoPopoverContent");
+  if (!pop || !content) return;
+  let activeTrigger = null;
+
+  function position(trigger) {
+    const r = trigger.getBoundingClientRect();
+    pop.hidden = false; // 측정 위해 표시
+    const pw = pop.offsetWidth;
+    const ph = pop.offsetHeight;
+    const margin = 8;
+    let left = r.left + r.width / 2 - pw / 2 + window.scrollX;
+    left = Math.max(8, Math.min(left, window.innerWidth - pw - 8));
+    const top = r.bottom + margin + window.scrollY;
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+    // 화살표 위치 (trigger 중앙)
+    const arrowLeft = r.left + r.width / 2 + window.scrollX - left - 6;
+    pop.style.setProperty("--arrow-left", `${arrowLeft}px`);
+  }
+
+  function show(trigger) {
+    const text = trigger.getAttribute("data-info") || "";
+    if (!text) return;
+    if (activeTrigger && activeTrigger !== trigger) {
+      activeTrigger.classList.remove("is-active");
+    }
+    activeTrigger = trigger;
+    trigger.classList.add("is-active");
+    content.textContent = text;
+    position(trigger);
+  }
+
+  function hide() {
+    pop.hidden = true;
+    if (activeTrigger) {
+      activeTrigger.classList.remove("is-active");
+      activeTrigger = null;
+    }
+  }
+
+  document.addEventListener("click", (e) => {
+    const trigger = e.target.closest("[data-info]");
+    if (trigger) {
+      e.stopPropagation();
+      if (activeTrigger === trigger) {
+        hide();
+      } else {
+        show(trigger);
+      }
+      return;
+    }
+    if (!pop.contains(e.target)) hide();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hide();
+  });
+  window.addEventListener("scroll", hide, { passive: true });
+  window.addEventListener("resize", hide);
+})();
+
+// ─── 퍼널 이동경로 렌더 ─────────────────────────────
+function renderFunnel(data) {
+  const stage1El = document.getElementById("funnelStage1");
+  const stage2El = document.getElementById("funnelStage2");
+  const stage3El = document.getElementById("funnelStage3");
+  if (!stage1El || !stage2El || !stage3El) return;
+
+  const renderList = (el, rows) => {
+    if (!rows || !rows.length) {
+      el.innerHTML = '<li class="empty-state">데이터 없음</li>';
+      return;
+    }
+    el.innerHTML = rows
+      .map(
+        (r) => `<li>
+          <span class="page-path" title="${adminUtil.escapeHtml(r.page)}">${adminUtil.escapeHtml(r.page)}</span>
+          <span class="page-pct">${(r.pct * 100).toFixed(0)}%</span>
+          <span class="page-cnt">${fmtInt(r.count)}</span>
+        </li>`,
+      )
+      .join("");
+  };
+
+  renderList(stage1El, data?.firstPages || []);
+  renderList(stage2El, data?.secondPages || []);
+
+  const conv = Number(data?.conversionRate || 0);
+  stage3El.innerHTML = `
+    <div class="funnel-conv-val">${conv > 0 ? (conv * 100).toFixed(2) + "%" : "—"}</div>
+    <div class="funnel-conv-sub">견적 ${fmtInt(data?.submissions || 0)}건 / 터치 ${fmtInt(data?.touches || 0)}</div>
+  `;
+}
+
+async function loadFunnel(range) {
+  try {
+    await adminUtil.ensureAuth();
+    const params = new URLSearchParams({
+      range: currentRangeKey,
+      start: dayKey(range.start),
+      end: dayKey(range.end),
+    });
+    const data = await adminUtil.apiCached(`/api/analytics/funnel?${params}`, {
+      ttl: 60_000,
+    });
+    renderFunnel(data);
+  } catch (e) {
+    console.error("funnel load failed:", e);
+    renderFunnel(null);
+  }
+}

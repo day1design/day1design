@@ -71,7 +71,123 @@ export async function handleAnalytics(
     return handleTarget(request, services);
   }
 
+  if (path === "/funnel" && request.method === "GET") {
+    if (!(await verifyAdmin(request, env))) {
+      return jsonError(401, "Unauthorized");
+    }
+    return getFunnel(request, env);
+  }
+
   return jsonError(404, "Not Found");
+}
+
+// 퍼널 이동경로 — 자체 트래커 SessionId 기반 3단계 흐름
+//   1) 최초 진입 페이지 TOP 5
+//   2) 같은 SessionId 의 2번째 page_view 페이지 TOP 5
+//   3) 전환율 = 견적 접수 / 터치
+async function getFunnel(request, env) {
+  const range = resolveRange(new URL(request.url));
+  const startDate = range.startDate;
+  const endDate = range.endDate;
+
+  const result = {
+    range,
+    firstPages: [],
+    secondPages: [],
+    touches: 0,
+    submissions: 0,
+    conversionRate: 0,
+  };
+
+  try {
+    // SessionId 별 첫 page_view (가장 오래된 CreatedAt) 의 Page → 1단계
+    const stage1 = await env.DB.prepare(
+      `WITH first_event AS (
+         SELECT SessionId, Page,
+                ROW_NUMBER() OVER (PARTITION BY SessionId ORDER BY CreatedAt ASC) AS rn
+         FROM HeatmapEvents
+         WHERE EventType = 'page_view'
+           AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+           AND SessionId != ''
+       )
+       SELECT Page, COUNT(*) AS Cnt
+       FROM first_event
+       WHERE rn = 1
+       GROUP BY Page
+       ORDER BY Cnt DESC
+       LIMIT 5`,
+    )
+      .bind(startDate, endDate)
+      .all();
+
+    // SessionId 별 두 번째 page_view 페이지 → 2단계
+    const stage2 = await env.DB.prepare(
+      `WITH ordered AS (
+         SELECT SessionId, Page,
+                ROW_NUMBER() OVER (PARTITION BY SessionId ORDER BY CreatedAt ASC) AS rn
+         FROM HeatmapEvents
+         WHERE EventType = 'page_view'
+           AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+           AND SessionId != ''
+       )
+       SELECT Page, COUNT(*) AS Cnt
+       FROM ordered
+       WHERE rn = 2
+       GROUP BY Page
+       ORDER BY Cnt DESC
+       LIMIT 5`,
+    )
+      .bind(startDate, endDate)
+      .all();
+
+    // 터치(고유 SessionId 수)
+    const touchesRow = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT SessionId) AS Cnt
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND SessionId != ''`,
+    )
+      .bind(startDate, endDate)
+      .first();
+
+    // 견적 접수 수 (KST 변환 없이 SubmittedAt UTC ISO 첫 10자 비교 — Estimates는 UTC 저장)
+    const subsRow = await env.DB.prepare(
+      `SELECT COUNT(*) AS Cnt FROM Estimates
+       WHERE substr(SubmittedAt, 1, 10) BETWEEN ? AND ?`,
+    )
+      .bind(startDate, endDate)
+      .first();
+
+    const touches = Number(touchesRow?.Cnt || 0);
+    const submissions = Number(subsRow?.Cnt || 0);
+    const total1 = (stage1.results || []).reduce(
+      (a, b) => a + Number(b.Cnt || 0),
+      0,
+    );
+    const total2 = (stage2.results || []).reduce(
+      (a, b) => a + Number(b.Cnt || 0),
+      0,
+    );
+
+    result.firstPages = (stage1.results || []).map((r) => ({
+      page: String(r.Page || "/"),
+      count: Number(r.Cnt || 0),
+      pct: total1 > 0 ? Number(r.Cnt || 0) / total1 : 0,
+    }));
+    result.secondPages = (stage2.results || []).map((r) => ({
+      page: String(r.Page || "/"),
+      count: Number(r.Cnt || 0),
+      pct: total2 > 0 ? Number(r.Cnt || 0) / total2 : 0,
+    }));
+    result.touches = touches;
+    result.submissions = submissions;
+    result.conversionRate = touches > 0 ? submissions / touches : 0;
+  } catch (e) {
+    // SQL 실패해도 빈 결과 반환 (404 아닌)
+  }
+
+  return jsonOk(result);
 }
 
 async function handleTarget(request, services) {

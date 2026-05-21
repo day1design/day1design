@@ -3021,16 +3021,190 @@
 .kpi-help {
   display: inline-block;
   margin-left: 4px;
-  width: 14px;
-  height: 14px;
-  line-height: 14px;
-  font-size: 10px;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  padding: 0;
+  font-size: 11px;
   text-align: center;
   border-radius: 50%;
   background: var(--c-border);
   color: var(--c-text-muted);
-  cursor: help;
+  cursor: pointer;
   vertical-align: middle;
+  border: 0;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.kpi-help:hover,
+.kpi-help:focus-visible,
+.kpi-help.is-active {
+  background: var(--c-text);
+  color: #fff;
+  outline: none;
+}
+
+/* 클릭 트리거 정보 팝오버 (단일 인스턴스) */
+.info-popover {
+  position: absolute;
+  z-index: 9999;
+  max-width: 320px;
+  padding: 10px 14px;
+  background: #111827;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  line-height: 1.55;
+  pointer-events: auto;
+}
+.info-popover[hidden] {
+  display: none;
+}
+.info-popover::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: var(--arrow-left, 16px);
+  width: 12px;
+  height: 12px;
+  background: #111827;
+  transform: rotate(45deg);
+}
+.info-popover-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* analytics 페이지 섹션 순서 (data-order 기반) */
+.analytics-layout {
+  display: flex;
+  flex-direction: column;
+}
+.analytics-layout > .analytics-toolbar {
+  order: 0;
+}
+.analytics-layout > [data-order="1"] {
+  order: 1;
+}
+.analytics-layout > [data-order="2"] {
+  order: 2;
+}
+.analytics-layout > [data-order="3"] {
+  order: 3;
+}
+.analytics-layout > [data-order="4"] {
+  order: 4;
+}
+.analytics-layout > [data-order="5"] {
+  order: 5;
+}
+.analytics-layout > [data-order="6"] {
+  order: 6;
+}
+.analytics-layout > [data-order="7"] {
+  order: 7;
+}
+
+/* 퍼널 이동경로 (3단계 흐름 카드) */
+.funnel-section .panel {
+  padding: 16px 18px;
+}
+.funnel-section .badge-source {
+  vertical-align: middle;
+}
+.funnel-stages {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  gap: 12px;
+  align-items: stretch;
+  margin-top: 12px;
+}
+.funnel-stage {
+  background: #fafafa;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.funnel-stage-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-border);
+}
+.funnel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.funnel-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12px;
+  border-bottom: 1px dashed #e5e7eb;
+}
+.funnel-list li:last-child {
+  border-bottom: 0;
+}
+.funnel-list .page-path {
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.funnel-list .page-pct {
+  font-weight: 600;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+.funnel-list .page-cnt {
+  color: var(--c-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.funnel-list .empty-state {
+  color: var(--c-text-muted);
+  text-align: center;
+  padding: 8px;
+  border: 0;
+}
+.funnel-arrow {
+  align-self: center;
+  font-size: 20px;
+  color: var(--c-text-muted);
+}
+.funnel-conversion {
+  text-align: center;
+  padding: 18px 0;
+}
+.funnel-conv-val {
+  font-size: 28px;
+  font-weight: 700;
+  color: #16a34a;
+  letter-spacing: -1px;
+}
+.funnel-conv-sub {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  margin-top: 4px;
+}
+@media (max-width: 980px) {
+  .funnel-stages {
+    grid-template-columns: 1fr;
+  }
+  .funnel-arrow {
+    transform: rotate(90deg);
+    margin: 0 auto;
+  }
 }
 
 /* 데이터 소스 뱃지 */
