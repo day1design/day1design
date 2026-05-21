@@ -10,7 +10,7 @@
 // 따라서 별도 timezone 변환 불필요 (Meta가 date_start 기준으로 보냄)
 
 import { jsonOk, jsonError } from "../lib/response.js";
-import { verifyAdmin } from "../lib/auth.js";
+import { verifyAdmin, timingSafeEqual } from "../lib/auth.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import { generateId } from "../lib/d1.js";
 
@@ -27,8 +27,16 @@ export async function handleMetaAds(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/meta-ads/, "") || "/";
 
-  // 모든 라우트는 어드민 전용
-  if (!(await verifyAdmin(request, env))) {
+  // 백필은 internal secret 으로도 호출 가능 (수동 백필·cron 보조용)
+  // verifyAdmin 우회 조건: X-Internal-Secret 헤더가 env.META_INTERNAL_SECRET 와 일치
+  const isBackfillRoute = path === "/backfill" && request.method === "POST";
+  const internalSecret = request.headers.get("x-internal-secret") || "";
+  const internalOk =
+    isBackfillRoute &&
+    env.META_INTERNAL_SECRET &&
+    timingSafeEqual(internalSecret, env.META_INTERNAL_SECRET);
+
+  if (!internalOk && !(await verifyAdmin(request, env))) {
     return jsonError(401, "Unauthorized");
   }
 
