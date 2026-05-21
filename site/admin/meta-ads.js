@@ -12,13 +12,42 @@
   };
   const fmtPct = (n) => (Number(n || 0) * 100).toFixed(2) + "%";
 
-  let currentRangeDays = 30;
+  // 유입통계와 동일한 키: today/7/30/cur-month/prev-month/all/custom
+  let currentRangeKey = "today";
+  let customStart = "";
+  let customEnd = "";
   let trendChart = null;
 
-  function setRangeLabel(days) {
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+  function ymd(d) {
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  }
+  function rangeLabel(key) {
+    const map = {
+      today: "오늘",
+      7: "최근 7일",
+      30: "최근 30일",
+      "cur-month": "당월",
+      "prev-month": "전월",
+      all: "전체 기간",
+      custom:
+        customStart && customEnd ? `${customStart} ~ ${customEnd}` : "선택기간",
+    };
+    return map[key] || "최근 30일";
+  }
+  function setRangeLabel(key) {
     const el = $("madsRangeLabel");
-    if (!el) return;
-    el.textContent = days >= 365 ? "전체 기간" : `최근 ${days}일`;
+    if (el) el.textContent = rangeLabel(key);
+  }
+  function buildQuery(key) {
+    const p = new URLSearchParams({ range: String(key) });
+    if (key === "custom") {
+      if (customStart) p.set("start", customStart);
+      if (customEnd) p.set("end", customEnd);
+    }
+    return p.toString();
   }
 
   function renderSummary(data) {
@@ -184,17 +213,20 @@
       .join("");
   }
 
-  async function loadAll(days) {
-    currentRangeDays = days;
-    setRangeLabel(days);
+  async function loadAll(key) {
+    currentRangeKey = key;
+    setRangeLabel(key);
+
+    // custom 인데 시작/종료 미지정이면 호출 보류
+    if (key === "custom" && (!customStart || !customEnd)) return;
 
     try {
       await adminUtil.ensureAuth();
-
+      const qs = buildQuery(key);
       const [summary, campaigns, daily, syncLog] = await Promise.all([
-        adminUtil.api(`/api/meta-ads/summary?days=${days}`),
-        adminUtil.api(`/api/meta-ads/campaigns?days=${days}`),
-        adminUtil.api(`/api/meta-ads/daily?days=${days}`),
+        adminUtil.api(`/api/meta-ads/summary?${qs}`),
+        adminUtil.api(`/api/meta-ads/campaigns?${qs}`),
+        adminUtil.api(`/api/meta-ads/daily?${qs}`),
         adminUtil.api(`/api/meta-ads/sync-log`),
       ]);
 
@@ -211,16 +243,38 @@
   // 기간 버튼
   document.querySelectorAll("[data-mads-range]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const days = parseInt(btn.dataset.madsRange, 10);
+      const key = btn.dataset.madsRange;
       document.querySelectorAll("[data-mads-range]").forEach((b) => {
         const on = b === btn;
         b.classList.toggle("active", on);
         b.setAttribute("aria-pressed", on ? "true" : "false");
       });
-      loadAll(days);
+      const picker = $("madsRangePicker");
+      if (picker) picker.hidden = key !== "custom";
+      loadAll(key);
     });
   });
 
-  // 초기 로드 (30일 기본)
-  loadAll(30);
+  // 선택기간 적용
+  const applyBtn = $("madsApplyRange");
+  if (applyBtn) {
+    applyBtn.addEventListener("click", () => {
+      const s = $("madsRangeStart")?.value;
+      const e = $("madsRangeEnd")?.value;
+      if (!s || !e) {
+        adminUtil.toast?.("시작·종료 날짜를 모두 선택하세요", "error");
+        return;
+      }
+      if (s > e) {
+        adminUtil.toast?.("시작이 종료보다 늦을 수 없습니다", "error");
+        return;
+      }
+      customStart = s;
+      customEnd = e;
+      loadAll("custom");
+    });
+  }
+
+  // 초기 로드 (당일 기본 — 유입통계와 동일)
+  loadAll("today");
 })();

@@ -27,38 +27,45 @@
           <div class="seg" role="tablist" aria-label="기간">
             <button
               type="button"
-              class="seg-btn"
-              data-mads-range="7"
-              aria-pressed="false"
-            >
-              7일
-            </button>
-            <button
-              type="button"
               class="seg-btn active"
-              data-mads-range="30"
+              data-mads-range="today"
               aria-pressed="true"
             >
+              당일
+            </button>
+            <button type="button" class="seg-btn" data-mads-range="7">
+              7일
+            </button>
+            <button type="button" class="seg-btn" data-mads-range="30">
               30일
             </button>
-            <button
-              type="button"
-              class="seg-btn"
-              data-mads-range="90"
-              aria-pressed="false"
-            >
-              90일
+            <button type="button" class="seg-btn" data-mads-range="prev-month">
+              전월
             </button>
-            <button
-              type="button"
-              class="seg-btn"
-              data-mads-range="365"
-              aria-pressed="false"
-            >
+            <button type="button" class="seg-btn" data-mads-range="cur-month">
+              당월
+            </button>
+            <button type="button" class="seg-btn" data-mads-range="all">
               전체
             </button>
+            <button type="button" class="seg-btn" data-mads-range="custom">
+              선택기간
+            </button>
           </div>
-          <div class="analytics-compare" id="madsRangeLabel">최근 30일</div>
+          <div class="analytics-range-picker" id="madsRangePicker" hidden>
+            <label>
+              <span>시작</span>
+              <input type="date" id="madsRangeStart" />
+            </label>
+            <label>
+              <span>종료</span>
+              <input type="date" id="madsRangeEnd" />
+            </label>
+            <button type="button" class="btn-apply-range" id="madsApplyRange">
+              적용
+            </button>
+          </div>
+          <div class="analytics-compare" id="madsRangeLabel">오늘</div>
           <div class="analytics-compare" id="madsLastSync">
             동기화 정보 없음
           </div>
@@ -190,6 +197,6 @@
     ></script>
     <script defer src="config.js?v=20260520-heatmap"></script>
     <script defer src="admin.js?v=20260520-2row"></script>
-    <script defer src="meta-ads.js?v=20260521-init"></script>
+    <script defer src="meta-ads.js?v=20260521-range7"></script>
   </body>
 </html>

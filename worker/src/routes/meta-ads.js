@@ -69,11 +69,8 @@ export async function runScheduledSync(env, ctx) {
 // ─── 사용자 응답 (D1 read-only) ───────────────────────────
 async function getSummary(request, env) {
   const url = new URL(request.url);
-  const days = Math.max(
-    1,
-    Math.min(365, parseInt(url.searchParams.get("days") || "30", 10)),
-  );
-  const { startDate, endDate } = rangeDays(days);
+  const range = resolveRangeFromQuery(url);
+  const { startDate, endDate } = range;
 
   try {
     // account 레벨 일별 합계
@@ -103,7 +100,7 @@ async function getSummary(request, env) {
     const clicks = Number(totals?.Clicks || 0);
     const spend = Number(totals?.Spend || 0);
     return jsonOk({
-      range: { startDate, endDate, days },
+      range,
       summary: {
         impressions: imps,
         clicks,
@@ -124,11 +121,8 @@ async function getSummary(request, env) {
 
 async function listCampaigns(request, env) {
   const url = new URL(request.url);
-  const days = Math.max(
-    1,
-    Math.min(365, parseInt(url.searchParams.get("days") || "30", 10)),
-  );
-  const { startDate, endDate } = rangeDays(days);
+  const range = resolveRangeFromQuery(url);
+  const { startDate, endDate } = range;
 
   try {
     const res = await env.DB.prepare(
@@ -172,7 +166,7 @@ async function listCampaigns(request, env) {
         cpl: leads > 0 ? spend / leads : 0,
       };
     });
-    return jsonOk({ range: { startDate, endDate }, campaigns });
+    return jsonOk({ range, campaigns });
   } catch (e) {
     return jsonError(
       500,
@@ -183,11 +177,8 @@ async function listCampaigns(request, env) {
 
 async function listDaily(request, env) {
   const url = new URL(request.url);
-  const days = Math.max(
-    1,
-    Math.min(365, parseInt(url.searchParams.get("days") || "30", 10)),
-  );
-  const { startDate, endDate } = rangeDays(days);
+  const range = resolveRangeFromQuery(url);
+  const { startDate, endDate } = range;
 
   try {
     const res = await env.DB.prepare(
@@ -205,7 +196,7 @@ async function listDaily(request, env) {
       .bind(startDate, endDate)
       .all();
     return jsonOk({
-      range: { startDate, endDate },
+      range,
       rows: (res.results || []).map((r) => ({
         date: r.Date,
         impressions: Number(r.Impressions || 0),
@@ -556,4 +547,52 @@ function rangeDays(days) {
     startDate: startStr < minStart ? minStart : startStr,
     endDate: end,
   };
+}
+
+// 유입통계와 동일한 키: today / 7 / 30 / cur-month / prev-month / all / custom
+// Meta 광고는 KST 기준 광고계정 timezone, 광고 시작일 2026-02-02 클램프
+function resolveRangeFromQuery(url) {
+  const key = String(url.searchParams.get("range") || "30");
+  const minStart = "2026-02-02";
+  const todayStr = kstToday();
+  const yesterdayStr = kstYesterday();
+
+  const clampStart = (s) => (s < minStart ? minStart : s);
+
+  if (key === "today") {
+    return { key, startDate: todayStr, endDate: todayStr };
+  }
+  if (key === "7" || key === "30") {
+    return rangeDays(Number(key));
+  }
+  if (key === "cur-month") {
+    const now = kstNow();
+    const start = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+    return { key, startDate: clampStart(start), endDate: yesterdayStr };
+  }
+  if (key === "prev-month") {
+    const now = kstNow();
+    const prev = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+    );
+    const start = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, "0")}-01`;
+    const lastDay = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0),
+    );
+    const end = lastDay.toISOString().slice(0, 10);
+    return { key, startDate: clampStart(start), endDate: end };
+  }
+  if (key === "all") {
+    return { key, startDate: minStart, endDate: yesterdayStr };
+  }
+  if (key === "custom") {
+    const qsStart = String(url.searchParams.get("start") || "").trim();
+    const qsEnd = String(url.searchParams.get("end") || "").trim();
+    const validDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const startDate = validDate(qsStart) ? clampStart(qsStart) : minStart;
+    const endDate = validDate(qsEnd) ? qsEnd : yesterdayStr;
+    return { key, startDate, endDate };
+  }
+  // fallback: 30일
+  return rangeDays(30);
 }
