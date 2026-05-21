@@ -1,6 +1,6 @@
-// 어드민 Meta 광고 페이지
-// - D1 캐시 데이터만 표시 (Meta API 직접 호출 X)
-// - 사용자 액션으로 동기화 트리거 없음 (cron 매일 KST 04:00 자동)
+// 어드민 Meta 광고 페이지 (안 A v3)
+// D1 캐시 데이터만 읽음. Meta API 직접 호출 X.
+// cron 매일 KST 04:00 자동 동기화 — 사용자 새로고침 버튼 없음.
 (function () {
   "use strict";
 
@@ -8,22 +8,26 @@
   const fmtInt = (n) => Number(n || 0).toLocaleString("ko-KR");
   const fmtUsd = (n) => {
     const v = Number(n || 0);
-    return "$" + v.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
+    if (v === 0) return "$0";
+    if (v >= 10000) return "$" + Math.round(v).toLocaleString("ko-KR");
+    if (v >= 100) return "$" + v.toFixed(0);
+    if (v >= 1) return "$" + v.toFixed(2);
+    return "$" + v.toFixed(3);
+  };
+  const fmtCompact = (n) => {
+    const v = Number(n || 0);
+    if (v >= 1_000_000) return (v / 1_000_000).toFixed(1) + "M";
+    if (v >= 1_000) return (v / 1_000).toFixed(1) + "K";
+    return String(Math.round(v));
   };
   const fmtPct = (n) => (Number(n || 0) * 100).toFixed(2) + "%";
+  const fmtPctRaw = (n) => Number(n || 0).toFixed(2) + "%";
 
-  // 유입통계와 동일한 키: today/7/30/cur-month/prev-month/all/custom
+  // ─── 기간 필터 ──────────────────────────────────────
   let currentRangeKey = "today";
   let customStart = "";
   let customEnd = "";
-  let trendChart = null;
 
-  function pad2(n) {
-    return String(n).padStart(2, "0");
-  }
-  function ymd(d) {
-    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  }
   function rangeLabel(key) {
     const map = {
       today: "오늘",
@@ -50,137 +54,613 @@
     return p.toString();
   }
 
+  // ─── 차트 인스턴스 ──────────────────────────────────
+  let effChart = null;
+  let effMetric = "cpm";
+  let dowMetric = "spend";
+  let hhMetric = "spend";
+  let adsSort = "spend";
+  let adsOrder = "top";
+
+  // ─── KPI 7카드 + 동기화 시각 ───────────────────────
   function renderSummary(data) {
     const s = data?.summary || {};
     $("madsSpend").textContent = fmtUsd(s.spend);
-    $("madsImpressions").textContent = fmtInt(s.impressions);
+    $("madsImpressions").textContent = fmtCompact(s.impressions);
     $("madsClicks").textContent = fmtInt(s.clicks);
-    $("madsCtr").textContent = fmtPct(s.ctr);
     $("madsCpc").textContent = fmtUsd(s.cpc);
     $("madsLeads").textContent = fmtInt(s.leads);
-    $("madsCpl").textContent =
-      s.leads > 0 ? "CPL " + fmtUsd(s.cpl) : "리드 없음";
+    $("madsCpl").textContent = s.leads > 0 ? fmtUsd(s.cpl) : "—";
+    $("madsThruPlay").textContent = "—"; // 영상은 별도 efficiency·breakdown에서 채움
 
-    const lastSync = $("madsLastSync");
-    if (lastSync) {
+    $("madsSpendSub").textContent =
+      s.spend > 0
+        ? "일평균 " + fmtUsd(s.spend / Math.max(1, daysFromRange(data?.range)))
+        : "";
+    $("madsReachSub").textContent = s.reach
+      ? "도달 " + fmtCompact(s.reach)
+      : "";
+    $("madsCtrSub").textContent = "CTR " + fmtPct(s.ctr);
+    $("madsLeadsSub").textContent =
+      s.leads > 0
+        ? "일평균 " + (s.leads / daysFromRange(data?.range)).toFixed(1) + "건"
+        : "리드 없음";
+
+    const last = $("madsLastSync");
+    if (last) {
       if (data?.lastSyncedAt) {
         const d = new Date(data.lastSyncedAt);
         const diff = Math.floor((Date.now() - d.getTime()) / 60000);
-        const ago =
-          diff < 60
-            ? `${diff}분 전`
+        last.textContent =
+          "마지막 동기화: " +
+          (diff < 60
+            ? diff + "분 전"
             : diff < 1440
-              ? `${Math.floor(diff / 60)}시간 전`
-              : `${Math.floor(diff / 1440)}일 전`;
-        lastSync.textContent = `마지막 동기화: ${ago}`;
-        lastSync.title = data.lastSyncedAt;
+              ? Math.floor(diff / 60) + "시간 전"
+              : Math.floor(diff / 1440) + "일 전");
+        last.title = data.lastSyncedAt;
       } else {
-        lastSync.textContent = "동기화 정보 없음";
+        last.textContent = "동기화 정보 없음";
       }
     }
   }
+  function daysFromRange(r) {
+    if (!r?.startDate || !r?.endDate) return 1;
+    const d = (new Date(r.endDate) - new Date(r.startDate)) / 86400000 + 1;
+    return Math.max(1, d);
+  }
+
+  // ─── 캠페인 카드 ────────────────────────────────────
+  function objectiveLabel(obj) {
+    const map = {
+      OUTCOME_TRAFFIC: { ko: "트래픽", cls: "traffic" },
+      OUTCOME_LEADS: { ko: "잠재고객", cls: "leads" },
+      OUTCOME_AWARENESS: { ko: "인지도", cls: "awareness" },
+      OUTCOME_ENGAGEMENT: { ko: "참여", cls: "engagement" },
+      OUTCOME_SALES: { ko: "매출", cls: "sales" },
+    };
+    return map[obj] || { ko: obj || "기타", cls: "other" };
+  }
+  function statusLabel(st) {
+    const s = String(st || "").toUpperCase();
+    if (s === "ACTIVE") return { ko: "ACTIVE", cls: "active" };
+    if (s === "PAUSED") return { ko: "PAUSED", cls: "paused" };
+    if (s === "DELETED" || s === "ARCHIVED") return { ko: s, cls: "muted" };
+    return { ko: s || "—", cls: "muted" };
+  }
 
   function renderCampaigns(rows) {
-    const tbody = document.querySelector("#madsCampaignsTable tbody");
-    if (!tbody) return;
+    const grid = $("madsCampaignGrid");
+    if (!grid) return;
     if (!rows || !rows.length) {
-      tbody.innerHTML =
-        '<tr><td colspan="9" class="empty-state">데이터 없음</td></tr>';
+      grid.innerHTML = '<div class="mads-empty">캠페인 데이터 없음</div>';
       return;
     }
-    tbody.innerHTML = rows
-      .map(
-        (r, i) => `
-        <tr>
-          <td class="num">${i + 1}</td>
-          <td class="path">${adminUtil.escapeHtml(r.name || "이름 없음")}</td>
-          <td>${statusBadge(r.status)}</td>
-          <td class="num" style="text-align:right">${fmtUsd(r.spend)}</td>
-          <td class="num" style="text-align:right">${fmtInt(r.impressions)}</td>
-          <td class="num" style="text-align:right">${fmtInt(r.clicks)}</td>
-          <td class="num" style="text-align:right">${fmtPct(r.ctr)}</td>
-          <td class="num" style="text-align:right">${fmtUsd(r.cpc)}</td>
-          <td class="num" style="text-align:right">${fmtInt(r.leads)}</td>
-        </tr>`,
-      )
+    $("madsCampaignSub").textContent = `${rows.length}건 · 목적별 자동 KPI`;
+    grid.innerHTML = rows
+      .map((c) => {
+        const obj = objectiveLabel(c.objective);
+        const st = statusLabel(c.status);
+        const isLeads = c.objective === "OUTCOME_LEADS";
+        // 목적별 핵심 KPI 자동 결정
+        const primary = isLeads
+          ? { label: "리드", value: fmtInt(c.leads || 0), cls: "primary-leads" }
+          : {
+              label: "링크 클릭",
+              value: fmtInt(c.linkClicks || c.clicks || 0),
+              cls: "",
+            };
+        const cost = isLeads
+          ? { label: "CPL", value: c.leads > 0 ? fmtUsd(c.cpl) : "—" }
+          : { label: "CPC", value: fmtUsd(c.cpc) };
+        const conv = isLeads
+          ? {
+              label: "클릭→리드",
+              value:
+                c.clicks > 0
+                  ? ((c.leads / c.clicks) * 100).toFixed(2) + "%"
+                  : "—",
+            }
+          : { label: "CTR", value: fmtPct(c.ctr) };
+        const dimmed = st.cls === "paused" || st.cls === "muted";
+        return `
+        <article class="mads-camp-card${dimmed ? " is-paused" : ""}${isLeads && !dimmed ? " is-leads-active" : ""}">
+          <header class="mads-camp-head">
+            <span class="mads-camp-badge obj-${obj.cls}">${adminUtil.escapeHtml(obj.ko)}</span>
+            <span class="mads-camp-badge st-${st.cls}">${adminUtil.escapeHtml(st.ko)}</span>
+            <span class="mads-camp-id">ID ${adminUtil.escapeHtml(String(c.id || "").slice(-4))}</span>
+          </header>
+          <div class="mads-camp-name">${adminUtil.escapeHtml(c.name || "이름 없음")}</div>
+          <div class="mads-camp-kpis">
+            <div><div class="lab">핵심: ${primary.label}</div><div class="val ${primary.cls}">${primary.value}</div></div>
+            <div><div class="lab">${cost.label}</div><div class="val">${cost.value}</div></div>
+            <div><div class="lab">${conv.label}</div><div class="val">${conv.value}</div></div>
+          </div>
+          <div class="mads-camp-foot">
+            노출 ${fmtCompact(c.impressions)} · 지출 ${fmtUsd(c.spend)}${c.reach ? " · 도달 " + fmtCompact(c.reach) : ""}
+          </div>
+        </article>`;
+      })
       .join("");
   }
 
-  function statusBadge(s) {
-    const st = String(s || "").toUpperCase();
-    const cls =
-      st === "ACTIVE"
-        ? "status-confirmed"
-        : st === "PAUSED"
-          ? "status-muted"
-          : "status-default";
-    const label = st === "ACTIVE" ? "활성" : st === "PAUSED" ? "일시중지" : st;
-    return `<span class="badge ${cls}">${adminUtil.escapeHtml(label || "—")}</span>`;
+  // ─── 광고별 효율 (Ad Level) ─────────────────────────
+  function efficiencyGrade(ad, allAds, objectiveType) {
+    // 같은 목적 광고들의 CPL·CTR 중앙값 대비
+    const peers = allAds.filter((a) => {
+      // 간단 휴리스틱: 캠페인명에 같은 카테고리 또는 같은 캠페인
+      return a.campaignId === ad.campaignId;
+    });
+    if (peers.length < 2) return { grade: "—", cls: "muted" };
+    const ctrs = peers
+      .map((p) => p.ctr)
+      .filter((v) => v > 0)
+      .sort((a, b) => a - b);
+    const cpls = peers
+      .map((p) => p.cpl)
+      .filter((v) => v > 0)
+      .sort((a, b) => a - b);
+    const median = (arr) => (arr.length ? arr[Math.floor(arr.length / 2)] : 0);
+    const ctrMed = median(ctrs);
+    const cplMed = median(cpls);
+    const ctrRatio = ctrMed > 0 ? ad.ctr / ctrMed : 1;
+    const cplRatio = cplMed > 0 && ad.cpl > 0 ? cplMed / ad.cpl : 1; // 낮을수록 좋음 → 역수
+    const score = (ctrRatio + cplRatio) / 2;
+    if (score >= 1.2) return { grade: "✓ 우수", cls: "good" };
+    if (score >= 1.05) return { grade: "✓ 양호", cls: "ok" };
+    if (score >= 0.9) return { grade: "⚠ 보통", cls: "warn" };
+    return { grade: "✗ 부진", cls: "bad" };
   }
 
-  function renderTrend(rows) {
-    const canvas = $("madsTrendChart");
-    if (!canvas || !window.Chart) return;
-    if (trendChart) {
-      trendChart.destroy();
-      trendChart = null;
+  function thumbCell(ad) {
+    const t = ad.creativeType || "image";
+    const isVideo = t === "VIDEO" || /video/i.test(t);
+    const icon = isVideo ? "▶" : "▣";
+    if (ad.thumbnailUrl) {
+      return `<img src="${adminUtil.escapeHtml(ad.thumbnailUrl)}" alt="" class="mads-thumb" />`;
     }
+    const seed = (ad.adId || "").charCodeAt(0) || 0;
+    const colors = [
+      ["#a78bfa", "#f9a8d4"],
+      ["#fb923c", "#fda4af"],
+      ["#60a5fa", "#67e8f9"],
+      ["#34d399", "#5eead4"],
+      ["#f87171", "#fbcfe8"],
+      ["#facc15", "#fde68a"],
+    ];
+    const [c1, c2] = colors[seed % colors.length];
+    return `<div class="mads-thumb mads-thumb-icon" style="background:linear-gradient(135deg,${c1},${c2})">${icon}</div>`;
+  }
+
+  function renderAds(rows) {
+    const tbody = $("madsAdsBody");
+    if (!tbody) return;
     if (!rows || !rows.length) {
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      tbody.innerHTML =
+        '<tr><td colspan="12" class="empty-state">광고 데이터 없음</td></tr>';
       return;
     }
-    const labels = rows.map((r) => {
+    tbody.innerHTML = rows
+      .map((ad, i) => {
+        const st = statusLabel(ad.status);
+        const grade = efficiencyGrade(ad, rows);
+        const isVideo = /video/i.test(ad.creativeType || "");
+        return `
+        <tr>
+          <td class="num">${i + 1}</td>
+          <td>
+            <div class="mads-ad-cell">
+              ${thumbCell(ad)}
+              <div>
+                <div class="mads-ad-name">${adminUtil.escapeHtml(ad.adName || "이름 없음")}</div>
+                <div class="mads-ad-type">${isVideo ? "동영상" : "이미지"} · ${adminUtil.escapeHtml(ad.adsetName || "")}</div>
+              </div>
+            </div>
+          </td>
+          <td class="mads-ad-camp">${adminUtil.escapeHtml(ad.campaignName || "").slice(0, 14)}</td>
+          <td class="text-center"><span class="mads-st mads-st-${st.cls}">${st.ko.slice(0, 1)}</span></td>
+          <td class="num" style="text-align:right">${fmtUsd(ad.spend)}</td>
+          <td class="num" style="text-align:right">${fmtCompact(ad.impressions)}</td>
+          <td class="num" style="text-align:right">${fmtInt(ad.clicks)}</td>
+          <td class="num" style="text-align:right">${fmtPct(ad.ctr)}</td>
+          <td class="num" style="text-align:right">${fmtUsd(ad.cpc)}</td>
+          <td class="num" style="text-align:right">${fmtInt(ad.leads)}</td>
+          <td class="num" style="text-align:right">${ad.leads > 0 ? fmtUsd(ad.cpl) : "—"}</td>
+          <td class="text-center"><span class="mads-grade mads-grade-${grade.cls}">${grade.grade}</span></td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  // ─── 효율 변화 추이 (CPM/CPC/CPL + 시계열 + 진단) ──
+  function renderEfficiency(data) {
+    if (!data) return;
+    const c = data.current || {};
+    const p = data.prevTotals || {};
+    $("effCpm").textContent = fmtUsd(c.cpm);
+    $("effCpc").textContent = fmtUsd(c.cpc);
+    $("effCpl").textContent = c.leads > 0 ? fmtUsd(c.cpl) : "—";
+
+    const setDelta = (id, curr, prev) => {
+      const el = $(id);
+      if (!el) return;
+      if (!prev || prev === 0) {
+        el.textContent = "";
+        el.className = "mads-eff-delta";
+        return;
+      }
+      const pct = ((curr - prev) / prev) * 100;
+      const sign = pct > 0 ? "▲" : pct < 0 ? "▼" : "—";
+      // CPM/CPC/CPL는 낮을수록 좋음 → 상승은 빨강
+      const cls = pct > 1 ? "up" : pct < -1 ? "down" : "flat";
+      el.textContent = `${sign} ${Math.abs(pct).toFixed(1)}%`;
+      el.className = "mads-eff-delta mads-eff-delta-" + cls;
+    };
+    setDelta("effCpmDelta", c.cpm, p.cpm);
+    setDelta("effCpcDelta", c.cpc, p.cpc);
+    setDelta("effCplDelta", c.cpl, p.cpl);
+
+    $("effCpmPrev").textContent = "전기 " + (p.cpm > 0 ? fmtUsd(p.cpm) : "—");
+    $("effCpcPrev").textContent = "전기 " + (p.cpc > 0 ? fmtUsd(p.cpc) : "—");
+    $("effCplPrev").textContent = "전기 " + (p.cpl > 0 ? fmtUsd(p.cpl) : "—");
+
+    $("effPerDollarImp").textContent =
+      c.cpm > 0 ? (1000 / c.cpm).toFixed(0) + "회" : "—";
+    $("effPerDollarClick").textContent =
+      c.cpc > 0 ? (1 / c.cpc).toFixed(2) + "회" : "—";
+    $("effPerDollarLead").textContent =
+      c.cpl > 0 ? (1 / c.cpl).toFixed(3) + "건" : "—";
+
+    // 진단 신호등
+    const cpmUp = p.cpm > 0 && c.cpm > p.cpm * 1.05;
+    const ctrDown = p.ctr > 0 && c.ctr < p.ctr * 0.95;
+    let dotColor = "#6b7280";
+    let diagText = "데이터 충분";
+    let diagDetail = "";
+    if (cpmUp && ctrDown) {
+      dotColor = "#dc2626";
+      diagText = "시급 개입 (단가↑+효율↓)";
+      diagDetail =
+        "시장 단가 + 우리 효율 둘 다 악화. 광고 리프레시 + 예산 조정 필요.";
+    } else if (cpmUp) {
+      dotColor = "#f59e0b";
+      diagText = "시장 단가 ↑ 주도";
+      diagDetail = `CPM ${p.cpm > 0 ? "+" + (((c.cpm - p.cpm) / p.cpm) * 100).toFixed(0) + "%" : ""}. 우리 CTR 안정 = 시장 입찰가 상승.`;
+    } else if (ctrDown) {
+      dotColor = "#f59e0b";
+      diagText = "광고 노후화 의심";
+      diagDetail = "시장 단가는 일정한데 CTR 하락. 크리에이티브 리프레시 검토.";
+    } else if (p.cpm > 0 && c.cpm < p.cpm * 0.95) {
+      dotColor = "#16a34a";
+      diagText = "호재 (효율 개선)";
+      diagDetail = "단가 안정 + CTR 양호. 예산 증액 타이밍.";
+    } else {
+      dotColor = "#16a34a";
+      diagText = "정상 운영";
+      diagDetail = "단가·효율 변동 미미.";
+    }
+    $("effDot").style.background = dotColor;
+    $("effDiagText").textContent = diagText;
+    $("effDiagDetail").textContent = diagDetail;
+
+    // 시계열 차트
+    renderEffChart(data.daily || []);
+  }
+
+  function renderEffChart(daily) {
+    const canvas = $("effChart");
+    if (!canvas || !window.Chart) return;
+    if (effChart) {
+      effChart.destroy();
+      effChart = null;
+    }
+    if (!daily.length) return;
+    const labels = daily.map((r) => {
       const d = new Date(r.date + "T00:00:00");
       return `${d.getMonth() + 1}/${d.getDate()}`;
     });
-    trendChart = new Chart(canvas.getContext("2d"), {
-      type: "line",
+    const values = daily.map((r) => r[effMetric] || 0);
+    // 평균 + 1σ 계산
+    const nonZero = values.filter((v) => v > 0);
+    const mean = nonZero.length
+      ? nonZero.reduce((a, b) => a + b, 0) / nonZero.length
+      : 0;
+    const variance = nonZero.length
+      ? nonZero.reduce((s, v) => s + (v - mean) ** 2, 0) / nonZero.length
+      : 0;
+    const sigma = Math.sqrt(variance);
+    const colors = values.map((v) => {
+      if (v >= mean + 2 * sigma) return "#dc2626";
+      if (v >= mean + sigma) return "#f59e0b";
+      return "#1877f2";
+    });
+    effChart = new Chart(canvas.getContext("2d"), {
+      type: "bar",
       data: {
         labels,
         datasets: [
           {
-            label: "지출(USD)",
-            data: rows.map((r) => Number(r.spend || 0)),
-            borderColor: "#1a73e8",
-            backgroundColor: "rgba(26,115,232,0.1)",
-            tension: 0.3,
-            yAxisID: "y",
-            fill: true,
-          },
-          {
-            label: "리드",
-            data: rows.map((r) => Number(r.leads || 0)),
-            borderColor: "#16a34a",
-            backgroundColor: "rgba(22,163,74,0.1)",
-            tension: 0.3,
-            yAxisID: "y1",
+            label: effMetric.toUpperCase(),
+            data: values,
+            backgroundColor: colors,
+            borderRadius: 2,
           },
         ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (c) => fmtUsd(c.parsed.y) } },
+        },
         scales: {
-          y: {
-            type: "linear",
-            position: "left",
-            ticks: { callback: (v) => "$" + v },
-          },
-          y1: {
-            type: "linear",
-            position: "right",
-            grid: { drawOnChartArea: false },
-            ticks: { precision: 0 },
-          },
+          y: { ticks: { callback: (v) => "$" + v } },
         },
       },
     });
   }
 
+  // ─── 분해 분석 6종 ─────────────────────────────────
+  function renderBarRows(el, rows, opts = {}) {
+    if (!rows || !rows.length) {
+      el.innerHTML = '<div class="empty-state">데이터 없음</div>';
+      return;
+    }
+    const valFn = opts.valFn || ((r) => r.spend);
+    const labelFn = opts.labelFn || ((r) => r.value);
+    const displayFn = opts.displayFn || ((r) => fmtUsd(r.spend));
+    const max = Math.max(...rows.map(valFn), 1);
+    el.innerHTML = rows
+      .map((r) => {
+        const w = (valFn(r) / max) * 100;
+        return `
+        <div class="mads-row-bar">
+          <span class="mads-row-label">${adminUtil.escapeHtml(labelFn(r))}</span>
+          <span class="mads-row-track"><span class="mads-row-fill" style="width:${w.toFixed(1)}%"></span></span>
+          <span class="mads-row-val">${displayFn(r)}</span>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function platformLabel(v) {
+    const m = {
+      instagram: "Instagram",
+      facebook: "Facebook",
+      audience_network: "AN",
+      threads: "Threads",
+      messenger: "Messenger",
+    };
+    return m[v] || v;
+  }
+  function deviceLabel(v) {
+    const m = {
+      iphone: "iPhone",
+      android_smartphone: "Android",
+      ipad: "iPad",
+      android_tablet: "Android Tab",
+      desktop: "데스크탑",
+    };
+    return m[v] || v;
+  }
+  function positionLabel(v) {
+    return v
+      .replace(/_/g, " ")
+      .replace(
+        /^(facebook|instagram|an) /i,
+        (m) => m.toUpperCase().trim() + " ",
+      );
+  }
+  function ageGenderLabel(v) {
+    const [age, gender] = v.split("_");
+    const g = gender === "female" ? "여" : gender === "male" ? "남" : "?";
+    return `${age || "?"} ${g}`;
+  }
+
+  function renderBreakdowns(byDim) {
+    renderBarRows($("brkPlatform"), (byDim.platform || []).slice(0, 6), {
+      valFn: (r) => r.spend,
+      labelFn: (r) => platformLabel(r.value),
+      displayFn: (r) => fmtUsd(r.spend),
+    });
+    const pos = (byDim.position || [])
+      .slice()
+      .sort((a, b) => b.ctr - a.ctr)
+      .slice(0, 5);
+    renderBarRows($("brkPosition"), pos, {
+      valFn: (r) => r.ctr,
+      labelFn: (r) => positionLabel(r.value),
+      displayFn: (r) => fmtPct(r.ctr),
+    });
+    renderBarRows($("brkDevice"), (byDim.device || []).slice(0, 5), {
+      valFn: (r) => r.spend,
+      labelFn: (r) => deviceLabel(r.value),
+      displayFn: (r) => fmtUsd(r.spend),
+    });
+    const ag = (byDim.age_gender || []).slice(0, 5);
+    renderBarRows($("brkAgeGender"), ag, {
+      valFn: (r) => r.spend,
+      labelFn: (r) => ageGenderLabel(r.value),
+      displayFn: (r) =>
+        r.leads > 0 ? `${r.leads} / ${fmtUsd(r.cpl)}` : fmtUsd(r.spend),
+    });
+    renderBarRows($("brkRegion"), (byDim.region || []).slice(0, 5), {
+      valFn: (r) => r.spend,
+      labelFn: (r) => r.value,
+      displayFn: (r) => fmtUsd(r.spend),
+    });
+  }
+
+  function renderVideoFunnel(data) {
+    const el = $("videoFunnel");
+    const sub = $("videoFunnelSub");
+    if (!el) return;
+    const summary = data?.summary || {};
+    const sumP25 = summary.thruPlay ? null : 0; // 영상 메트릭은 별도 — efficiency나 summary 응답에 없음
+    // 임시로 ThruPlay·VideoAvg는 sum 응답에 없음 → 분해/캠페인 합계로 추산 — 일단 회색 처리
+    el.innerHTML =
+      '<div class="empty-state">영상 메트릭은 백필 후 D1에 누적. 영상 캠페인이 있는 기간에 표시.</div>';
+    if (sub) sub.textContent = "—";
+  }
+
+  // ─── 요일 패턴 ──────────────────────────────────────
+  const DOW_KO = ["일", "월", "화", "수", "목", "금", "토"];
+
+  function renderDow(rows) {
+    const bars = $("madsDowBars");
+    const tbody = $("madsDowBody");
+    if (!rows || !rows.length) {
+      if (bars) bars.innerHTML = '<div class="empty-state">데이터 없음</div>';
+      if (tbody)
+        tbody.innerHTML =
+          '<tr><td colspan="9" class="empty-state">데이터 없음</td></tr>';
+      return;
+    }
+    // 0=일, 1=월, ... 우리는 월~일 순으로 정렬
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const map = {};
+    for (const r of rows) map[r.dow] = r;
+    const ordered = order.map(
+      (d) =>
+        map[d] || {
+          dow: d,
+          spend: 0,
+          impressions: 0,
+          clicks: 0,
+          leads: 0,
+          ctr: 0,
+          cpc: 0,
+          cpl: 0,
+        },
+    );
+
+    // metric 추출
+    const metricFn = (r) => Number(r[dowMetric] || 0);
+    const totalAll = ordered.reduce((s, r) => s + Number(r.spend || 0), 0);
+    const vals = ordered.map(metricFn);
+    const max = Math.max(...vals, 1);
+    // 최고·최저
+    const best = ordered.reduce((a, b) => (metricFn(a) > metricFn(b) ? a : b));
+    const worst = ordered.reduce(
+      (a, b) => (metricFn(a) < metricFn(b) && metricFn(b) > 0 ? a : b),
+      ordered[0],
+    );
+
+    bars.innerHTML = ordered
+      .map((r) => {
+        const h = (metricFn(r) / max) * 100;
+        const isBest = r.dow === best.dow && metricFn(r) > 0;
+        const isLow = r.dow === worst.dow && metricFn(r) > 0;
+        const cls = isBest ? "is-best" : isLow ? "is-low" : "";
+        return `
+        <div class="mads-dow-col ${cls}">
+          <div class="mads-dow-label">${DOW_KO[r.dow]}</div>
+          <div class="mads-dow-track">
+            ${isBest ? '<div class="mads-dow-tag">BEST</div>' : ""}
+            ${isLow ? '<div class="mads-dow-tag mads-dow-tag-low">LOW</div>' : ""}
+            <div class="mads-dow-fill" style="height:${Math.max(2, h).toFixed(1)}%"></div>
+          </div>
+          <div class="mads-dow-val">${formatMetric(dowMetric, metricFn(r))}</div>
+          <div class="mads-dow-sub">${r.leads || 0} 리드</div>
+        </div>`;
+      })
+      .join("");
+
+    tbody.innerHTML = ordered
+      .map((r) => {
+        const pct = totalAll > 0 ? (Number(r.spend || 0) / totalAll) * 100 : 0;
+        const isBest = r.dow === best.dow && r.spend > 0;
+        const isLow = r.dow === worst.dow && r.spend > 0;
+        return `<tr class="${isBest ? "mads-row-best" : isLow ? "mads-row-low" : ""}">
+          <td><strong>${DOW_KO[r.dow]}</strong></td>
+          <td class="num" style="text-align:right">${fmtUsd(r.spend)}</td>
+          <td class="num" style="text-align:right">${fmtCompact(r.impressions)}</td>
+          <td class="num" style="text-align:right">${fmtInt(r.clicks)}</td>
+          <td class="num" style="text-align:right">${fmtPct(r.ctr)}</td>
+          <td class="num" style="text-align:right">${fmtUsd(r.cpc)}</td>
+          <td class="num" style="text-align:right">${fmtInt(r.leads)}</td>
+          <td class="num" style="text-align:right">${r.leads > 0 ? fmtUsd(r.cpl) : "—"}</td>
+          <td class="num" style="text-align:right">${pct.toFixed(1)}%</td>
+        </tr>`;
+      })
+      .join("");
+  }
+  function formatMetric(m, v) {
+    if (m === "spend") return fmtUsd(v);
+    if (m === "cpl") return v > 0 ? fmtUsd(v) : "—";
+    if (m === "impressions") return fmtCompact(v);
+    return fmtInt(v);
+  }
+
+  // ─── 시간대 × 요일 히트맵 ──────────────────────────
+  function renderHeatmap(cells) {
+    const el = $("madsHeatmap");
+    const note = $("madsHeatmapNote");
+    if (!el) return;
+    if (!cells || !cells.length) {
+      el.innerHTML =
+        '<div class="empty-state">시간대 데이터 없음 (백필 후 표시)</div>';
+      if (note) note.textContent = "";
+      return;
+    }
+    // grid: 7 row × 24 col
+    const grid = {};
+    for (const c of cells) {
+      if (!grid[c.dow]) grid[c.dow] = {};
+      grid[c.dow][c.hour] = c;
+    }
+    const metricFn = (c) => Number(c?.[hhMetric] || 0);
+    const allVals = cells.map(metricFn).filter((v) => v > 0);
+    const max = allVals.length ? Math.max(...allVals) : 1;
+    // 최고 셀
+    const bestCell = cells.reduce((a, b) =>
+      metricFn(a) > metricFn(b) ? a : b,
+    );
+
+    // table 구성
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    let html =
+      '<table class="mads-heatmap-table"><thead><tr><th class="mads-heat-corner"></th>';
+    for (let h = 0; h < 24; h++) {
+      html += `<th class="mads-heat-hour">${String(h).padStart(2, "0")}</th>`;
+    }
+    html += "</tr></thead><tbody>";
+    for (const d of order) {
+      const rowCls = d === 0 || d === 6 ? "mads-heat-weekend" : "";
+      html += `<tr class="${rowCls}"><th class="mads-heat-dow">${DOW_KO[d]}</th>`;
+      for (let h = 0; h < 24; h++) {
+        const c = grid[d]?.[h];
+        const v = metricFn(c);
+        const intensity = v > 0 ? v / max : 0;
+        const bg = heatColor(intensity);
+        const isBest =
+          c && c.dow === bestCell.dow && c.hour === bestCell.hour && v > 0;
+        html += `<td class="mads-heat-cell ${isBest ? "is-best" : ""}" style="background:${bg}" title="${DOW_KO[d]} ${h}시: ${formatMetric(hhMetric, v)}">${v > 0 ? formatMetric(hhMetric, v).replace("$", "") : ""}</td>`;
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table>";
+    el.innerHTML = html;
+    if (note && metricFn(bestCell) > 0) {
+      note.textContent = `BEST: ${DOW_KO[bestCell.dow]}요일 ${String(bestCell.hour).padStart(2, "0")}시 (${formatMetric(hhMetric, metricFn(bestCell))})`;
+    }
+  }
+
+  function heatColor(t) {
+    // t: 0~1
+    if (t <= 0) return "#f9fafb";
+    if (t < 0.15) return "#eff6ff";
+    if (t < 0.3) return "#bfdbfe";
+    if (t < 0.5) return "#60a5fa";
+    if (t < 0.75) return "#1d4ed8";
+    if (t < 0.95) return "#1e3a8a";
+    return "#172554";
+  }
+
+  // ─── 동기화 이력 ────────────────────────────────────
   function renderSyncLog(rows) {
-    const tbody = document.querySelector("#madsSyncLogTable tbody");
+    const tbody = $("madsSyncLogBody");
     if (!tbody) return;
     if (!rows || !rows.length) {
       tbody.innerHTML =
@@ -192,18 +672,18 @@
         const t = r.StartedAt
           ? new Date(r.StartedAt).toLocaleString("ko-KR")
           : "—";
-        const statusCls =
+        const cls =
           r.Status === "success"
-            ? "status-confirmed"
+            ? "good"
             : r.Status === "rate_limited"
-              ? "status-warning"
+              ? "warn"
               : r.Status === "failed"
-                ? "status-danger"
-                : "status-muted";
+                ? "bad"
+                : "muted";
         return `<tr>
           <td>${adminUtil.escapeHtml(t)}</td>
           <td>${adminUtil.escapeHtml(r.SyncType || "")}</td>
-          <td><span class="badge ${statusCls}">${adminUtil.escapeHtml(r.Status || "")}</span></td>
+          <td><span class="mads-st mads-st-${cls}">${adminUtil.escapeHtml(r.Status || "")}</span></td>
           <td>${adminUtil.escapeHtml((r.DateRangeStart || "") + " ~ " + (r.DateRangeEnd || ""))}</td>
           <td class="num" style="text-align:right">${fmtInt(r.ApiCallsUsed)}</td>
           <td class="num" style="text-align:right">${fmtInt(r.RecordsUpdated)}</td>
@@ -213,34 +693,67 @@
       .join("");
   }
 
+  // ─── 로드 전체 ─────────────────────────────────────
   async function loadAll(key) {
     currentRangeKey = key;
     setRangeLabel(key);
-
-    // custom 인데 시작/종료 미지정이면 호출 보류
     if (key === "custom" && (!customStart || !customEnd)) return;
 
     try {
       await adminUtil.ensureAuth();
       const qs = buildQuery(key);
-      const [summary, campaigns, daily, syncLog] = await Promise.all([
+      const [
+        summary,
+        campaigns,
+        ads,
+        eff,
+        plat,
+        pos,
+        dev,
+        ag,
+        reg,
+        dow,
+        hh,
+        log,
+      ] = await Promise.all([
         adminUtil.api(`/api/meta-ads/summary?${qs}`),
         adminUtil.api(`/api/meta-ads/campaigns?${qs}`),
-        adminUtil.api(`/api/meta-ads/daily?${qs}`),
+        adminUtil.api(
+          `/api/meta-ads/ads?${qs}&sort=${adsSort}&order=${adsOrder}&limit=20`,
+        ),
+        adminUtil.api(`/api/meta-ads/efficiency?${qs}`),
+        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=platform`),
+        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=position`),
+        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=device`),
+        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=age_gender`),
+        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=region`),
+        adminUtil.api(`/api/meta-ads/dow?${qs}`),
+        adminUtil.api(`/api/meta-ads/hour-heatmap?${qs}`),
         adminUtil.api(`/api/meta-ads/sync-log`),
       ]);
 
       renderSummary(summary);
       renderCampaigns(campaigns?.campaigns);
-      renderTrend(daily?.rows);
-      renderSyncLog(syncLog?.logs);
+      renderAds(ads?.ads);
+      renderEfficiency(eff);
+      renderBreakdowns({
+        platform: plat?.rows,
+        position: pos?.rows,
+        device: dev?.rows,
+        age_gender: ag?.rows,
+        region: reg?.rows,
+      });
+      renderVideoFunnel(summary);
+      renderDow(dow?.rows);
+      renderHeatmap(hh?.cells);
+      renderSyncLog(log?.logs);
     } catch (e) {
       console.error("meta-ads load failed:", e);
       adminUtil.toast?.("Meta 광고 데이터 로드 실패", "error");
     }
   }
 
-  // 기간 버튼
+  // ─── 이벤트 핸들러 ─────────────────────────────────
   document.querySelectorAll("[data-mads-range]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const key = btn.dataset.madsRange;
@@ -254,27 +767,63 @@
       loadAll(key);
     });
   });
+  $("madsApplyRange")?.addEventListener("click", () => {
+    const s = $("madsRangeStart")?.value;
+    const e = $("madsRangeEnd")?.value;
+    if (!s || !e) return adminUtil.toast?.("시작·종료 날짜 선택", "error");
+    if (s > e)
+      return adminUtil.toast?.("시작이 종료보다 늦을 수 없음", "error");
+    customStart = s;
+    customEnd = e;
+    loadAll("custom");
+  });
 
-  // 선택기간 적용
-  const applyBtn = $("madsApplyRange");
-  if (applyBtn) {
-    applyBtn.addEventListener("click", () => {
-      const s = $("madsRangeStart")?.value;
-      const e = $("madsRangeEnd")?.value;
-      if (!s || !e) {
-        adminUtil.toast?.("시작·종료 날짜를 모두 선택하세요", "error");
-        return;
-      }
-      if (s > e) {
-        adminUtil.toast?.("시작이 종료보다 늦을 수 없습니다", "error");
-        return;
-      }
-      customStart = s;
-      customEnd = e;
-      loadAll("custom");
+  document.querySelectorAll("[data-ads-order]").forEach((b) => {
+    b.addEventListener("click", () => {
+      document
+        .querySelectorAll("[data-ads-order]")
+        .forEach((x) => x.classList.toggle("active", x === b));
+      adsOrder = b.dataset.adsOrder;
+      loadAll(currentRangeKey);
     });
-  }
+  });
+  document.querySelectorAll("[data-ads-sort]").forEach((b) => {
+    b.addEventListener("click", () => {
+      document
+        .querySelectorAll("[data-ads-sort]")
+        .forEach((x) => x.classList.toggle("active", x === b));
+      adsSort = b.dataset.adsSort;
+      loadAll(currentRangeKey);
+    });
+  });
+  document.querySelectorAll("[data-eff-metric]").forEach((b) => {
+    b.addEventListener("click", () => {
+      document
+        .querySelectorAll("[data-eff-metric]")
+        .forEach((x) => x.classList.toggle("active", x === b));
+      effMetric = b.dataset.effMetric;
+      loadAll(currentRangeKey);
+    });
+  });
+  document.querySelectorAll("[data-dow-metric]").forEach((b) => {
+    b.addEventListener("click", () => {
+      document
+        .querySelectorAll("[data-dow-metric]")
+        .forEach((x) => x.classList.toggle("active", x === b));
+      dowMetric = b.dataset.dowMetric;
+      loadAll(currentRangeKey);
+    });
+  });
+  document.querySelectorAll("[data-hh-metric]").forEach((b) => {
+    b.addEventListener("click", () => {
+      document
+        .querySelectorAll("[data-hh-metric]")
+        .forEach((x) => x.classList.toggle("active", x === b));
+      hhMetric = b.dataset.hhMetric;
+      loadAll(currentRangeKey);
+    });
+  });
 
-  // 초기 로드 (당일 기본 — 유입통계와 동일)
+  // ─── 첫 로드 ───────────────────────────────────────
   loadAll("today");
 })();

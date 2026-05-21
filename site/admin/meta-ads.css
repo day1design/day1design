@@ -1,0 +1,593 @@
+/* Meta 광고 어드민 페이지 스타일 */
+
+/* KPI 7카드 */
+.kpi-grid.kpi-grid-7 {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+@media (max-width: 1280px) {
+  .kpi-grid.kpi-grid-7 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+@media (max-width: 860px) {
+  .kpi-grid.kpi-grid-7 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 섹션 공통 */
+.mads-section {
+  margin-bottom: 18px;
+}
+.mads-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.mads-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text-muted);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.mads-section-sub {
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+.mads-section-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.mads-toggle-group {
+  display: inline-flex;
+  background: #f3f4f6;
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+.mads-toggle {
+  padding: 5px 11px;
+  font-size: 11px;
+  border: 0;
+  background: transparent;
+  color: var(--c-text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.mads-toggle.active {
+  background: #fff;
+  color: var(--c-text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.mads-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+.mads-help {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f3f4f6;
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+
+/* 캠페인 카드 */
+.mads-campaign-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (max-width: 860px) {
+  .mads-campaign-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.mads-camp-card {
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mads-camp-card.is-leads-active {
+  box-shadow: inset 0 0 0 2px #d1fae5;
+}
+.mads-camp-card.is-paused {
+  opacity: 0.6;
+}
+.mads-camp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mads-camp-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+.mads-camp-badge.obj-traffic {
+  background: #ddd6fe;
+  color: #5b21b6;
+}
+.mads-camp-badge.obj-leads {
+  background: #d1fae5;
+  color: #065f46;
+}
+.mads-camp-badge.obj-awareness {
+  background: #fef3c7;
+  color: #92400e;
+}
+.mads-camp-badge.obj-engagement {
+  background: #fce7f3;
+  color: #9d174d;
+}
+.mads-camp-badge.obj-sales {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.mads-camp-badge.obj-other {
+  background: #f1f5f9;
+  color: #475569;
+}
+.mads-camp-badge.st-active {
+  background: #16a34a;
+  color: #fff;
+}
+.mads-camp-badge.st-paused {
+  background: #6b7280;
+  color: #fff;
+}
+.mads-camp-badge.st-muted {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+.mads-camp-id {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--c-text-muted);
+}
+.mads-camp-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-text);
+}
+.mads-camp-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.mads-camp-kpis .lab {
+  font-size: 10px;
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+  letter-spacing: 0.3px;
+}
+.mads-camp-kpis .val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--c-text);
+  letter-spacing: -0.3px;
+}
+.mads-camp-kpis .val.primary-leads {
+  color: #15803d;
+}
+.mads-camp-foot {
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+
+/* 광고별 표 */
+.mads-ads-table {
+  font-size: 12px;
+}
+.mads-ads-table th {
+  font-size: 10px;
+}
+.mads-ad-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mads-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  background: #f3f4f6;
+  object-fit: cover;
+  display: block;
+}
+.mads-thumb-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+}
+.mads-ad-name {
+  font-weight: 500;
+  font-size: 12px;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mads-ad-type {
+  font-size: 10px;
+  color: var(--c-text-muted);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mads-ad-camp {
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+.mads-st {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  color: #fff;
+}
+.mads-st-active {
+  background: #16a34a;
+}
+.mads-st-paused {
+  background: #6b7280;
+}
+.mads-st-muted {
+  background: #d1d5db;
+}
+.mads-st-good {
+  background: #16a34a;
+}
+.mads-st-warn {
+  background: #f59e0b;
+}
+.mads-st-bad {
+  background: #dc2626;
+}
+.mads-grade {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.mads-grade-good {
+  background: #16a34a;
+  color: #fff;
+}
+.mads-grade-ok {
+  background: #84cc16;
+  color: #fff;
+}
+.mads-grade-warn {
+  background: #eab308;
+  color: #fff;
+}
+.mads-grade-bad {
+  background: #dc2626;
+  color: #fff;
+}
+.mads-grade-muted {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+/* 효율 변화 추이 */
+.mads-eff-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+@media (max-width: 980px) {
+  .mads-eff-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.mads-eff-card {
+  padding: 10px 14px;
+  border-right: 1px solid var(--c-border);
+}
+.mads-eff-card:last-child {
+  border-right: 0;
+}
+.mads-eff-label {
+  font-size: 10px;
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+}
+.mads-eff-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.mads-eff-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--c-text);
+  letter-spacing: -0.5px;
+}
+.mads-eff-delta {
+  font-size: 11px;
+  font-weight: 600;
+}
+.mads-eff-delta-up {
+  color: #dc2626;
+}
+.mads-eff-delta-down {
+  color: #16a34a;
+}
+.mads-eff-delta-flat {
+  color: var(--c-text-muted);
+}
+.mads-eff-prev {
+  font-size: 10px;
+  color: var(--c-text-muted);
+  margin-bottom: 6px;
+}
+.mads-eff-sub-label {
+  font-size: 10px;
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+.mads-eff-secondary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text);
+}
+.mads-eff-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mads-eff-diag-light {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mads-eff-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6b7280;
+}
+.mads-eff-diag-detail {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  line-height: 1.5;
+}
+
+/* 분해 그리드 */
+.mads-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 1100px) {
+  .mads-breakdown-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 700px) {
+  .mads-breakdown-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.mads-row-bar {
+  display: grid;
+  grid-template-columns: 100px 1fr 80px;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  padding: 5px 0;
+}
+.mads-row-label {
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mads-row-track {
+  background: #f3f4f6;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.mads-row-fill {
+  display: block;
+  height: 100%;
+  background: #1877f2;
+}
+.mads-row-val {
+  text-align: right;
+  font-weight: 500;
+  color: var(--c-text);
+}
+
+/* 요일 차트 */
+.mads-dow-bars {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.mads-dow-col {
+  text-align: center;
+}
+.mads-dow-label {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  margin-bottom: 6px;
+}
+.mads-dow-track {
+  height: 128px;
+  background: #f9fafb;
+  border-radius: 4px;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.mads-dow-fill {
+  width: 100%;
+  background: #1877f2;
+  border-radius: 4px 4px 0 0;
+  transition: height 0.3s ease;
+}
+.mads-dow-col.is-best .mads-dow-fill {
+  background: #16a34a;
+}
+.mads-dow-col.is-low .mads-dow-fill {
+  background: #f87171;
+}
+.mads-dow-tag {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #16a34a;
+  color: #fff;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.mads-dow-tag-low {
+  background: #dc2626;
+}
+.mads-dow-val {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+.mads-dow-col.is-best .mads-dow-val {
+  color: #15803d;
+}
+.mads-dow-col.is-low .mads-dow-val {
+  color: #dc2626;
+}
+.mads-dow-sub {
+  font-size: 10px;
+  color: var(--c-text-muted);
+}
+.mads-dow-table tr.mads-row-best {
+  background: rgba(22, 163, 74, 0.05);
+}
+.mads-dow-table tr.mads-row-best td {
+  color: #15803d;
+  font-weight: 600;
+}
+.mads-dow-table tr.mads-row-low td {
+  color: #dc2626;
+}
+
+/* 시간대 × 요일 히트맵 */
+.mads-heatmap-wrap {
+  overflow-x: auto;
+}
+.mads-heatmap-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 10px;
+  min-width: 720px;
+  margin: 4px 0;
+}
+.mads-heat-corner {
+  width: 28px;
+}
+.mads-heat-hour {
+  font-weight: 400;
+  color: var(--c-text-muted);
+  font-size: 10px;
+  padding-bottom: 4px;
+  min-width: 26px;
+}
+.mads-heat-dow {
+  font-weight: 600;
+  color: var(--c-text);
+  text-align: right;
+  padding-right: 6px;
+  font-size: 11px;
+}
+.mads-heat-weekend .mads-heat-dow {
+  color: #dc2626;
+}
+.mads-heat-cell {
+  width: 26px;
+  height: 24px;
+  border-radius: 3px;
+  text-align: center;
+  line-height: 24px;
+  font-size: 9px;
+  color: #fff;
+  font-weight: 500;
+  transition: transform 0.1s;
+}
+.mads-heat-cell:hover {
+  transform: scale(1.2);
+  cursor: help;
+  z-index: 1;
+  position: relative;
+}
+.mads-heat-cell.is-best {
+  box-shadow: inset 0 0 0 2px #facc15;
+}
+.mads-heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--c-text-muted);
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-border);
+}
+.mads-heat-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 12px;
+  border-radius: 2px;
+}
+.mads-heatmap-note {
+  margin-left: auto;
+  font-weight: 600;
+  color: #15803d;
+  font-size: 11px;
+}
+
+/* 테이블 wrap */
+.table-wrap {
+  overflow-x: auto;
+}

@@ -9,27 +9,24 @@
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
     <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
+    <link rel="stylesheet" href="meta-ads.css?v=20260521-init" />
     <script>
       window.ADMIN_PAGE = { title: "Meta 광고", nav: "meta-ads" };
     </script>
   </head>
   <body class="admin-body">
-    <aside
-      class="admin-sidebar"
-      id="adminSidebar"
-      aria-label="관리자 메뉴"
-    ></aside>
+    <aside class="admin-sidebar" id="adminSidebar"></aside>
     <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
     <div class="admin-layout">
       <header class="admin-topbar" id="adminTopbar"></header>
       <main class="admin-content" id="adminContent">
+        <!-- 1. 기간 필터 -->
         <div class="analytics-toolbar">
           <div class="seg" role="tablist" aria-label="기간">
             <button
               type="button"
               class="seg-btn active"
               data-mads-range="today"
-              aria-pressed="true"
             >
               당일
             </button>
@@ -53,14 +50,12 @@
             </button>
           </div>
           <div class="analytics-range-picker" id="madsRangePicker" hidden>
-            <label>
-              <span>시작</span>
-              <input type="date" id="madsRangeStart" />
-            </label>
-            <label>
-              <span>종료</span>
-              <input type="date" id="madsRangeEnd" />
-            </label>
+            <label
+              ><span>시작</span><input type="date" id="madsRangeStart"
+            /></label>
+            <label
+              ><span>종료</span><input type="date" id="madsRangeEnd"
+            /></label>
             <button type="button" class="btn-apply-range" id="madsApplyRange">
               적용
             </button>
@@ -71,88 +66,292 @@
           </div>
         </div>
 
-        <section class="kpi-grid kpi-grid-6">
+        <!-- 2. KPI 7카드 -->
+        <section class="kpi-grid kpi-grid-7">
           <article class="kpi-card">
             <div class="kpi-label">
-              <span class="badge-source badge-meta">Meta</span>
-              지출
+              <span class="badge-source badge-meta">Meta</span> 지출
             </div>
             <div class="kpi-value" id="madsSpend">—</div>
+            <div class="kpi-sub" id="madsSpendSub"></div>
           </article>
           <article class="kpi-card">
             <div class="kpi-label">
-              <span class="badge-source badge-meta">Meta</span>
-              노출
+              <span class="badge-source badge-meta">Meta</span> 노출
             </div>
             <div class="kpi-value" id="madsImpressions">—</div>
+            <div class="kpi-sub" id="madsReachSub"></div>
           </article>
           <article class="kpi-card">
             <div class="kpi-label">
-              <span class="badge-source badge-meta">Meta</span>
-              클릭
+              <span class="badge-source badge-meta">Meta</span> 클릭
             </div>
             <div class="kpi-value" id="madsClicks">—</div>
+            <div class="kpi-sub" id="madsCtrSub"></div>
           </article>
           <article class="kpi-card">
             <div class="kpi-label">
-              <span class="badge-source badge-meta">Meta</span>
-              CTR
-            </div>
-            <div class="kpi-value" id="madsCtr">—</div>
-          </article>
-          <article class="kpi-card">
-            <div class="kpi-label">
-              <span class="badge-source badge-meta">Meta</span>
-              CPC
+              <span class="badge-source badge-meta">Meta</span> 평균 CPC
             </div>
             <div class="kpi-value" id="madsCpc">—</div>
+            <div class="kpi-sub" id="madsCpcDelta"></div>
           </article>
           <article class="kpi-card">
             <div class="kpi-label">
-              <span class="badge-source badge-meta">Meta</span>
-              리드
+              <span class="badge-source badge-meta">Meta</span> 리드
             </div>
             <div class="kpi-value" id="madsLeads">—</div>
-            <div class="kpi-sub" id="madsCpl">CPL —</div>
+            <div class="kpi-sub" id="madsLeadsSub"></div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-meta">Meta</span> 평균 CPL
+            </div>
+            <div class="kpi-value" id="madsCpl">—</div>
+            <div class="kpi-sub" id="madsCplDelta"></div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-meta">Meta</span> 영상 시청
+            </div>
+            <div class="kpi-value" id="madsThruPlay">—</div>
+            <div class="kpi-sub" id="madsVideoSub"></div>
           </article>
         </section>
 
-        <section class="analytics-row">
-          <div class="panel">
-            <div class="panel-head">
-              <h3>일별 지출 추이</h3>
-              <span class="panel-sub">광고계정 합계</span>
+        <!-- 3. 캠페인 카드 그리드 -->
+        <section class="mads-section">
+          <div class="mads-section-head">
+            <div class="mads-section-title">캠페인</div>
+            <div class="mads-section-sub" id="madsCampaignSub">
+              목적별 자동 KPI
             </div>
-            <div class="chart-wrap">
-              <canvas id="madsTrendChart" height="240"></canvas>
+          </div>
+          <div class="mads-campaign-grid" id="madsCampaignGrid">
+            <div class="mads-empty">불러오는 중...</div>
+          </div>
+        </section>
+
+        <!-- 4. 광고별 효율 (Ad Level) -->
+        <section class="mads-section">
+          <div class="mads-section-head">
+            <div class="mads-section-title">🎯 광고별 효율 (Ad Level)</div>
+            <div class="mads-section-toolbar">
+              <div class="mads-toggle-group">
+                <button class="mads-toggle" data-ads-order="top">
+                  상위 20
+                </button>
+                <button class="mads-toggle" data-ads-order="bottom">
+                  하위 20
+                </button>
+              </div>
+              <div class="mads-toggle-group">
+                <button class="mads-toggle active" data-ads-sort="spend">
+                  지출순
+                </button>
+                <button class="mads-toggle" data-ads-sort="cpl">CPL순</button>
+                <button class="mads-toggle" data-ads-sort="ctr">CTR순</button>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="table-wrap">
+              <table class="top-table mads-ads-table">
+                <thead>
+                  <tr>
+                    <th style="width: 36px">#</th>
+                    <th>광고</th>
+                    <th style="width: 90px">캠페인</th>
+                    <th style="width: 50px; text-align: center">상태</th>
+                    <th style="width: 80px; text-align: right">지출</th>
+                    <th style="width: 80px; text-align: right">노출</th>
+                    <th style="width: 70px; text-align: right">클릭</th>
+                    <th style="width: 60px; text-align: right">CTR</th>
+                    <th style="width: 60px; text-align: right">CPC</th>
+                    <th style="width: 50px; text-align: right">리드</th>
+                    <th style="width: 70px; text-align: right">CPL</th>
+                    <th style="width: 80px; text-align: center">효율</th>
+                  </tr>
+                </thead>
+                <tbody id="madsAdsBody">
+                  <tr>
+                    <td colspan="12" class="empty-state">불러오는 중...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mads-help">
+              효율 등급: 같은 목적 광고들의 CPL·CTR 중앙값 대비 ±20% 기준 (✓우수
+              / ✓양호 / ⚠보통 / ✗부진)
             </div>
           </div>
         </section>
 
-        <section class="analytics-row">
+        <!-- 5. 효율 변화 추이 (CPM / CPC / CPL) -->
+        <section class="mads-section">
+          <div class="mads-section-head">
+            <div class="mads-section-title">📈 효율 변화 추이</div>
+            <div class="mads-section-sub">
+              단가 변동(시장 입찰가) vs 광고 효율(우리 CTR) 분리 분석
+            </div>
+          </div>
+          <div class="panel">
+            <div class="mads-eff-grid">
+              <div class="mads-eff-card">
+                <div class="mads-eff-label">CPM (1000노출당)</div>
+                <div class="mads-eff-row">
+                  <span class="mads-eff-value" id="effCpm">—</span>
+                  <span class="mads-eff-delta" id="effCpmDelta"></span>
+                </div>
+                <div class="mads-eff-prev" id="effCpmPrev">전기 —</div>
+                <div class="mads-eff-sub-label">$1당 노출</div>
+                <div class="mads-eff-secondary" id="effPerDollarImp">—</div>
+              </div>
+              <div class="mads-eff-card">
+                <div class="mads-eff-label">CPC (링크 클릭당)</div>
+                <div class="mads-eff-row">
+                  <span class="mads-eff-value" id="effCpc">—</span>
+                  <span class="mads-eff-delta" id="effCpcDelta"></span>
+                </div>
+                <div class="mads-eff-prev" id="effCpcPrev">전기 —</div>
+                <div class="mads-eff-sub-label">$1당 클릭</div>
+                <div class="mads-eff-secondary" id="effPerDollarClick">—</div>
+              </div>
+              <div class="mads-eff-card">
+                <div class="mads-eff-label">CPL (리드당)</div>
+                <div class="mads-eff-row">
+                  <span class="mads-eff-value" id="effCpl">—</span>
+                  <span class="mads-eff-delta" id="effCplDelta"></span>
+                </div>
+                <div class="mads-eff-prev" id="effCplPrev">전기 —</div>
+                <div class="mads-eff-sub-label">$1당 리드</div>
+                <div class="mads-eff-secondary" id="effPerDollarLead">—</div>
+              </div>
+              <div class="mads-eff-card mads-eff-diag">
+                <div class="mads-eff-label">진단</div>
+                <div class="mads-eff-diag-light">
+                  <span class="mads-eff-dot" id="effDot"></span>
+                  <span id="effDiagText">분석 중...</span>
+                </div>
+                <div class="mads-eff-diag-detail" id="effDiagDetail"></div>
+              </div>
+            </div>
+          </div>
           <div class="panel">
             <div class="panel-head">
-              <h3>캠페인별 성과</h3>
-              <span class="panel-sub">지출 내림차순</span>
+              <h3>단가 시계열</h3>
+              <div class="mads-section-toolbar">
+                <div class="mads-toggle-group">
+                  <button class="mads-toggle active" data-eff-metric="cpm">
+                    CPM
+                  </button>
+                  <button class="mads-toggle" data-eff-metric="cpc">CPC</button>
+                  <button class="mads-toggle" data-eff-metric="cpl">CPL</button>
+                </div>
+              </div>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="effChart" height="220"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. 분해 분석 6종 -->
+        <section class="mads-section">
+          <div class="mads-section-head">
+            <div class="mads-section-title">분해 분석</div>
+            <div class="mads-section-sub">차원별 성과 분포</div>
+          </div>
+          <div class="mads-breakdown-grid">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>플랫폼</h3>
+                <span class="panel-sub">지출 비중</span>
+              </div>
+              <div id="brkPlatform"><div class="empty-state">—</div></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head">
+                <h3>노출 위치 TOP 5</h3>
+                <span class="panel-sub">CTR</span>
+              </div>
+              <div id="brkPosition"><div class="empty-state">—</div></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head">
+                <h3>디바이스</h3>
+                <span class="panel-sub">지출 / CTR</span>
+              </div>
+              <div id="brkDevice"><div class="empty-state">—</div></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head">
+                <h3>연령·성별 (지출 TOP)</h3>
+                <span class="panel-sub">리드 / CPL</span>
+              </div>
+              <div id="brkAgeGender"><div class="empty-state">—</div></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head">
+                <h3>지역 TOP 5</h3>
+                <span class="panel-sub">지출</span>
+              </div>
+              <div id="brkRegion"><div class="empty-state">—</div></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head">
+                <h3>영상 시청 깔때기</h3>
+                <span class="panel-sub" id="videoFunnelSub">—</span>
+              </div>
+              <div id="videoFunnel"><div class="empty-state">—</div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. 요일별 패턴 -->
+        <section class="mads-section">
+          <div class="mads-section-head">
+            <div class="mads-section-title">📅 요일별 패턴</div>
+            <div class="mads-section-toolbar">
+              <div class="mads-toggle-group">
+                <button class="mads-toggle active" data-dow-metric="spend">
+                  지출
+                </button>
+                <button class="mads-toggle" data-dow-metric="impressions">
+                  노출
+                </button>
+                <button class="mads-toggle" data-dow-metric="clicks">
+                  클릭
+                </button>
+                <button class="mads-toggle" data-dow-metric="leads">
+                  리드
+                </button>
+                <button class="mads-toggle" data-dow-metric="cpl">CPL</button>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="mads-dow-bars" id="madsDowBars">
+              <div class="empty-state">불러오는 중...</div>
             </div>
             <div class="table-wrap">
-              <table class="top-table" id="madsCampaignsTable">
+              <table class="top-table mads-dow-table">
                 <thead>
                   <tr>
-                    <th style="width: 40px">#</th>
-                    <th>캠페인</th>
-                    <th style="width: 80px">상태</th>
-                    <th style="width: 90px; text-align: right">지출</th>
-                    <th style="width: 90px; text-align: right">노출</th>
-                    <th style="width: 80px; text-align: right">클릭</th>
-                    <th style="width: 70px; text-align: right">CTR</th>
-                    <th style="width: 70px; text-align: right">CPC</th>
-                    <th style="width: 60px; text-align: right">리드</th>
+                    <th>요일</th>
+                    <th style="text-align: right">지출</th>
+                    <th style="text-align: right">노출</th>
+                    <th style="text-align: right">클릭</th>
+                    <th style="text-align: right">CTR</th>
+                    <th style="text-align: right">CPC</th>
+                    <th style="text-align: right">리드</th>
+                    <th style="text-align: right">CPL</th>
+                    <th style="text-align: right">비중</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody id="madsDowBody">
                   <tr>
-                    <td colspan="9" class="empty-state">불러오는 중...</td>
+                    <td colspan="9" class="empty-state">—</td>
                   </tr>
                 </tbody>
               </table>
@@ -160,14 +359,51 @@
           </div>
         </section>
 
-        <section class="analytics-row">
-          <div class="panel">
-            <div class="panel-head">
-              <h3>동기화 이력</h3>
-              <span class="panel-sub">최근 30건 · cron 매일 KST 04:00</span>
+        <!-- 8. 시간대×요일 히트맵 -->
+        <section class="mads-section">
+          <div class="mads-section-head">
+            <div class="mads-section-title">🕐 시간대 × 요일 히트맵</div>
+            <div class="mads-section-toolbar">
+              <div class="mads-toggle-group">
+                <button class="mads-toggle active" data-hh-metric="spend">
+                  지출
+                </button>
+                <button class="mads-toggle" data-hh-metric="impressions">
+                  노출
+                </button>
+                <button class="mads-toggle" data-hh-metric="clicks">
+                  클릭
+                </button>
+                <button class="mads-toggle" data-hh-metric="leads">리드</button>
+              </div>
             </div>
+          </div>
+          <div class="panel">
+            <div class="mads-heatmap-wrap">
+              <div id="madsHeatmap"><div class="empty-state">—</div></div>
+            </div>
+            <div class="mads-heatmap-legend">
+              <span>적음</span>
+              <span class="mads-heat-swatch" style="background: #eff6ff"></span>
+              <span class="mads-heat-swatch" style="background: #bfdbfe"></span>
+              <span class="mads-heat-swatch" style="background: #60a5fa"></span>
+              <span class="mads-heat-swatch" style="background: #1d4ed8"></span>
+              <span class="mads-heat-swatch" style="background: #172554"></span>
+              <span>많음</span>
+              <span class="mads-heatmap-note" id="madsHeatmapNote"></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 9. 동기화 이력 -->
+        <section class="mads-section">
+          <div class="mads-section-head">
+            <div class="mads-section-title">동기화 이력</div>
+            <div class="mads-section-sub">최근 30건 · cron 매일 KST 04:00</div>
+          </div>
+          <div class="panel">
             <div class="table-wrap">
-              <table class="top-table" id="madsSyncLogTable">
+              <table class="top-table">
                 <thead>
                   <tr>
                     <th>시각</th>
@@ -179,9 +415,9 @@
                     <th>에러</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody id="madsSyncLogBody">
                   <tr>
-                    <td colspan="7" class="empty-state">불러오는 중...</td>
+                    <td colspan="7" class="empty-state">—</td>
                   </tr>
                 </tbody>
               </table>
@@ -197,6 +433,6 @@
     ></script>
     <script defer src="config.js?v=20260520-heatmap"></script>
     <script defer src="admin.js?v=20260521-meta-menu"></script>
-    <script defer src="meta-ads.js?v=20260521-range7"></script>
+    <script defer src="meta-ads.js?v=20260521-full"></script>
   </body>
 </html>
