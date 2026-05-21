@@ -68,4 +68,11 @@ zone_name = "day1design.co.kr"
 #   wrangler secret put NCP_SENS_SECRET_KEY
 #   wrangler secret put NCP_SENS_SERVICE_ID
 #   wrangler secret put NCP_SENS_FROM_NUMBER   # 검수 통과 후 등록 발신번호 입력
+#   printf "%s" "EAAdlUr..." | wrangler secret put META_AD_ACCESS_TOKEN
+#   printf "%s" "986916453663066" | wrangler secret put META_AD_ACCOUNT_ID
 # 로컬 개발은 worker/.dev.vars 파일에 동일 키로 저장
+
+# Cron Triggers
+# - meta-ads 어제 데이터 sync: 매일 KST 04:00 = UTC 19:00
+[triggers]
+crons = ["0 19 * * *"]

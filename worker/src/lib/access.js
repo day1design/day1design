@@ -96,6 +96,10 @@ export function classifyAccess(request, opts = {}) {
     return { role: "admin", method, path };
   }
 
+  if (path.startsWith("/api/meta-ads")) {
+    return { role: "admin", method, path };
+  }
+
   if (path.startsWith("/api/audit")) {
     return { role: "admin", method, path };
   }

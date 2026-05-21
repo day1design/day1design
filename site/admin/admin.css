@@ -3227,6 +3227,10 @@
   background: #16a34a;
   color: #fff;
 }
+.badge-meta {
+  background: #1877f2;
+  color: #fff;
+}
 
 /* 신규/재방문 게이지 */
 .gauge-bar {

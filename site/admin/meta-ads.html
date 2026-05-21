@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meta 광고 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
+    <script>
+      window.ADMIN_PAGE = { title: "Meta 광고", nav: "meta-ads" };
+    </script>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <div class="analytics-toolbar">
+          <div class="seg" role="tablist" aria-label="기간">
+            <button
+              type="button"
+              class="seg-btn"
+              data-mads-range="7"
+              aria-pressed="false"
+            >
+              7일
+            </button>
+            <button
+              type="button"
+              class="seg-btn active"
+              data-mads-range="30"
+              aria-pressed="true"
+            >
+              30일
+            </button>
+            <button
+              type="button"
+              class="seg-btn"
+              data-mads-range="90"
+              aria-pressed="false"
+            >
+              90일
+            </button>
+            <button
+              type="button"
+              class="seg-btn"
+              data-mads-range="365"
+              aria-pressed="false"
+            >
+              전체
+            </button>
+          </div>
+          <div class="analytics-compare" id="madsRangeLabel">최근 30일</div>
+          <div class="analytics-compare" id="madsLastSync">
+            동기화 정보 없음
+          </div>
+        </div>
+
+        <section class="kpi-grid kpi-grid-6">
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-meta">Meta</span>
+              지출
+            </div>
+            <div class="kpi-value" id="madsSpend">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-meta">Meta</span>
+              노출
+            </div>
+            <div class="kpi-value" id="madsImpressions">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-meta">Meta</span>
+              클릭
+            </div>
+            <div class="kpi-value" id="madsClicks">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-meta">Meta</span>
+              CTR
+            </div>
+            <div class="kpi-value" id="madsCtr">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-meta">Meta</span>
+              CPC
+            </div>
+            <div class="kpi-value" id="madsCpc">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">
+              <span class="badge-source badge-meta">Meta</span>
+              리드
+            </div>
+            <div class="kpi-value" id="madsLeads">—</div>
+            <div class="kpi-sub" id="madsCpl">CPL —</div>
+          </article>
+        </section>
+
+        <section class="analytics-row">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>일별 지출 추이</h3>
+              <span class="panel-sub">광고계정 합계</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="madsTrendChart" height="240"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section class="analytics-row">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>캠페인별 성과</h3>
+              <span class="panel-sub">지출 내림차순</span>
+            </div>
+            <div class="table-wrap">
+              <table class="top-table" id="madsCampaignsTable">
+                <thead>
+                  <tr>
+                    <th style="width: 40px">#</th>
+                    <th>캠페인</th>
+                    <th style="width: 80px">상태</th>
+                    <th style="width: 90px; text-align: right">지출</th>
+                    <th style="width: 90px; text-align: right">노출</th>
+                    <th style="width: 80px; text-align: right">클릭</th>
+                    <th style="width: 70px; text-align: right">CTR</th>
+                    <th style="width: 70px; text-align: right">CPC</th>
+                    <th style="width: 60px; text-align: right">리드</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="9" class="empty-state">불러오는 중...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="analytics-row">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>동기화 이력</h3>
+              <span class="panel-sub">최근 30건 · cron 매일 KST 04:00</span>
+            </div>
+            <div class="table-wrap">
+              <table class="top-table" id="madsSyncLogTable">
+                <thead>
+                  <tr>
+                    <th>시각</th>
+                    <th style="width: 80px">타입</th>
+                    <th style="width: 90px">상태</th>
+                    <th style="width: 160px">범위</th>
+                    <th style="width: 60px; text-align: right">API</th>
+                    <th style="width: 60px; text-align: right">건수</th>
+                    <th>에러</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="7" class="empty-state">불러오는 중...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+    ></script>
+    <script defer src="config.js?v=20260520-heatmap"></script>
+    <script defer src="admin.js?v=20260520-2row"></script>
+    <script defer src="meta-ads.js?v=20260521-init"></script>
+  </body>
+</html>

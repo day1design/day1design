@@ -14,6 +14,7 @@ import {
   handleMarketingLinks,
   handleSlugRedirect,
 } from "./routes/marketing.js";
+import { handleMetaAds, runScheduledSync } from "./routes/meta-ads.js";
 import { cors, preflight } from "./lib/cors.js";
 import { jsonError } from "./lib/response.js";
 import { notifyTelegram } from "./lib/telegram.js";
@@ -170,6 +171,8 @@ async function handleApi(request, env, ctx, path) {
     res = await handleMarketingLinks(request, env, ctx);
   } else if (path.startsWith("/api/audit")) {
     res = await handleAudit(request, env);
+  } else if (path.startsWith("/api/meta-ads")) {
+    res = await handleMetaAds(request, env, ctx);
   } else {
     res = jsonError(404, "Not Found");
   }
@@ -234,5 +237,21 @@ export default {
       });
       return cors(jsonError(500, "Internal Server Error"), request, env);
     }
+  },
+
+  // Cron: 매일 KST 04:00 (= UTC 19:00) — Meta 광고 어제 데이터 sync
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(
+      (async () => {
+        try {
+          await runScheduledSync(env, ctx);
+        } catch (e) {
+          await notifyTelegram(
+            env,
+            `[day1design/cron] meta-ads scheduled sync 실패\n${(e?.message || "").slice(0, 200)}`,
+          );
+        }
+      })(),
+    );
   },
 };
