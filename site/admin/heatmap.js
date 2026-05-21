@@ -46,12 +46,10 @@
   }
 
   // ─── API ─────────────────────────────────────────────
+  // adminUtil.api 사용: cookie + localStorage Bearer 토큰 자동 첨부
+  // (cross-site cookie 차단 환경에서도 Bearer fallback으로 인증 성공)
   async function fetchPages() {
-    const res = await fetch(API_BASE + "/api/heatmap/pages", {
-      credentials: "include",
-    });
-    if (!res.ok) throw new Error("pages " + res.status);
-    return res.json();
+    return adminUtil.api("/api/heatmap/pages");
   }
   async function fetchEvents(page, device, type, from, to) {
     const params = new URLSearchParams({ page, device });
@@ -59,11 +57,7 @@
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     params.set("limit", "5000");
-    const res = await fetch(API_BASE + "/api/heatmap/events?" + params, {
-      credentials: "include",
-    });
-    if (!res.ok) throw new Error("events " + res.status);
-    return res.json();
+    return adminUtil.api("/api/heatmap/events?" + params);
   }
 
   // ─── 페이지 리스트 렌더링 ────────────────────────────
