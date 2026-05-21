@@ -381,6 +381,17 @@ function buildSubmitPayload() {
   const emailDomain = val("email_domain");
   const email = emailId && emailDomain ? `${emailId}@${emailDomain}` : "";
 
+  // 자체 트래커 SessionId — Worker가 이걸로 D1 HeatmapEvents 조회해서
+  // first-touch 출처(첫 진입 referrer/utm)를 자동 추정
+  let sessionId = "";
+  try {
+    const raw = localStorage.getItem("_d1_hm_sid");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      sessionId = String(parsed?.id || "");
+    }
+  } catch {}
+
   const attribution = readMarketingAttribution();
   // 슬러그 라벨이 있으면 Referral을 덮어쓴다.
   // 이유: 광고 클릭으로 들어온 사용자는 폼의 referral 옵션을 안 누르거나
@@ -410,6 +421,7 @@ function buildSubmitPayload() {
     utm_medium: attribution.utm_medium,
     utm_campaign: attribution.utm_campaign,
     campaign: attribution.label,
+    session_id: sessionId,
   };
 
   const fd = new FormData();

@@ -1715,6 +1715,111 @@
   max-height: 240px;
   overflow: auto;
 }
+
+/* 방문 히스토리 패널 (첫 진입 → 폼 제출까지 page_view 흐름) */
+.est-visit-history-panel h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.visit-history-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--c-text-muted);
+}
+.visit-history-thread {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: #fafafa;
+}
+.visit-history-empty {
+  padding: 14px;
+  text-align: center;
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+.visit-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: visit;
+}
+.visit-history-item {
+  display: grid;
+  grid-template-columns: 120px 1fr 1fr auto;
+  gap: 10px;
+  padding: 8px 12px 8px 32px;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 12px;
+  position: relative;
+}
+.visit-history-item:last-child {
+  border-bottom: 0;
+}
+.visit-history-item::before {
+  counter-increment: visit;
+  content: counter(visit);
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: var(--c-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+.visit-history-item.is-first::before {
+  background: #16a34a;
+  color: #fff;
+}
+.visit-history-item.is-first {
+  background: #f0fdf4;
+}
+.visit-time {
+  font-family: ui-monospace, monospace;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+.visit-page {
+  color: var(--c-text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.visit-from {
+  color: var(--c-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.visit-meta {
+  color: var(--c-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .visit-history-item {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* 첫/끝 출처 뱃지 미세 구분 */
+.src-badge.src-first {
+  outline: 1px solid #16a34a;
+  outline-offset: -1px;
+}
+.src-badge.src-last {
+  opacity: 0.9;
+}
 .customer-edit-form {
   display: block;
 }

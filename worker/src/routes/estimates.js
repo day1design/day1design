@@ -94,6 +94,50 @@ function normalizeEstimateAttribution(fields) {
   };
 }
 
+// First-touch 출처 — 자체 트래커 SessionId로 D1 HeatmapEvents 의
+// 가장 오래된 page_view 이벤트에서 referrer/utm 추출하고 정규화
+async function fetchFirstTouch(env, sessionId) {
+  const empty = {
+    source: "",
+    platform: "",
+    campaign: "",
+    referrer: "",
+    utmSource: "",
+    utmMedium: "",
+    utmCampaign: "",
+  };
+  if (!sessionId || !env?.DB) return empty;
+  try {
+    const row = await env.DB.prepare(
+      `SELECT Referrer, UtmSource, UtmMedium, UtmCampaign
+       FROM HeatmapEvents
+       WHERE SessionId = ? AND EventType = 'page_view'
+       ORDER BY CreatedAt ASC
+       LIMIT 1`,
+    )
+      .bind(sessionId)
+      .first();
+    if (!row) return empty;
+    const norm = normalizeEstimateAttribution({
+      utm_source: row.UtmSource || "",
+      utm_medium: row.UtmMedium || "",
+      campaign: row.UtmCampaign || "",
+      source: row.Referrer || "",
+    });
+    return {
+      source: norm.source,
+      platform: norm.platform,
+      campaign: norm.campaign,
+      referrer: String(row.Referrer || ""),
+      utmSource: String(row.UtmSource || ""),
+      utmMedium: String(row.UtmMedium || ""),
+      utmCampaign: String(row.UtmCampaign || ""),
+    };
+  } catch {
+    return empty;
+  }
+}
+
 function textValue(value, fallback = "—") {
   const trimmed = String(value ?? "").trim();
   return trimmed || fallback;
@@ -312,7 +356,55 @@ export async function handleEstimates(
     if (request.method === "DELETE")
       return deleteEstimate(env, id, ctx, services);
   }
+  // 방문 히스토리: 해당 견적 SessionId 의 모든 page_view 이벤트 시간순
+  const visitHistoryMatch = path.match(/^\/([a-zA-Z0-9_-]+)\/visit-history$/);
+  if (visitHistoryMatch && request.method === "GET") {
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
+    return getVisitHistory(env, visitHistoryMatch[1], services);
+  }
   return jsonError(404, "Not Found");
+}
+
+async function getVisitHistory(env, id, services) {
+  if (!/^rec[a-zA-Z0-9]{14}$/.test(id)) return jsonError(400, "Invalid id");
+  let record;
+  try {
+    record = await services.estimates.get(id);
+  } catch (e) {
+    if (e.notFound) return jsonError(404, "Estimate not found");
+    return jsonError(500, "Lookup failed");
+  }
+  const sessionId = String(record?.fields?.SessionId || "");
+  if (!sessionId) {
+    return jsonOk({ sessionId: "", events: [] });
+  }
+  try {
+    const res = await env.DB.prepare(
+      `SELECT Page, EventType, Device, Referrer, UtmSource, UtmMedium, UtmCampaign,
+              Country, City, CreatedAt
+       FROM HeatmapEvents
+       WHERE SessionId = ? AND EventType = 'page_view'
+       ORDER BY CreatedAt ASC
+       LIMIT 200`,
+    )
+      .bind(sessionId)
+      .all();
+    const events = (res.results || []).map((r) => ({
+      page: r.Page,
+      device: r.Device,
+      referrer: r.Referrer || "",
+      utmSource: r.UtmSource || "",
+      utmMedium: r.UtmMedium || "",
+      utmCampaign: r.UtmCampaign || "",
+      country: r.Country || "",
+      city: r.City || "",
+      createdAt: r.CreatedAt,
+    }));
+    return jsonOk({ sessionId, events });
+  } catch {
+    return jsonOk({ sessionId, events: [] });
+  }
 }
 
 async function deleteEstimate(env, id, ctx, services) {
@@ -446,6 +538,9 @@ async function submitEstimate(request, env, ctx, services) {
 
   // D1 레코드 생성
   const submittedAt = fields.submittedAt || new Date().toISOString();
+  // First-touch 출처: 자체 트래커 SessionId로 D1 HeatmapEvents의 최초 page_view 조회
+  const sessionId = sanitizeText(fields.session_id, 64);
+  const firstTouch = await fetchFirstTouch(env, sessionId);
   const record = await services.estimates.create({
     Name: fields.name,
     Phone: fields.phone,
@@ -468,6 +563,14 @@ async function submitEstimate(request, env, ctx, services) {
     Source: attribution.source,
     Platform: attribution.platform,
     Campaign: attribution.campaign,
+    SessionId: sessionId,
+    FirstSource: firstTouch.source,
+    FirstPlatform: firstTouch.platform,
+    FirstCampaign: firstTouch.campaign,
+    FirstReferrer: firstTouch.referrer,
+    FirstUtmSource: firstTouch.utmSource,
+    FirstUtmMedium: firstTouch.utmMedium,
+    FirstUtmCampaign: firstTouch.utmCampaign,
   });
   fields.detail = detail;
 

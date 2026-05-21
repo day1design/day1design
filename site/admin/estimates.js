@@ -114,21 +114,31 @@ function statusBadge(s) {
   return `<span class="${map[s] || "badge"}">${escapeHtml(s || "—")}</span>`;
 }
 
-// 실제 출처 (Source 컬럼, Worker가 UTM/쿠키 기반으로 정규화)
-function actualSourceBadge(src) {
+const SOURCE_LABEL_MAP = {
+  homepage: "홈페이지",
+  meta: "Meta",
+  google: "Google",
+  naver: "Naver",
+  youtube: "YouTube",
+  kakao: "Kakao",
+  referral: "Referral",
+  other: "기타",
+};
+function sourceKey(src) {
   const s = String(src || "homepage").toLowerCase();
-  const labels = {
-    homepage: "홈페이지",
-    meta: "Meta",
-    google: "Google",
-    naver: "Naver",
-    youtube: "YouTube",
-    kakao: "Kakao",
-    referral: "Referral",
-    other: "기타",
-  };
-  const key = labels[s] ? s : "other";
-  return `<span class="src-badge src-actual src-${key}" title="실제 출처 (시스템 자동 추정)">실제 ${escapeHtml(labels[key])}</span>`;
+  return SOURCE_LABEL_MAP[s] ? s : "other";
+}
+
+// 첫 진입 출처 — Worker가 자체 트래커 SessionId 의 최초 page_view 에서 추출
+function firstSourceBadge(src) {
+  const key = sourceKey(src);
+  return `<span class="src-badge src-actual src-first src-${key}" title="첫 진입 출처 (자체 트래커 SessionId 의 최초 page_view 기준)">첫 ${escapeHtml(SOURCE_LABEL_MAP[key])}</span>`;
+}
+
+// 마지막 진입 출처 — 폼 제출 시점의 utm/슬러그 쿠키 기반 (광고→폼 직접 이동 등)
+function lastSourceBadge(src) {
+  const key = sourceKey(src);
+  return `<span class="src-badge src-actual src-last src-${key}" title="마지막 진입 출처 (폼 제출 직전 utm/쿠키 기준)">끝 ${escapeHtml(SOURCE_LABEL_MAP[key])}</span>`;
 }
 
 // 입력 출처 (Referral 컬럼, 폼에서 고객이 직접 선택/입력)
@@ -138,9 +148,17 @@ function inputSourceBadge(referral) {
   return `<span class="src-badge src-input" title="입력 출처 (고객이 폼에서 직접 선택)">입력 ${escapeHtml(label)}</span>`;
 }
 
-// 카드용 출처 뱃지 (입력·실제 inline)
+// 카드용 출처 뱃지 — [입력] [첫] [끝] 3종 inline
+// First*가 없으면(예: 마이그 전 기존 데이터) Source(끝)만 표시
 function sourceBadges(record) {
-  return `${inputSourceBadge(record.Referral)} ${actualSourceBadge(record.Source)}`;
+  const inputBadge = inputSourceBadge(record.Referral);
+  const firstRaw = String(record.FirstSource || "").trim();
+  const lastRaw = String(record.Source || "homepage").trim();
+  if (firstRaw && firstRaw !== lastRaw) {
+    return `${inputBadge} ${firstSourceBadge(firstRaw)} ${lastSourceBadge(lastRaw)}`;
+  }
+  // 첫=끝 또는 첫 없음 → 끝 하나만 (라벨은 "실제")
+  return `${inputBadge} ${lastSourceBadge(lastRaw)}`;
 }
 
 // ===== KST 변환 헬퍼 (D1 SubmittedAt = UTC ISO, 표시는 KST) =====
@@ -713,6 +731,16 @@ async function openDetail(id) {
         ${historyHtml(history)}
       </section>
 
+      <section class="est-info-panel est-visit-history-panel" id="visitHistoryBox">
+        <h3>
+          방문 히스토리
+          <span class="visit-history-sub">자체 트래커 기준 · 첫 진입 → 폼 제출</span>
+        </h3>
+        <div class="visit-history-thread" id="visitHistoryThread">
+          <div class="visit-history-empty">불러오는 중...</div>
+        </div>
+      </section>
+
       <section class="est-info-panel est-memo-panel">
         <h3>메모</h3>
         <div class="memo-thread" id="memoThread">
@@ -748,9 +776,61 @@ async function openDetail(id) {
   });
   bindMemoActions(id);
 
-  // 메모 + 회차 병렬 로드
+  // 메모 + 회차 + 방문 히스토리 병렬 로드
   if (!memoCache[id]) loadMemos(id);
   if (!historyCache[id]) loadHistory(id);
+  loadVisitHistory(id);
+}
+
+const visitHistoryCache = {};
+
+function visitHistoryHtml(payload) {
+  if (!payload || !payload.events || !payload.events.length) {
+    return `<div class="visit-history-empty">방문 이력이 없습니다 (SessionId 미수집 또는 첫 page_view 이전 폼 제출)</div>`;
+  }
+  const events = payload.events;
+  return `<ol class="visit-history-list">${events
+    .map((ev, i) => {
+      const t = Date.parse(ev.createdAt);
+      const time = isNaN(t) ? "" : fmtDateTime(ev.createdAt);
+      const isFirst = i === 0;
+      const refHost = (() => {
+        try {
+          return ev.referrer ? new URL(ev.referrer).hostname : "";
+        } catch {
+          return ev.referrer || "";
+        }
+      })();
+      const fromLabel = ev.utmSource
+        ? `utm: ${escapeHtml(ev.utmSource)}${ev.utmCampaign ? " · " + escapeHtml(ev.utmCampaign) : ""}`
+        : refHost
+          ? `referrer: ${escapeHtml(refHost)}`
+          : "직접 방문";
+      const loc = [ev.city, ev.country].filter(Boolean).join(" · ");
+      return `<li class="visit-history-item ${isFirst ? "is-first" : ""}">
+        <span class="visit-time">${escapeHtml(time)}</span>
+        <span class="visit-page">${escapeHtml(ev.page || "/")}</span>
+        <span class="visit-from">${fromLabel}</span>
+        <span class="visit-meta">${escapeHtml(ev.device || "")}${loc ? " · " + escapeHtml(loc) : ""}</span>
+      </li>`;
+    })
+    .join("")}</ol>`;
+}
+
+async function loadVisitHistory(id) {
+  const slot = detail?.querySelector("#visitHistoryThread");
+  if (!slot) return;
+  try {
+    if (visitHistoryCache[id]) {
+      slot.innerHTML = visitHistoryHtml(visitHistoryCache[id]);
+      return;
+    }
+    const data = await adminUtil.api(`/api/estimates/${id}/visit-history`);
+    visitHistoryCache[id] = data;
+    slot.innerHTML = visitHistoryHtml(data);
+  } catch (e) {
+    slot.innerHTML = `<div class="visit-history-empty">불러오기 실패</div>`;
+  }
 }
 
 async function doPatch(id) {
