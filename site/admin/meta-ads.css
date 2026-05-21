@@ -404,6 +404,32 @@
     grid-template-columns: 1fr;
   }
 }
+.funnel-step {
+  display: grid;
+  grid-template-columns: 70px 1fr 50px;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 0;
+  font-size: 12px;
+  border-bottom: 1px dashed #f1f5f9;
+}
+.funnel-step:last-child {
+  border-bottom: 0;
+}
+.funnel-step .num {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+.funnel-step .label {
+  color: var(--c-text-muted);
+}
+.funnel-step .pct {
+  text-align: right;
+  font-size: 11px;
+  color: var(--c-text-muted);
+  font-weight: 500;
+}
 .mads-row-bar {
   display: grid;
   grid-template-columns: 100px 1fr 80px;
@@ -551,9 +577,9 @@
   text-align: center;
   line-height: 24px;
   font-size: 9px;
-  color: #fff;
   font-weight: 500;
   transition: transform 0.1s;
+  /* color는 인라인 style로 동적 결정 (배경 강도에 따라 흰/진한 파랑) */
 }
 .mads-heat-cell:hover {
   transform: scale(1.2);

@@ -130,7 +130,7 @@ async function getSummary(request, env) {
   const { startDate, endDate } = range;
 
   try {
-    // account 레벨 일별 합계
+    // account 레벨 일별 합계 (영상 메트릭 포함)
     const totals = await env.DB.prepare(
       `SELECT
          COALESCE(SUM(Impressions), 0) AS Impressions,
@@ -139,6 +139,12 @@ async function getSummary(request, env) {
          COALESCE(SUM(Spend), 0) AS Spend,
          COALESCE(SUM(Reach), 0) AS Reach,
          COALESCE(SUM(Leads), 0) AS Leads,
+         COALESCE(SUM(VideoP25Watched), 0) AS VideoP25,
+         COALESCE(SUM(VideoP50Watched), 0) AS VideoP50,
+         COALESCE(SUM(VideoP75Watched), 0) AS VideoP75,
+         COALESCE(SUM(VideoP100Watched), 0) AS VideoP100,
+         COALESCE(SUM(ThruPlay), 0) AS ThruPlay,
+         COALESCE(AVG(NULLIF(VideoAvgWatchSec, 0)), 0) AS AvgWatchSec,
          COUNT(DISTINCT Date) AS Days
        FROM MetaAdsDaily
        WHERE Level = 'account' AND Date BETWEEN ? AND ?`,
@@ -168,6 +174,12 @@ async function getSummary(request, env) {
         ctr: imps > 0 ? clicks / imps : 0,
         cpc: clicks > 0 ? spend / clicks : 0,
         cpl: Number(totals?.Leads || 0) > 0 ? spend / Number(totals.Leads) : 0,
+        videoP25: Number(totals?.VideoP25 || 0),
+        videoP50: Number(totals?.VideoP50 || 0),
+        videoP75: Number(totals?.VideoP75 || 0),
+        videoP100: Number(totals?.VideoP100 || 0),
+        thruPlay: Number(totals?.ThruPlay || 0),
+        avgWatchSec: Number(totals?.AvgWatchSec || 0),
       },
       lastSyncedAt: lastSync?.CompletedAt || "",
     });

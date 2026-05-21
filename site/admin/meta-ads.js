@@ -71,7 +71,10 @@
     $("madsCpc").textContent = fmtUsd(s.cpc);
     $("madsLeads").textContent = fmtInt(s.leads);
     $("madsCpl").textContent = s.leads > 0 ? fmtUsd(s.cpl) : "—";
-    $("madsThruPlay").textContent = "—"; // 영상은 별도 efficiency·breakdown에서 채움
+    $("madsThruPlay").textContent =
+      s.thruPlay > 0 ? fmtCompact(s.thruPlay) : "—";
+    $("madsVideoSub").textContent =
+      s.avgWatchSec > 0 ? `ThruPlay · avg ${Math.round(s.avgWatchSec)}초` : "";
 
     $("madsSpendSub").textContent =
       s.spend > 0
@@ -496,12 +499,47 @@
     const el = $("videoFunnel");
     const sub = $("videoFunnelSub");
     if (!el) return;
-    const summary = data?.summary || {};
-    const sumP25 = summary.thruPlay ? null : 0; // 영상 메트릭은 별도 — efficiency나 summary 응답에 없음
-    // 임시로 ThruPlay·VideoAvg는 sum 응답에 없음 → 분해/캠페인 합계로 추산 — 일단 회색 처리
-    el.innerHTML =
-      '<div class="empty-state">영상 메트릭은 백필 후 D1에 누적. 영상 캠페인이 있는 기간에 표시.</div>';
-    if (sub) sub.textContent = "—";
+    const s = data?.summary || {};
+    const p25 = Number(s.videoP25 || 0);
+    const p50 = Number(s.videoP50 || 0);
+    const p75 = Number(s.videoP75 || 0);
+    const p100 = Number(s.videoP100 || 0);
+    const thru = Number(s.thruPlay || 0);
+    const avg = Number(s.avgWatchSec || 0);
+    if (p25 + p50 + p75 + p100 + thru === 0) {
+      el.innerHTML =
+        '<div class="empty-state">영상 메트릭 없음 (영상 광고 미집행 기간)</div>';
+      if (sub) sub.textContent = "—";
+      return;
+    }
+    // 기준값: p25 (가장 큰 값, 25% 도달자 = 영상 시청 시작자)
+    const base = Math.max(p25, p50, p75, p100, thru, 1);
+    const steps = [
+      { num: p25, label: "25% 시청 시작", pct: 100 },
+      { num: p50, label: "50% 시청", pct: base > 0 ? (p50 / base) * 100 : 0 },
+      {
+        num: thru,
+        label: "ThruPlay (15s+ / 끝까지)",
+        pct: base > 0 ? (thru / base) * 100 : 0,
+      },
+      { num: p75, label: "75% 시청", pct: base > 0 ? (p75 / base) * 100 : 0 },
+      {
+        num: p100,
+        label: "100% 완주",
+        pct: base > 0 ? (p100 / base) * 100 : 0,
+      },
+    ];
+    el.innerHTML = steps
+      .map(
+        (st) => `
+        <div class="funnel-step">
+          <span class="num">${fmtCompact(st.num)}</span>
+          <span class="label">${st.label}</span>
+          <span class="pct">${st.pct.toFixed(0)}%</span>
+        </div>`,
+      )
+      .join("");
+    if (sub) sub.textContent = avg > 0 ? `평균 ${Math.round(avg)}초` : "—";
   }
 
   // ─── 요일 패턴 ──────────────────────────────────────
@@ -633,10 +671,10 @@
         const c = grid[d]?.[h];
         const v = metricFn(c);
         const intensity = v > 0 ? v / max : 0;
-        const bg = heatColor(intensity);
+        const { bg, fg } = heatStyle(intensity);
         const isBest =
           c && c.dow === bestCell.dow && c.hour === bestCell.hour && v > 0;
-        html += `<td class="mads-heat-cell ${isBest ? "is-best" : ""}" style="background:${bg}" title="${DOW_KO[d]} ${h}시: ${formatMetric(hhMetric, v)}">${v > 0 ? formatMetric(hhMetric, v).replace("$", "") : ""}</td>`;
+        html += `<td class="mads-heat-cell ${isBest ? "is-best" : ""}" style="background:${bg};color:${fg}" title="${DOW_KO[d]} ${h}시: ${formatMetric(hhMetric, v)}">${v > 0 ? formatMetric(hhMetric, v).replace("$", "") : ""}</td>`;
       }
       html += "</tr>";
     }
@@ -647,15 +685,16 @@
     }
   }
 
-  function heatColor(t) {
-    // t: 0~1
-    if (t <= 0) return "#f9fafb";
-    if (t < 0.15) return "#eff6ff";
-    if (t < 0.3) return "#bfdbfe";
-    if (t < 0.5) return "#60a5fa";
-    if (t < 0.75) return "#1d4ed8";
-    if (t < 0.95) return "#1e3a8a";
-    return "#172554";
+  // 배경 강도에 따라 텍스트 색도 같이 반환 — 옅은 배경에는 어두운 글씨,
+  // 진한 배경에는 흰 글씨. (리드 같이 max 값이 작은 메트릭도 셀 값 보이게)
+  function heatStyle(t) {
+    if (t <= 0) return { bg: "#f9fafb", fg: "#9ca3af" };
+    if (t < 0.15) return { bg: "#eff6ff", fg: "#1e3a8a" };
+    if (t < 0.3) return { bg: "#bfdbfe", fg: "#1e3a8a" };
+    if (t < 0.5) return { bg: "#60a5fa", fg: "#fff" };
+    if (t < 0.75) return { bg: "#1d4ed8", fg: "#fff" };
+    if (t < 0.95) return { bg: "#1e3a8a", fg: "#fff" };
+    return { bg: "#172554", fg: "#fff" };
   }
 
   // ─── 동기화 이력 ────────────────────────────────────
