@@ -117,7 +117,7 @@ async function handleApi(request, env, ctx, path) {
   const access = authorizeRequest(request, env);
   if (!access.ok) return cors(accessDenied(access), request, env);
 
-  if (path === "/" || path === "/api") {
+  if (path === "/" || path === "/api" || path === "/api/") {
     res = new Response(JSON.stringify({ ok: true }), {
       headers: { "content-type": "application/json" },
     });
