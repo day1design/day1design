@@ -13,7 +13,7 @@
     />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
+    <link rel="stylesheet" href="admin.css?v=20260521-source-legend" />
     <script>
       window.ADMIN_PAGE = { title: "상담신청", nav: "estimates" };
     </script>
@@ -50,7 +50,7 @@
           </article>
         </section>
 
-        <div class="admin-toolbar" style="margin-bottom: 16px">
+        <div class="admin-toolbar" style="margin-bottom: 12px">
           <div class="filter-row">
             <label>상태</label>
             <select id="filterStatus">
@@ -64,38 +64,6 @@
               <option value="전화상담 후 대기중">전화상담 후 대기중</option>
               <option value="보류">보류</option>
             </select>
-            <label>유입</label>
-            <div
-              class="source-tabs"
-              id="sourceTabs"
-              role="tablist"
-              aria-label="유입 출처"
-            >
-              <button
-                type="button"
-                class="source-tab active"
-                data-source-tab=""
-                aria-pressed="true"
-              >
-                전체
-              </button>
-              <button
-                type="button"
-                class="source-tab"
-                data-source-tab="meta"
-                aria-pressed="false"
-              >
-                Meta
-              </button>
-              <button
-                type="button"
-                class="source-tab"
-                data-source-tab="homepage"
-                aria-pressed="false"
-              >
-                홈페이지
-              </button>
-            </div>
             <label>기간</label>
             <input type="date" id="filterFrom" />
             <span class="filter-tilde">~</span>
@@ -113,6 +81,62 @@
               class="filter-search"
               placeholder="이름/연락처/주소/캠페인 검색"
             />
+          </div>
+        </div>
+
+        <!-- 유입 출처 탭 — 별도 줄로 분리 + 의미 안내 -->
+        <div class="source-tab-bar">
+          <div class="source-tab-bar-label">유입</div>
+          <div
+            class="source-tabs source-tabs-large"
+            id="sourceTabs"
+            role="tablist"
+            aria-label="유입 출처"
+          >
+            <button
+              type="button"
+              class="source-tab active"
+              data-source-tab=""
+              aria-pressed="true"
+            >
+              전체
+            </button>
+            <button
+              type="button"
+              class="source-tab"
+              data-source-tab="meta"
+              aria-pressed="false"
+            >
+              Meta
+            </button>
+            <button
+              type="button"
+              class="source-tab"
+              data-source-tab="homepage"
+              aria-pressed="false"
+            >
+              홈페이지
+            </button>
+          </div>
+          <div class="source-legend">
+            <span class="legend-item">
+              <span class="src-badge src-input">입력</span>
+              <span class="legend-text"
+                >고객이 폼에서 직접 선택/입력한 출처</span
+              >
+            </span>
+            <span class="legend-item">
+              <span class="src-badge src-actual src-first">첫</span>
+              <span class="legend-text"
+                >첫 진입 출처 (자체 트래커 SessionId 의 최초 page_view)</span
+              >
+            </span>
+            <span class="legend-item">
+              <span class="src-badge src-actual src-last">끝</span>
+              <span class="legend-text"
+                >마지막 진입 출처 (폼 제출 직전 utm/쿠키)</span
+              >
+            </span>
           </div>
         </div>
 
