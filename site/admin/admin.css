@@ -2843,6 +2843,37 @@
   font-size: 12px;
   color: var(--c-text-muted);
 }
+.kpi-split {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.kpi-split .kpi-divider {
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--c-text-muted);
+}
+.kpi-sub {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+.kpi-help {
+  display: inline-block;
+  margin-left: 4px;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  font-size: 10px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--c-border);
+  color: var(--c-text-muted);
+  cursor: help;
+  vertical-align: middle;
+}
 .delta {
   font-weight: 600;
 }

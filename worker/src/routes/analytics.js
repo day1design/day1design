@@ -686,9 +686,14 @@ async function getSummary(request, env, services) {
   const forceRefresh = url.searchParams.get("refresh") === "1";
   const latest = await latestSnapshot(services, range);
 
+  // 캐시 hit 시에도 "터치"는 D1에서 실시간 머지 (GA4 캐시와 별개로 항상 최신)
+  const liveTouches = await fetchLiveTouches(env, range);
+
   if (!forceRefresh && latest && !isExpired(latest.createdAt)) {
+    const cached = latest.payload || {};
     return jsonOk({
-      ...latest.payload,
+      ...cached,
+      summary: { ...(cached.summary || {}), touches: liveTouches },
       persisted: latest.persisted,
       cached: true,
     });
@@ -697,8 +702,10 @@ async function getSummary(request, env, services) {
   const fresh = await collectGoogleSummary(env, range);
   if (!fresh.ok) {
     if (latest) {
+      const cached = latest.payload || {};
       return jsonOk({
-        ...latest.payload,
+        ...cached,
+        summary: { ...(cached.summary || {}), touches: liveTouches },
         persisted: latest.persisted,
         cached: true,
         stale: true,
@@ -710,6 +717,22 @@ async function getSummary(request, env, services) {
 
   const persisted = await persistSnapshot(services, range, fresh);
   return jsonOk({ ...fresh, persisted, cached: false });
+}
+
+async function fetchLiveTouches(env, range) {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT SessionId) AS Touches
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?`,
+    )
+      .bind(range.startDate, range.endDate)
+      .first();
+    return Number(row?.Touches || 0);
+  } catch {
+    return 0;
+  }
 }
 
 function resolveRange(url) {
@@ -928,6 +951,23 @@ async function collectGoogleSummary(env, range) {
   }
   if (!payload.configured.gsc) {
     errors.push({ source: "gsc", code: "not_configured" });
+  }
+
+  // 자체 트래커(D1) 기반 "터치" 카운트 — page_view 이벤트의 unique session 수
+  // 정의: 페이지 진입 즉시 sendBeacon 발사. 1초 미만 이탈도 잡힘 (GA4는 못 잡음)
+  try {
+    const touchRow = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT SessionId) AS Touches
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?`,
+    )
+      .bind(range.startDate, range.endDate)
+      .first();
+    const touches = Number(touchRow?.Touches || 0);
+    payload.summary = { ...(payload.summary || {}), touches };
+  } catch (e) {
+    errors.push({ source: "d1_touches", code: safeErrorCode(e) });
   }
 
   return payload;

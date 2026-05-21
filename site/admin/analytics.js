@@ -587,7 +587,13 @@ function restoreChart(canvasId) {
 }
 
 function renderAnalyticsEmpty() {
-  ["kpiVisitors", "kpiPageviews", "kpiDuration", "kpiBounce"].forEach((id) => {
+  [
+    "kpiTouches",
+    "kpiVisitors",
+    "kpiPageviews",
+    "kpiDuration",
+    "kpiBounce",
+  ].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.textContent = "";
   });
@@ -631,6 +637,9 @@ function renderTrafficAnalytics(data) {
     return;
   }
 
+  // 방문자 카드: 터치(자체 init) / 체류(GA4 기반)
+  const touchEl = document.getElementById("kpiTouches");
+  if (touchEl) touchEl.textContent = fmtInt(summary.touches || 0);
   document.getElementById("kpiVisitors").textContent = fmtInt(
     summary.visitors || 0,
   );
@@ -2471,5 +2480,5 @@ window.addEventListener("resize", () => {
   }, 200);
 });
 
-applyRange("30");
+applyRange("today");
 loadSubmissionRecords();

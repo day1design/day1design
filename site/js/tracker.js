@@ -214,4 +214,10 @@
 
   // 페이지 로드 직후 1회 스크롤 측정 (초기 위치 기록)
   setTimeout(onScroll, 1500);
+
+  // 진입 즉시 page_view 이벤트 발사 (단순 방문 카운트)
+  // - 1초 미만 이탈 시에도 sendBeacon으로 보장
+  push({ type: "page_view", x_pct: 0, y_pct: 0, scroll_depth_pct: 0 });
+  // 빠른 이탈 대비 즉시 flush
+  flush(true);
 })();

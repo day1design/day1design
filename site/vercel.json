@@ -4,6 +4,12 @@
   "trailingSlash": false,
   "redirects": [
     {
+      "source": "/",
+      "has": [{ "type": "host", "value": "admin.day1design.co.kr" }],
+      "destination": "/admin/login",
+      "permanent": false
+    },
+    {
       "source": "/admin/:path*",
       "has": [{ "type": "host", "value": "day1design.co.kr" }],
       "destination": "/",
@@ -50,11 +56,6 @@
       "source": "/api",
       "has": [{ "type": "host", "value": "admin.day1design.co.kr" }],
       "destination": "https://day1design-api.day1design-co.workers.dev/api"
-    },
-    {
-      "source": "/",
-      "has": [{ "type": "host", "value": "admin.day1design.co.kr" }],
-      "destination": "/admin/login.html"
     },
     {
       "source": "/admin/:path*",

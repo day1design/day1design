@@ -134,7 +134,7 @@ async function trackEvents(request, env, ctx) {
 
   for (const e of events) {
     const type = e?.type;
-    if (type !== "click" && type !== "scroll") continue;
+    if (type !== "click" && type !== "scroll" && type !== "page_view") continue;
     const page = safePage(e.page);
     if (!page) continue;
     const device = safeDevice(e.device);
@@ -147,6 +147,7 @@ async function trackEvents(request, env, ctx) {
     // 클릭은 좌표 필수
     if (type === "click" && (xPct === null || yPct === null)) continue;
     if (type === "scroll" && sdPct === null) continue;
+    // page_view는 좌표/스크롤 불필요 (방문 자체만 기록)
 
     const id = generateId();
     const sql = `INSERT INTO HeatmapEvents
@@ -252,6 +253,8 @@ async function listPages(request, env) {
       SUM(CASE WHEN Device='mobile' THEN 1 ELSE 0 END) AS MobileEvents,
       SUM(CASE WHEN EventType='click' THEN 1 ELSE 0 END) AS Clicks,
       SUM(CASE WHEN EventType='scroll' THEN 1 ELSE 0 END) AS Scrolls,
+      SUM(CASE WHEN EventType='page_view' THEN 1 ELSE 0 END) AS PageViews,
+      COUNT(DISTINCT SessionId) AS UniqueSessions,
       MAX(CreatedAt) AS LastEventAt
     FROM HeatmapEvents
     GROUP BY Page

@@ -282,8 +282,21 @@
 
         <section class="kpi-grid">
           <article class="kpi-card">
-            <div class="kpi-label">방문자</div>
-            <div class="kpi-value" id="kpiVisitors">—</div>
+            <div class="kpi-label">
+              방문자
+              <span
+                class="kpi-help"
+                title="터치: 자체 트래커 page_view 기준 — 페이지 진입만 해도 카운트(1초 미만 이탈 포함). 체류: GA4 활성 사용자 — 10초 이상 머무름 또는 2페이지 이상 또는 전환 1건 이상."
+                aria-label="방문자 정의"
+                >ⓘ</span
+              >
+            </div>
+            <div class="kpi-value kpi-split">
+              <span id="kpiTouches">—</span>
+              <span class="kpi-divider">/</span>
+              <span id="kpiVisitors">—</span>
+            </div>
+            <div class="kpi-sub">터치 · 체류</div>
             <div class="kpi-delta" id="kpiVisitorsDelta"></div>
           </article>
           <article class="kpi-card">
@@ -493,6 +506,6 @@
     ></script>
     <script defer src="config.js?v=20260514-heatmap"></script>
     <script defer src="admin.js?v=20260520-2row"></script>
-    <script defer src="analytics.js?v=20260520-today-default"></script>
+    <script defer src="analytics.js?v=20260521-touch-engaged"></script>
   </body>
 </html>
