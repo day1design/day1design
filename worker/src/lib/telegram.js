@@ -35,15 +35,25 @@ function telegramChatIds(env) {
   ];
 }
 
-export async function notifyTelegram(env, text) {
-  const chatIds = telegramChatIds(env);
-  if (!env.TELEGRAM_BOT_TOKEN || !chatIds.length) return;
+export async function notifyTelegram(env, text, opts = {}) {
+  // opts: { botToken?: string, chatId?: string | string[] }
+  // override 안 하면 env.TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID/ADMIN_CHAT_ID
+  const botToken = String(opts.botToken || env.TELEGRAM_BOT_TOKEN || "").trim();
+  let chatIds;
+  if (opts.chatId) {
+    chatIds = (Array.isArray(opts.chatId) ? opts.chatId : [opts.chatId])
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+  } else {
+    chatIds = telegramChatIds(env);
+  }
+  if (!botToken || !chatIds.length) return;
   try {
     const chunks = splitTelegramText(text);
     for (const chatId of chatIds) {
       for (const chunk of chunks) {
         const res = await fetch(
-          `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+          `https://api.telegram.org/bot${botToken}/sendMessage`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },

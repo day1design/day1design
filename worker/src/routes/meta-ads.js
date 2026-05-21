@@ -342,12 +342,14 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     log.CompletedAt = new Date().toISOString();
     await writeLog(env, log);
 
-    // rate limit 또는 syncType이 cron이면 텔레그램 알림
+    // rate limit / sync 실패 → 별도 텔레그램 채널로 알림
+    // (env.META_RATE_TELEGRAM_BOT_TOKEN + META_RATE_TELEGRAM_CHAT_ID)
+    const text = `[day1design/meta-ads] ${log.Status} (${syncType})\n${startDate} ~ ${endDate}\nAPI 호출: ${log.ApiCallsUsed}\n${msg}`;
     ctx?.waitUntil(
-      notifyTelegram(
-        env,
-        `[day1design/meta-ads] ${log.Status} (${syncType})\n${startDate} ~ ${endDate}\nAPI 호출: ${log.ApiCallsUsed}\n${msg}`,
-      ),
+      notifyTelegram(env, text, {
+        botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
+        chatId: env.META_RATE_TELEGRAM_CHAT_ID,
+      }),
     );
     return jsonError(500, msg, { code: log.ErrorCode });
   }

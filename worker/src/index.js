@@ -246,9 +246,14 @@ export default {
         try {
           await runScheduledSync(env, ctx);
         } catch (e) {
+          // Meta 전용 채널로 알림
           await notifyTelegram(
             env,
             `[day1design/cron] meta-ads scheduled sync 실패\n${(e?.message || "").slice(0, 200)}`,
+            {
+              botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
+              chatId: env.META_RATE_TELEGRAM_CHAT_ID,
+            },
           );
         }
       })(),
