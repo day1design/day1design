@@ -12,15 +12,35 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin, timingSafeEqual } from "../lib/auth.js";
 import { notifyTelegram } from "../lib/telegram.js";
-import { generateId } from "../lib/d1.js";
+import { generateId, d1Create, d1Update } from "../lib/d1.js";
 
 const META_API_VERSION = "v18.0";
 const CAMPAIGN_FIELDS = "campaign_id,campaign_name";
-const INSIGHT_METRICS =
-  "impressions,clicks,spend,ctr,cpc,reach,frequency,actions,inline_link_clicks";
-// 라이브 캠페인 메타 (status·objective·예산) — 별도 호출
+const AD_FIELDS = "ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name";
+const INSIGHT_METRICS = [
+  "impressions",
+  "clicks",
+  "spend",
+  "ctr",
+  "cpc",
+  "reach",
+  "frequency",
+  "actions",
+  "inline_link_clicks",
+  "unique_clicks",
+  "unique_inline_link_clicks",
+  "cost_per_inline_link_click",
+  "video_p25_watched_actions",
+  "video_p50_watched_actions",
+  "video_p75_watched_actions",
+  "video_p100_watched_actions",
+  "video_avg_time_watched_actions",
+  "video_thruplay_watched_actions",
+].join(",");
 const CAMPAIGN_META_FIELDS =
   "id,name,status,objective,daily_budget,lifetime_budget";
+const AD_META_FIELDS =
+  "id,name,status,creative{id,thumbnail_url,object_type,video_id,image_url}";
 
 // ─── 어드민 라우터 ────────────────────────────────────────
 export async function handleMetaAds(request, env, ctx) {
@@ -58,6 +78,31 @@ export async function handleMetaAds(request, env, ctx) {
   // GET /api/meta-ads/sync-log — 최근 동기화 이력
   if (path === "/sync-log" && request.method === "GET") {
     return listSyncLog(env);
+  }
+
+  // GET /api/meta-ads/ads?range=30&sort=spend&order=top — 광고별 효율
+  if (path === "/ads" && request.method === "GET") {
+    return listAds(request, env);
+  }
+
+  // GET /api/meta-ads/breakdown?range=30&dim=platform — 분해 통계
+  if (path === "/breakdown" && request.method === "GET") {
+    return listBreakdown(request, env);
+  }
+
+  // GET /api/meta-ads/dow?range=30 — 요일별 집계
+  if (path === "/dow" && request.method === "GET") {
+    return listDow(request, env);
+  }
+
+  // GET /api/meta-ads/hour-heatmap?range=30 — 요일×시간대 히트맵
+  if (path === "/hour-heatmap" && request.method === "GET") {
+    return listHourHeatmap(request, env);
+  }
+
+  // GET /api/meta-ads/efficiency?range=30 — 효율 변화 추이 (CPM·CPC·CPL)
+  if (path === "/efficiency" && request.method === "GET") {
+    return getEfficiency(request, env);
   }
 
   // POST /api/meta-ads/backfill — 초기 백필 (2026-02-02 ~ 어제)
@@ -237,6 +282,340 @@ async function listSyncLog(env) {
   }
 }
 
+// ─── 광고별 효율 (Ad Level) ────────────────────────────
+async function listAds(request, env) {
+  const url = new URL(request.url);
+  const range = resolveRangeFromQuery(url);
+  const sortField = (url.searchParams.get("sort") || "spend").toLowerCase();
+  const order = (url.searchParams.get("order") || "top").toLowerCase();
+  const limit = Math.max(
+    1,
+    Math.min(100, parseInt(url.searchParams.get("limit") || "20", 10)),
+  );
+  const sortMap = {
+    spend: "Spend",
+    cpl: "CPL",
+    ctr: "Ctr",
+    impressions: "Impressions",
+    leads: "Leads",
+  };
+  const sortCol = sortMap[sortField] || "Spend";
+  const direction = order === "bottom" ? "ASC" : "DESC";
+
+  try {
+    const res = await env.DB.prepare(
+      `SELECT
+         AdId,
+         MAX(AdName) AS AdName,
+         MAX(AdsetId) AS AdsetId,
+         MAX(AdsetName) AS AdsetName,
+         MAX(CampaignId) AS CampaignId,
+         MAX(CampaignName) AS CampaignName,
+         MAX(CreativeId) AS CreativeId,
+         MAX(CreativeType) AS CreativeType,
+         MAX(ThumbnailUrl) AS ThumbnailUrl,
+         MAX(Status) AS Status,
+         SUM(Impressions) AS Impressions,
+         SUM(Clicks) AS Clicks,
+         SUM(LinkClicks) AS LinkClicks,
+         SUM(Spend) AS Spend,
+         SUM(Reach) AS Reach,
+         SUM(Leads) AS Leads,
+         SUM(ThruPlay) AS ThruPlay,
+         CASE WHEN SUM(Impressions) > 0
+              THEN CAST(SUM(Clicks) AS REAL) / SUM(Impressions) * 100
+              ELSE 0 END AS Ctr,
+         CASE WHEN SUM(LinkClicks) > 0
+              THEN SUM(Spend) / SUM(LinkClicks)
+              ELSE 0 END AS Cpc,
+         CASE WHEN SUM(Leads) > 0
+              THEN SUM(Spend) / SUM(Leads)
+              ELSE 0 END AS CPL
+       FROM MetaAdsAd
+       WHERE Date BETWEEN ? AND ?
+       GROUP BY AdId
+       HAVING Impressions > 0
+       ORDER BY ${sortCol} ${direction}
+       LIMIT ?`,
+    )
+      .bind(range.startDate, range.endDate, limit)
+      .all();
+
+    const ads = (res.results || []).map((r) => {
+      const imps = Number(r.Impressions || 0);
+      const clicks = Number(r.Clicks || 0);
+      const spend = Number(r.Spend || 0);
+      const leads = Number(r.Leads || 0);
+      return {
+        adId: String(r.AdId || ""),
+        adName: String(r.AdName || ""),
+        adsetId: String(r.AdsetId || ""),
+        adsetName: String(r.AdsetName || ""),
+        campaignId: String(r.CampaignId || ""),
+        campaignName: String(r.CampaignName || ""),
+        creativeId: String(r.CreativeId || ""),
+        creativeType: String(r.CreativeType || ""),
+        thumbnailUrl: String(r.ThumbnailUrl || ""),
+        status: String(r.Status || ""),
+        impressions: imps,
+        clicks,
+        linkClicks: Number(r.LinkClicks || 0),
+        spend,
+        reach: Number(r.Reach || 0),
+        leads,
+        thruPlay: Number(r.ThruPlay || 0),
+        ctr: imps > 0 ? clicks / imps : 0,
+        cpc: clicks > 0 ? spend / clicks : 0,
+        cpl: leads > 0 ? spend / leads : 0,
+      };
+    });
+    return jsonOk({ range, ads });
+  } catch (e) {
+    return jsonError(500, "ads failed: " + (e.message || "").slice(0, 100));
+  }
+}
+
+// ─── breakdown (5종) 통계 ──────────────────────────────
+async function listBreakdown(request, env) {
+  const url = new URL(request.url);
+  const range = resolveRangeFromQuery(url);
+  const dim = String(url.searchParams.get("dim") || "platform");
+  const limit = Math.max(
+    1,
+    Math.min(50, parseInt(url.searchParams.get("limit") || "20", 10)),
+  );
+  try {
+    const res = await env.DB.prepare(
+      `SELECT
+         DimensionValue,
+         MAX(DimensionSub) AS DimensionSub,
+         SUM(Impressions) AS Impressions,
+         SUM(Clicks) AS Clicks,
+         SUM(LinkClicks) AS LinkClicks,
+         SUM(Spend) AS Spend,
+         SUM(Reach) AS Reach,
+         SUM(Leads) AS Leads
+       FROM MetaAdsBreakdown
+       WHERE Date BETWEEN ? AND ? AND Dimension = ?
+       GROUP BY DimensionValue
+       ORDER BY Spend DESC
+       LIMIT ?`,
+    )
+      .bind(range.startDate, range.endDate, dim, limit)
+      .all();
+    const rows = (res.results || []).map((r) => {
+      const imps = Number(r.Impressions || 0);
+      const clicks = Number(r.Clicks || 0);
+      const spend = Number(r.Spend || 0);
+      const leads = Number(r.Leads || 0);
+      return {
+        value: String(r.DimensionValue || ""),
+        sub: String(r.DimensionSub || ""),
+        impressions: imps,
+        clicks,
+        linkClicks: Number(r.LinkClicks || 0),
+        spend,
+        reach: Number(r.Reach || 0),
+        leads,
+        ctr: imps > 0 ? clicks / imps : 0,
+        cpc: clicks > 0 ? spend / clicks : 0,
+        cpl: leads > 0 ? spend / leads : 0,
+      };
+    });
+    return jsonOk({ range, dimension: dim, rows });
+  } catch (e) {
+    return jsonError(
+      500,
+      "breakdown failed: " + (e.message || "").slice(0, 100),
+    );
+  }
+}
+
+// ─── 요일별 집계 (account 일별 → strftime 요일 추출) ───
+async function listDow(request, env) {
+  const url = new URL(request.url);
+  const range = resolveRangeFromQuery(url);
+  try {
+    const res = await env.DB.prepare(
+      `SELECT
+         strftime('%w', Date) AS Dow,
+         SUM(Impressions) AS Impressions,
+         SUM(Clicks) AS Clicks,
+         SUM(Spend) AS Spend,
+         SUM(Leads) AS Leads,
+         COUNT(*) AS Days
+       FROM MetaAdsDaily
+       WHERE Level = 'account' AND Date BETWEEN ? AND ?
+       GROUP BY Dow
+       ORDER BY Dow`,
+    )
+      .bind(range.startDate, range.endDate)
+      .all();
+    const rows = (res.results || []).map((r) => {
+      const imps = Number(r.Impressions || 0);
+      const clicks = Number(r.Clicks || 0);
+      const spend = Number(r.Spend || 0);
+      const leads = Number(r.Leads || 0);
+      return {
+        dow: Number(r.Dow), // 0=일, 1=월, ...
+        impressions: imps,
+        clicks,
+        spend,
+        leads,
+        days: Number(r.Days || 0),
+        ctr: imps > 0 ? clicks / imps : 0,
+        cpc: clicks > 0 ? spend / clicks : 0,
+        cpl: leads > 0 ? spend / leads : 0,
+      };
+    });
+    return jsonOk({ range, rows });
+  } catch (e) {
+    return jsonError(500, "dow failed: " + (e.message || "").slice(0, 100));
+  }
+}
+
+// ─── 시간대 × 요일 히트맵 (hour breakdown × date의 요일) ───
+async function listHourHeatmap(request, env) {
+  const url = new URL(request.url);
+  const range = resolveRangeFromQuery(url);
+  try {
+    const res = await env.DB.prepare(
+      `SELECT
+         strftime('%w', Date) AS Dow,
+         DimensionValue AS Hour,
+         SUM(Impressions) AS Impressions,
+         SUM(Clicks) AS Clicks,
+         SUM(Spend) AS Spend,
+         SUM(Leads) AS Leads
+       FROM MetaAdsBreakdown
+       WHERE Dimension = 'hour' AND Date BETWEEN ? AND ?
+       GROUP BY Dow, Hour
+       ORDER BY Dow, Hour`,
+    )
+      .bind(range.startDate, range.endDate)
+      .all();
+    const cells = (res.results || []).map((r) => ({
+      dow: Number(r.Dow),
+      hour: Number(r.Hour),
+      impressions: Number(r.Impressions || 0),
+      clicks: Number(r.Clicks || 0),
+      spend: Number(r.Spend || 0),
+      leads: Number(r.Leads || 0),
+    }));
+    return jsonOk({ range, cells });
+  } catch (e) {
+    return jsonError(
+      500,
+      "hour heatmap failed: " + (e.message || "").slice(0, 100),
+    );
+  }
+}
+
+// ─── 효율 변화 추이 (CPM/CPC/CPL + 전기 대비) ───────────
+async function getEfficiency(request, env) {
+  const url = new URL(request.url);
+  const range = resolveRangeFromQuery(url);
+  const { startDate, endDate } = range;
+
+  // 이전 동일 기간 (전기) 계산
+  const days = daysBetween(startDate, endDate);
+  const prevEnd = addDays(startDate, -1);
+  const prevStart = addDays(prevEnd, -(days - 1));
+
+  try {
+    const curr = await aggregateAccount(env, startDate, endDate);
+    const prev = await aggregateAccount(env, prevStart, prevEnd);
+
+    // 일별 시계열 (CPM/CPC/CPL)
+    const seriesRes = await env.DB.prepare(
+      `SELECT
+         Date,
+         Impressions,
+         Clicks,
+         LinkClicks,
+         Spend,
+         Leads
+       FROM MetaAdsDaily
+       WHERE Level = 'account' AND Date BETWEEN ? AND ?
+       ORDER BY Date ASC`,
+    )
+      .bind(startDate, endDate)
+      .all();
+    const daily = (seriesRes.results || []).map((r) => {
+      const imps = Number(r.Impressions || 0);
+      const clicks = Number(r.Clicks || 0);
+      const linkClicks = Number(r.LinkClicks || 0);
+      const spend = Number(r.Spend || 0);
+      const leads = Number(r.Leads || 0);
+      return {
+        date: r.Date,
+        cpm: imps > 0 ? (spend / imps) * 1000 : 0,
+        cpc: linkClicks > 0 ? spend / linkClicks : 0,
+        cpl: leads > 0 ? spend / leads : 0,
+        impressions: imps,
+        clicks,
+        spend,
+        leads,
+      };
+    });
+
+    return jsonOk({
+      range,
+      previous: { startDate: prevStart, endDate: prevEnd },
+      current: curr,
+      prevTotals: prev,
+      daily,
+    });
+  } catch (e) {
+    return jsonError(
+      500,
+      "efficiency failed: " + (e.message || "").slice(0, 100),
+    );
+  }
+}
+
+async function aggregateAccount(env, startDate, endDate) {
+  const row = await env.DB.prepare(
+    `SELECT
+       SUM(Impressions) AS Impressions,
+       SUM(Clicks) AS Clicks,
+       SUM(LinkClicks) AS LinkClicks,
+       SUM(Spend) AS Spend,
+       SUM(Leads) AS Leads
+     FROM MetaAdsDaily
+     WHERE Level = 'account' AND Date BETWEEN ? AND ?`,
+  )
+    .bind(startDate, endDate)
+    .first();
+  const imps = Number(row?.Impressions || 0);
+  const clicks = Number(row?.Clicks || 0);
+  const linkClicks = Number(row?.LinkClicks || 0);
+  const spend = Number(row?.Spend || 0);
+  const leads = Number(row?.Leads || 0);
+  return {
+    impressions: imps,
+    clicks,
+    linkClicks,
+    spend,
+    leads,
+    cpm: imps > 0 ? (spend / imps) * 1000 : 0,
+    cpc: linkClicks > 0 ? spend / linkClicks : 0,
+    cpl: leads > 0 ? spend / leads : 0,
+    ctr: imps > 0 ? clicks / imps : 0,
+  };
+}
+
+function daysBetween(a, b) {
+  const da = new Date(a + "T00:00:00Z").getTime();
+  const db = new Date(b + "T00:00:00Z").getTime();
+  return Math.max(1, Math.round((db - da) / 86400000) + 1);
+}
+function addDays(ymd, n) {
+  const d = new Date(ymd + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 // ─── 백필 / Cron sync 공통 ───────────────────────────────
 async function runBackfill(request, env, ctx) {
   let body = {};
@@ -293,6 +672,70 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     const campaignMeta = await fetchCampaignMeta(token, accountId);
     log.ApiCallsUsed++;
 
+    // 4) ad 레벨 인사이트
+    const adRows = await fetchInsights(
+      token,
+      accountId,
+      startDate,
+      endDate,
+      "ad",
+    );
+    log.ApiCallsUsed++;
+
+    // 5) ad 메타 (status, creative thumbnail)
+    const adMeta = await fetchAdMeta(token, accountId);
+    log.ApiCallsUsed++;
+
+    // 6-10) breakdown 5종 + 시간대 (각 1회)
+    const brkPlatform = await fetchBreakdown(
+      token,
+      accountId,
+      startDate,
+      endDate,
+      "publisher_platform",
+    );
+    log.ApiCallsUsed++;
+    const brkPosition = await fetchBreakdown(
+      token,
+      accountId,
+      startDate,
+      endDate,
+      "publisher_platform,platform_position",
+    );
+    log.ApiCallsUsed++;
+    const brkDevice = await fetchBreakdown(
+      token,
+      accountId,
+      startDate,
+      endDate,
+      "impression_device",
+    );
+    log.ApiCallsUsed++;
+    const brkAgeGender = await fetchBreakdown(
+      token,
+      accountId,
+      startDate,
+      endDate,
+      "age,gender",
+    );
+    log.ApiCallsUsed++;
+    const brkRegion = await fetchBreakdown(
+      token,
+      accountId,
+      startDate,
+      endDate,
+      "region",
+    );
+    log.ApiCallsUsed++;
+    const brkHour = await fetchBreakdown(
+      token,
+      accountId,
+      startDate,
+      endDate,
+      "hourly_stats_aggregated_by_advertiser_time_zone",
+    );
+    log.ApiCallsUsed++;
+
     // UPSERT
     const fetchedAt = new Date().toISOString();
     let updated = 0;
@@ -324,6 +767,71 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
         FetchedAt: fetchedAt,
       });
       updated++;
+    }
+
+    for (const row of adRows) {
+      const meta = adMeta[row.ad_id] || {};
+      const creative = meta.creative || {};
+      await upsertAd(env, {
+        Date: row.date_start,
+        AdId: String(row.ad_id || ""),
+        AdName: String(row.ad_name || meta.name || ""),
+        AdsetId: String(row.adset_id || ""),
+        AdsetName: String(row.adset_name || ""),
+        CampaignId: String(row.campaign_id || ""),
+        CampaignName: String(row.campaign_name || ""),
+        CreativeId: String(creative.id || ""),
+        CreativeType: String(creative.object_type || ""),
+        ThumbnailUrl: String(
+          creative.thumbnail_url || creative.image_url || "",
+        ),
+        Status: String(meta.status || ""),
+        ...mapInsight(row),
+        FetchedAt: fetchedAt,
+      });
+      updated++;
+    }
+
+    const breakdowns = [
+      ["platform", brkPlatform, (r) => [r.publisher_platform || "", ""]],
+      [
+        "position",
+        brkPosition,
+        (r) => [r.platform_position || "", r.publisher_platform || ""],
+      ],
+      ["device", brkDevice, (r) => [r.impression_device || "", ""]],
+      [
+        "age_gender",
+        brkAgeGender,
+        (r) => [`${r.age || ""}_${r.gender || ""}`, ""],
+      ],
+      ["region", brkRegion, (r) => [r.region || "", ""]],
+      [
+        "hour",
+        brkHour,
+        (r) => [
+          String(
+            r.hourly_stats_aggregated_by_advertiser_time_zone || "",
+          ).replace(/:.*$/, ""),
+          "",
+        ],
+      ],
+    ];
+
+    for (const [dim, rows, keyFn] of breakdowns) {
+      for (const row of rows) {
+        const [val, sub] = keyFn(row);
+        if (!val) continue;
+        await upsertBreakdown(env, {
+          Date: row.date_start,
+          Dimension: dim,
+          DimensionValue: val,
+          DimensionSub: sub,
+          ...mapInsight(row),
+          FetchedAt: fetchedAt,
+        });
+        updated++;
+      }
     }
 
     log.Status = "success";
@@ -360,9 +868,11 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
 
 // ─── Meta API 호출 ────────────────────────────────────────
 async function fetchInsights(token, accountId, startDate, endDate, level) {
+  let levelFields = "";
+  if (level === "campaign") levelFields = "," + CAMPAIGN_FIELDS;
+  else if (level === "ad") levelFields = "," + AD_FIELDS;
   const params = new URLSearchParams({
-    fields:
-      INSIGHT_METRICS + (level === "campaign" ? "," + CAMPAIGN_FIELDS : ""),
+    fields: INSIGHT_METRICS + levelFields,
     level,
     time_range: JSON.stringify({ since: startDate, until: endDate }),
     time_increment: "1",
@@ -405,12 +915,78 @@ async function fetchCampaignMeta(token, accountId) {
   return map;
 }
 
+async function fetchAdMeta(token, accountId) {
+  const params = new URLSearchParams({
+    fields: AD_META_FIELDS,
+    limit: "500",
+    access_token: token,
+  });
+  const url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/ads?${params}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(
+      `Meta ads ${res.status}: ${data?.error?.message || "unknown"}`,
+    );
+    err.metaError = data?.error;
+    throw err;
+  }
+  const map = {};
+  for (const a of data.data || []) {
+    map[a.id] = a;
+  }
+  return map;
+}
+
+async function fetchBreakdown(
+  token,
+  accountId,
+  startDate,
+  endDate,
+  breakdowns,
+) {
+  const params = new URLSearchParams({
+    fields: "impressions,clicks,spend,ctr,cpc,reach,actions,inline_link_clicks",
+    breakdowns,
+    time_range: JSON.stringify({ since: startDate, until: endDate }),
+    time_increment: "1",
+    limit: "1000",
+    access_token: token,
+  });
+  const url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/insights?${params}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(
+      `Meta breakdown(${breakdowns}) ${res.status}: ${data?.error?.message || "unknown"}`,
+    );
+    err.metaError = data?.error;
+    throw err;
+  }
+  return data.data || [];
+}
+
 function isRateLimit(e) {
   const code = e?.metaError?.code;
   return code === 4 || code === 17 || code === 32 || code === 613;
 }
 
 // ─── insight row → D1 컬럼 매핑 ───────────────────────────
+function firstActionValue(arr, types) {
+  if (!Array.isArray(arr)) return 0;
+  for (const a of arr) {
+    if (types.includes(a.action_type)) return Number(a.value || 0);
+  }
+  return 0;
+}
+function sumActionValue(arr, types) {
+  if (!Array.isArray(arr)) return 0;
+  let s = 0;
+  for (const a of arr)
+    if (types.includes(a.action_type)) s += Number(a.value || 0);
+  return s;
+}
+
 function mapInsight(row) {
   const actions = Array.isArray(row.actions) ? row.actions : [];
   let leads = 0;
@@ -433,77 +1009,84 @@ function mapInsight(row) {
     Frequency: Number(row.frequency || 0),
     Leads: leads,
     ActionsJson: JSON.stringify(actions),
+    VideoP25Watched: firstActionValue(row.video_p25_watched_actions, [
+      "video_view",
+    ]),
+    VideoP50Watched: firstActionValue(row.video_p50_watched_actions, [
+      "video_view",
+    ]),
+    VideoP75Watched: firstActionValue(row.video_p75_watched_actions, [
+      "video_view",
+    ]),
+    VideoP100Watched: firstActionValue(row.video_p100_watched_actions, [
+      "video_view",
+    ]),
+    VideoAvgWatchSec: firstActionValue(row.video_avg_time_watched_actions, [
+      "video_view",
+    ]),
+    ThruPlay: firstActionValue(row.video_thruplay_watched_actions, [
+      "video_view",
+    ]),
+    UniqueClicks: Number(row.unique_clicks || 0),
+    UniqueLinkClicks: Number(row.unique_inline_link_clicks || 0),
+    CostPerLinkClick: Number(row.cost_per_inline_link_click || 0),
   };
 }
 
 // ─── D1 UPSERT (UNIQUE INDEX 활용) ────────────────────────
+// SCHEMA 기반 UPSERT — 새 컬럼 추가돼도 자동 반영
 async function upsertDaily(env, fields) {
-  // 기존 row 조회
   const existing = await env.DB.prepare(
-    `SELECT id FROM MetaAdsDaily WHERE Date = ? AND Level = ? AND EntityId = ? LIMIT 1`,
+    `SELECT id FROM MetaAdsDaily WHERE Date=? AND Level=? AND EntityId=? LIMIT 1`,
   )
     .bind(fields.Date, fields.Level, fields.EntityId)
     .first();
   if (existing?.id) {
-    await env.DB.prepare(
-      `UPDATE MetaAdsDaily SET
-         EntityName = ?, Status = ?, Objective = ?,
-         Impressions = ?, Clicks = ?, LinkClicks = ?,
-         Spend = ?, Ctr = ?, Cpc = ?,
-         Reach = ?, Frequency = ?, Leads = ?,
-         ActionsJson = ?, FetchedAt = ?
-       WHERE id = ?`,
-    )
-      .bind(
-        fields.EntityName,
-        fields.Status,
-        fields.Objective,
-        fields.Impressions,
-        fields.Clicks,
-        fields.LinkClicks,
-        fields.Spend,
-        fields.Ctr,
-        fields.Cpc,
-        fields.Reach,
-        fields.Frequency,
-        fields.Leads,
-        fields.ActionsJson,
-        fields.FetchedAt,
-        existing.id,
-      )
-      .run();
+    await d1Update(env, "MetaAdsDaily", existing.id, fields);
     return;
   }
-  const id = generateId();
-  await env.DB.prepare(
-    `INSERT INTO MetaAdsDaily
-       (id, Date, Level, EntityId, EntityName, Status, Objective,
-        Impressions, Clicks, LinkClicks, Spend, Ctr, Cpc,
-        Reach, Frequency, Leads, ActionsJson, FetchedAt, CreatedAt)
-     VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?)`,
+  await d1Create(env, "MetaAdsDaily", {
+    ...fields,
+    CreatedAt: new Date().toISOString(),
+  });
+}
+
+async function upsertAd(env, fields) {
+  const existing = await env.DB.prepare(
+    `SELECT id FROM MetaAdsAd WHERE Date=? AND AdId=? LIMIT 1`,
+  )
+    .bind(fields.Date, fields.AdId)
+    .first();
+  if (existing?.id) {
+    await d1Update(env, "MetaAdsAd", existing.id, fields);
+    return;
+  }
+  await d1Create(env, "MetaAdsAd", {
+    ...fields,
+    CreatedAt: new Date().toISOString(),
+  });
+}
+
+async function upsertBreakdown(env, fields) {
+  const existing = await env.DB.prepare(
+    `SELECT id FROM MetaAdsBreakdown
+     WHERE Date=? AND Dimension=? AND DimensionValue=? AND DimensionSub=? LIMIT 1`,
   )
     .bind(
-      id,
       fields.Date,
-      fields.Level,
-      fields.EntityId,
-      fields.EntityName,
-      fields.Status,
-      fields.Objective,
-      fields.Impressions,
-      fields.Clicks,
-      fields.LinkClicks,
-      fields.Spend,
-      fields.Ctr,
-      fields.Cpc,
-      fields.Reach,
-      fields.Frequency,
-      fields.Leads,
-      fields.ActionsJson,
-      fields.FetchedAt,
-      new Date().toISOString(),
+      fields.Dimension,
+      fields.DimensionValue,
+      fields.DimensionSub || "",
     )
-    .run();
+    .first();
+  if (existing?.id) {
+    await d1Update(env, "MetaAdsBreakdown", existing.id, fields);
+    return;
+  }
+  await d1Create(env, "MetaAdsBreakdown", {
+    ...fields,
+    CreatedAt: new Date().toISOString(),
+  });
 }
 
 async function writeLog(env, fields) {
