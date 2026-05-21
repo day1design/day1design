@@ -964,25 +964,33 @@ async function fetchBreakdown(
   endDate,
   breakdowns,
 ) {
+  // 페이지네이션 지원 — Meta API limit=500/페이지, paging.next로 추가 호출
+  // 차원값이 많은 분해(age_gender / region / hour)는 일자 × 차원값 조합 수천 row 발생
   const params = new URLSearchParams({
     fields: "impressions,clicks,spend,ctr,cpc,reach,actions,inline_link_clicks",
     breakdowns,
     time_range: JSON.stringify({ since: startDate, until: endDate }),
     time_increment: "1",
-    limit: "1000",
+    limit: "500",
     access_token: token,
   });
-  const url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/insights?${params}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(
-      `Meta breakdown(${breakdowns}) ${res.status}: ${data?.error?.message || "unknown"}`,
-    );
-    err.metaError = data?.error;
-    throw err;
+  let url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/insights?${params}`;
+  const all = [];
+  const MAX_PAGES = 10; // 안전망 (subrequest 한도 보호)
+  for (let i = 0; i < MAX_PAGES && url; i++) {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) {
+      const err = new Error(
+        `Meta breakdown(${breakdowns}) ${res.status}: ${data?.error?.message || "unknown"}`,
+      );
+      err.metaError = data?.error;
+      throw err;
+    }
+    all.push(...(data.data || []));
+    url = data?.paging?.next || null;
   }
-  return data.data || [];
+  return all;
 }
 
 function isRateLimit(e) {
