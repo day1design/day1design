@@ -64,18 +64,38 @@
               <option value="전화상담 후 대기중">전화상담 후 대기중</option>
               <option value="보류">보류</option>
             </select>
-            <label>출처</label>
-            <select id="filterSource">
-              <option value="">전체</option>
-              <option value="homepage">홈페이지</option>
-              <option value="meta">Meta 광고</option>
-              <option value="google">Google</option>
-              <option value="naver">Naver</option>
-              <option value="youtube">YouTube</option>
-              <option value="kakao">Kakao</option>
-              <option value="referral">Referral</option>
-              <option value="other">기타</option>
-            </select>
+            <label>유입</label>
+            <div
+              class="source-tabs"
+              id="sourceTabs"
+              role="tablist"
+              aria-label="유입 출처"
+            >
+              <button
+                type="button"
+                class="source-tab active"
+                data-source-tab=""
+                aria-pressed="true"
+              >
+                전체
+              </button>
+              <button
+                type="button"
+                class="source-tab"
+                data-source-tab="meta"
+                aria-pressed="false"
+              >
+                Meta
+              </button>
+              <button
+                type="button"
+                class="source-tab"
+                data-source-tab="homepage"
+                aria-pressed="false"
+              >
+                홈페이지
+              </button>
+            </div>
             <label>기간</label>
             <input type="date" id="filterFrom" />
             <span class="filter-tilde">~</span>
@@ -349,6 +369,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
     <script defer src="admin.js"></script>
-    <script defer src="estimates.js?v=20260520-tz"></script>
+    <script defer src="estimates.js?v=20260521-tabs-kst"></script>
   </body>
 </html>

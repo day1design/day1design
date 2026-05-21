@@ -916,6 +916,48 @@
   background: #f1f5f9;
   color: #475569;
 }
+
+/* 입력/실제 출처 뱃지 구분 (라벨 prefix 표시) */
+.src-input {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px dashed #cbd5e1;
+}
+.src-actual {
+  /* src-meta/src-google 등 색상 위에 굵은 prefix만 추가 */
+  border: 1px solid transparent;
+}
+
+/* 유입 출처 탭 (전체/Meta/홈페이지) */
+.source-tabs {
+  display: inline-flex;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+.source-tab {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.source-tab:hover {
+  color: var(--c-text);
+}
+.source-tab.active {
+  background: #fff;
+  color: var(--c-text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
 .session-pill {
   display: inline-block;
   padding: 2px 8px;

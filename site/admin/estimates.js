@@ -24,7 +24,8 @@ const smsContentBytes = document.getElementById("smsContentBytes");
 const smsHint = document.getElementById("smsHint");
 let smsTemplatesCache = null;
 const filterStatus = document.getElementById("filterStatus");
-const filterSource = document.getElementById("filterSource");
+const sourceTabs = document.getElementById("sourceTabs");
+let sourceTabKey = ""; // "" | "meta" | "homepage"
 const filterSearch = document.getElementById("filterSearch");
 const filterFrom = document.getElementById("filterFrom");
 const filterTo = document.getElementById("filterTo");
@@ -113,12 +114,12 @@ function statusBadge(s) {
   return `<span class="${map[s] || "badge"}">${escapeHtml(s || "—")}</span>`;
 }
 
-function sourceBadge(src) {
+// 실제 출처 (Source 컬럼, Worker가 UTM/쿠키 기반으로 정규화)
+function actualSourceBadge(src) {
   const s = String(src || "homepage").toLowerCase();
-  // 드롭다운 필터(estimates.html)의 옵션 라벨과 1:1 일치
   const labels = {
     homepage: "홈페이지",
-    meta: "Meta 광고",
+    meta: "Meta",
     google: "Google",
     naver: "Naver",
     youtube: "YouTube",
@@ -127,7 +128,30 @@ function sourceBadge(src) {
     other: "기타",
   };
   const key = labels[s] ? s : "other";
-  return `<span class="src-badge src-${key}">${escapeHtml(labels[key])}</span>`;
+  return `<span class="src-badge src-actual src-${key}" title="실제 출처 (시스템 자동 추정)">실제 ${escapeHtml(labels[key])}</span>`;
+}
+
+// 입력 출처 (Referral 컬럼, 폼에서 고객이 직접 선택/입력)
+function inputSourceBadge(referral) {
+  const raw = String(referral || "").trim();
+  const label = raw || "unknown";
+  return `<span class="src-badge src-input" title="입력 출처 (고객이 폼에서 직접 선택)">입력 ${escapeHtml(label)}</span>`;
+}
+
+// 카드용 출처 뱃지 (입력·실제 inline)
+function sourceBadges(record) {
+  return `${inputSourceBadge(record.Referral)} ${actualSourceBadge(record.Source)}`;
+}
+
+// ===== KST 변환 헬퍼 (D1 SubmittedAt = UTC ISO, 표시는 KST) =====
+// KST(UTC+9) 날짜 키 (YYYY-MM-DD)
+function kstDateKey(iso) {
+  if (!iso) return "날짜 없음";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "날짜 없음";
+  const d = new Date(t);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function fmtDateTime(iso) {
@@ -180,7 +204,7 @@ function renderQuickStats() {
 
 function filtered() {
   const st = filterStatus.value;
-  const src = filterSource ? filterSource.value : "";
+  const tab = sourceTabKey; // "" | "meta" | "homepage"
   const q = filterSearch.value.trim().toLowerCase();
   // 사용자 로컬(KST) 기준 정확한 일자 경계 — 일부 브라우저가
   // "YYYY-MM-DDT00:00:00" 을 UTC 로 해석해 하루 어긋나던 문제 방지.
@@ -200,9 +224,11 @@ function filtered() {
   const toTs = toTsLocal(filterTo?.value, true);
   return records.filter((r) => {
     if (st && r.Status !== st) return false;
-    if (src) {
-      const s = (r.Source || "homepage").toLowerCase();
-      if (s !== src) return false;
+    // 탭 필터: Meta = Source==="meta", 홈페이지 = 그 외
+    if (tab === "meta") {
+      if ((r.Source || "").toLowerCase() !== "meta") return false;
+    } else if (tab === "homepage") {
+      if ((r.Source || "").toLowerCase() === "meta") return false;
     }
     if (fromTs || toTs) {
       const t = Date.parse(r.SubmittedAt || "");
@@ -212,7 +238,7 @@ function filtered() {
     }
     if (q) {
       const hay =
-        `${r.Name} ${r.Phone} ${r.Address} ${r.Email} ${r.Campaign || ""}`.toLowerCase();
+        `${r.Name} ${r.Phone} ${r.Address} ${r.Email} ${r.Campaign || ""} ${r.Referral || ""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -263,7 +289,7 @@ function exportFilteredCsv() {
   const rows = list.map((r) => {
     const srcKey = (r.Source || "homepage").toLowerCase();
     return [
-      r.SubmittedAt || "",
+      fmtDateTime(r.SubmittedAt) || "",
       r.Name || "",
       r.Phone || "",
       r.Email || "",
@@ -342,7 +368,7 @@ function briefText(r, fallback = "접수내용 없음") {
 function detailTitleHtml(r, sessionNo) {
   return `
     <span class="detail-name">${escapeHtml(r.Name || "이름 없음")}</span>
-    ${sourceBadge(r.Source)}
+    ${sourceBadges(r)}
     <span id="detailSessionSlot">${sessionBadgeHtml(sessionNo)}</span>
     <span class="branch-chip">${escapeHtml(r.Branch || "지점 미지정")}</span>
     <span class="detail-title-note">${escapeHtml(briefText(r))}</span>`;
@@ -358,7 +384,7 @@ function render() {
   const sessionMap = buildSessionMap(records);
   const groups = [];
   for (const r of list) {
-    const submittedDate = (r.SubmittedAt || "").slice(0, 10) || "날짜 없음";
+    const submittedDate = kstDateKey(r.SubmittedAt);
     let group = groups[groups.length - 1];
     if (!group || group.date !== submittedDate) {
       group = { date: submittedDate, cards: [] };
@@ -404,7 +430,7 @@ function render() {
         </span>
         <span>
           <b>유입</b>
-          <em>${sourceBadge(r.Source)} ${sessionBadgeHtml(sessionNo)}</em>
+          <em>${sourceBadges(r)} ${sessionBadgeHtml(sessionNo)}</em>
         </span>
       </span>
       <span class="est-card-summary">
@@ -966,7 +992,19 @@ async function deleteMemo(estimateId, memoId) {
 // -- init -----------------------------------------------------
 
 filterStatus.addEventListener("change", render);
-if (filterSource) filterSource.addEventListener("change", render);
+if (sourceTabs) {
+  sourceTabs.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-source-tab]");
+    if (!btn) return;
+    sourceTabKey = btn.dataset.sourceTab || "";
+    sourceTabs.querySelectorAll("[data-source-tab]").forEach((b) => {
+      const on = b === btn;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    render();
+  });
+}
 filterSearch.addEventListener("input", render);
 if (filterFrom) filterFrom.addEventListener("change", render);
 if (filterTo) filterTo.addEventListener("change", render);
