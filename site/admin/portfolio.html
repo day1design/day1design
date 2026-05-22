@@ -6,7 +6,11 @@
     <title>포트폴리오 · DAYONE ADMIN</title>
     <meta name="robots" content="noindex,nofollow" />
     <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
-    <link rel="preconnect" href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev" crossorigin />
+    <link
+      rel="preconnect"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+      crossorigin
+    />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
     <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
@@ -45,6 +49,11 @@
             </button>
           </div>
 
+          <div id="filterLockMsg" class="filter-lock-msg" hidden>
+            필터/검색이 적용된 상태에서는 순서 변경이 잠겨 있습니다. 필터를 모두
+            해제해야 카드를 드래그하거나 번호로 위치를 옮길 수 있습니다.
+          </div>
+
           <div class="card-grid" id="pfGrid"></div>
 
           <div class="save-bar">
@@ -78,6 +87,38 @@
           <button class="icon-btn" data-close type="button">✕</button>
         </div>
         <form id="pfForm" class="modal-body">
+          <!-- 신규 등록 모드 토글 (편집 시에는 숨김) -->
+          <div class="field" id="modeRow" hidden>
+            <label>등록 방식</label>
+            <div class="segmented" role="tablist">
+              <button
+                type="button"
+                class="segmented-btn active"
+                data-mode="new"
+              >
+                신규 등록
+              </button>
+              <button type="button" class="segmented-btn" data-mode="copy">
+                기존 글 가져오기
+              </button>
+            </div>
+            <div
+              id="copySourceRow"
+              class="field"
+              hidden
+              style="margin-top: 10px"
+            >
+              <label>가져올 원본 프로젝트</label>
+              <select id="copySource">
+                <option value="">— 선택 —</option>
+              </select>
+              <p class="hint" style="margin-top: 6px">
+                선택하면 이름·갤러리·상세 이미지 참조 원본이 그대로 채워집니다.
+                대표 이미지만 새로 업로드하세요.
+              </p>
+            </div>
+          </div>
+
           <div class="field">
             <label>프로젝트 제목 <span class="req">*</span></label>
             <input
@@ -149,28 +190,21 @@
             </button>
           </div>
 
-          <details class="pair-fold">
-            <summary>고급 옵션</summary>
-            <input type="hidden" name="folder" />
-            <div class="field">
-              <label>페어링 - 우측 프로젝트 이름</label>
-              <input
-                type="text"
-                name="rightName"
-                placeholder="카드에 함께 표시할 프로젝트 (선택)"
-              />
-            </div>
-            <div class="field-inline">
-              <div class="field">
-                <label>페어링 경로</label>
-                <input type="text" name="rightFolder" />
-              </div>
-              <div class="field">
-                <label>페어링 사진수</label>
-                <input type="number" name="rightCount" min="0" value="0" />
-              </div>
-            </div>
-          </details>
+          <div class="field">
+            <label>상세 이미지 참조 원본글 (선택)</label>
+            <select id="pairSource">
+              <option value="">— 참조 안 함 (자기 상세 이미지 사용) —</option>
+            </select>
+            <p class="hint" style="margin-top: 6px">
+              선택한 원본글의 상세 이미지(갤러리)를 이 글의 상세 모달에 그대로
+              사용합니다. 표지 이미지·카드 위치·리스트 순서에는 영향 없음. 같이
+              나란히 보이거나 한 카드로 묶이지 않습니다.
+            </p>
+          </div>
+          <input type="hidden" name="folder" />
+          <input type="hidden" name="rightName" />
+          <input type="hidden" name="rightFolder" />
+          <input type="hidden" name="rightCount" value="0" />
 
           <div class="form-actions">
             <button type="button" class="btn btn-ghost" data-close>취소</button>
@@ -185,6 +219,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
     <script defer src="admin.js"></script>
-    <script defer src="portfolio.js"></script>
+    <script defer src="portfolio.v2.js"></script>
   </body>
 </html>

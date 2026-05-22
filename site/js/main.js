@@ -156,25 +156,48 @@ const HOUSE_INITIAL = 20;
 const HOUSE_INCREMENT = 10;
 let houseVisible = HOUSE_INITIAL;
 
+const R2_BASE = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev";
+
+// 이미지 로드 실패 시 사용할 빈 placeholder (회색 svg, 1.6:1)
+const IMG_PLACEHOLDER =
+  "data:image/svg+xml;charset=UTF-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 10" preserveAspectRatio="xMidYMid slice"><rect width="16" height="10" fill="#eef0f2"/><text x="8" y="5.6" text-anchor="middle" font-family="system-ui,sans-serif" font-size="0.9" fill="#9ca3af">이미지 준비 중</text></svg>',
+  );
+
 function buildHouseCards() {
+  // 1 프로젝트 = 1 카드. 카드는 리스트에서 각자 독립으로 표시됨 (페어/병치 아님).
+  // rightFolder = "상세 이미지 참조 원본글" 포인터. 설정돼 있으면 이 카드의
+  // 상세 모달 갤러리는 원본글 images 로 교체. 표지·카드 위치는 자기 것 유지.
   const cards = [];
   for (let i = 0; i < TOTAL_PROJECTS; i++) {
-    const num = String(i + 1).padStart(2, "0");
     const proj = projectData[i];
-    const thumbs = [`${num}_after.webp`, `${num}_before.webp`];
-    thumbs.forEach((thumb, ti) => {
-      const isRight = ti === 1 && proj.rightFolder;
-      const modalProj = isRight
-        ? {
-            name: proj.rightName,
-            folder: proj.rightFolder,
-            count: proj.rightCount,
-          }
-        : proj;
-      const displayName = isRight ? proj.rightName : proj.name;
-      const folderForSize = isRight ? proj.rightFolder : proj.folder;
-      if (!sizeMatch(getPy(folderForSize), currentSize)) return;
-      cards.push({ thumb, modalProj, displayName });
+    if (!sizeMatch(getPy(proj.folder), currentSize)) continue;
+    const thumbUrl =
+      proj.thumbAfter ||
+      (Array.isArray(proj.images) && proj.images[0]) ||
+      IMG_PLACEHOLDER;
+    // 우선순위: 본인 상세이미지가 있으면 본인 것 사용.
+    // 본인 이미지 없고 rightFolder(상세 이미지 참조 원본글) 가 지정돼 있으면
+    // 원본글의 상세이미지(images/count/folder)를 그대로 가져옴.
+    // 표지(thumbAfter)는 위에서 이미 자기 것으로 결정됨 → 항상 본인 유지.
+    let modalProj = proj;
+    const ownHasImages = Array.isArray(proj.images) && proj.images.length > 0;
+    if (!ownHasImages && proj.rightFolder && proj.rightFolder !== proj.folder) {
+      const right = projectData.find((x) => x.folder === proj.rightFolder);
+      if (right) {
+        modalProj = {
+          ...proj,
+          images: Array.isArray(right.images) ? right.images : [],
+          count: right.count || 0,
+          folder: right.folder,
+        };
+      }
+    }
+    cards.push({
+      thumbUrl,
+      modalProj,
+      displayName: proj.name,
     });
   }
   return cards;
@@ -214,7 +237,7 @@ function renderHouse(size) {
   const cards = buildHouseCards();
   const limit = Math.min(houseVisible, cards.length);
   for (let k = 0; k < limit; k++) {
-    const { thumb, modalProj, displayName } = cards[k];
+    const { thumbUrl, modalProj, displayName } = cards[k];
     const card = document.createElement("div");
     card.className = "project-card";
     // Above-the-fold (first 4) eager + high priority, rest lazy
@@ -223,11 +246,25 @@ function renderHouse(size) {
         ? 'fetchpriority="high" decoding="async"'
         : 'loading="lazy" decoding="async"';
     card.innerHTML = `
-      <img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/${thumb}" alt="${displayName}" ${loadAttr}>
+      <img class="img-after" src="${thumbUrl}" alt="${displayName}" ${loadAttr}>
       <div class="project-overlay">
         <span class="project-name">${displayName}</span>
       </div>
     `;
+    // 이미지 로드 실패 시 placeholder로 교체 (R2 fallback 누락 파일 회피)
+    const imgEl = card.querySelector(".img-after");
+    if (imgEl) {
+      imgEl.addEventListener(
+        "error",
+        () => {
+          if (imgEl.src !== IMG_PLACEHOLDER) {
+            imgEl.src = IMG_PLACEHOLDER;
+            card.classList.add("no-image");
+          }
+        },
+        { once: true },
+      );
+    }
     card.addEventListener("click", () => openProjectModal(modalProj));
     grid.appendChild(card);
   }
@@ -390,18 +427,26 @@ if (grid) {
 function openProjectModal(proj) {
   modalTitle.textContent = proj.name;
   modalGrid.innerHTML = "";
-  for (let i = 1; i <= proj.count; i++) {
-    const num = String(i).padStart(3, "0");
+  // 관리자가 업로드한 이미지(D1 images)가 있으면 우선 사용, 없으면 폴더 fallback
+  const urls =
+    Array.isArray(proj.images) && proj.images.length
+      ? proj.images
+      : Array.from(
+          { length: proj.count || 0 },
+          (_, i) =>
+            `${R2_BASE}/images/portfolio/${proj.folder}/${String(i + 1).padStart(3, "0")}.webp`,
+        );
+  urls.forEach((src, i) => {
     const img = document.createElement("img");
-    img.src = `https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio/${proj.folder}/${num}.webp`;
-    img.alt = `${proj.name} ${i}`;
+    img.src = src;
+    img.alt = `${proj.name} ${i + 1}`;
     img.loading = "lazy";
     img.onerror = function () {
       this.remove();
     };
     img.addEventListener("click", () => openLightbox(img.src));
     modalGrid.appendChild(img);
-  }
+  });
   modal.classList.add("open");
   document.body.style.overflow = "hidden";
 }
@@ -680,7 +725,8 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
     let data = null;
     if (API_BASE) {
       try {
-        const r = await fetch(`${API_BASE}/api/hero/slides`);
+        // cache buster + Worker TTL 5초 → admin 변경이 다음 페이지 로드 즉시 반영
+        const r = await fetch(`${API_BASE}/api/hero/slides?ts=${Date.now()}`);
         if (r.ok) data = await r.json();
       } catch {}
     }
@@ -854,30 +900,41 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
   resetTimer();
 })();
 
-// ========== PORTFOLIO API 전환 (optional) ==========
-// window.DAY1_API_BASE 가 설정되어 있으면 Worker API에서 projectData를 덮어씀.
-// 하드코딩 데이터와 동일하면 재렌더 스킵(깜빡임 방지).
-(async function loadPortfolioFromApi() {
+// ========== PORTFOLIO API 동기화 ==========
+// admin 변경이 라이브에 빠르게 반영되되, 변경 없으면 재렌더 안 함
+// (사용자가 "더 보기"로 늘려놓은 카드 리스트가 8초 polling 마다 깜빡임/초기화
+//  되는 사고 차단). signature 비교로 진짜 변경 있을 때만 renderHouse().
+let _portfolioLastSig = "";
+async function syncPortfolioFromApi() {
   const API_BASE =
     (typeof window !== "undefined" && window.DAY1_API_BASE) || "";
   if (!API_BASE || !grid) return;
   try {
-    const res = await fetch(`${API_BASE}/api/portfolio`);
+    const res = await fetch(`${API_BASE}/api/portfolio?ts=${Date.now()}`);
     if (!res.ok) return;
     const d = await res.json();
-    if (!Array.isArray(d.records) || !d.records.length) return;
+    if (!Array.isArray(d.records)) return;
 
-    // diff: 폴더 순서·개수가 동일하면 데이터 교체만 하고 재렌더 생략
-    const oldSig = projectData
-      .map((p) => `${p.folder}:${p.count}:${p.rightFolder || ""}`)
-      .join("|");
-    const newSig = d.records
-      .map((r) => `${r.folder}:${r.count}:${r.rightFolder || ""}`)
-      .join("|");
+    // 변경 감지용 signature — id/order/사진/상세이미지 참조원본 모두 포함
+    const sig = d.records
+      .map(
+        (r) =>
+          `${r.id}|${r.order}|${r.thumbAfter || ""}|${(Array.isArray(r.images) && r.images.length) || 0}|${r.rightFolder || ""}`,
+      )
+      .join("||");
+    if (sig === _portfolioLastSig) return; // 변경 없음 → 그대로 둠
+    _portfolioLastSig = sig;
 
     projectData.length = 0;
     d.records.forEach((r) => {
-      const o = { name: r.name, folder: r.folder, count: r.count };
+      const o = {
+        name: r.name,
+        folder: r.folder,
+        count: r.count,
+        thumbAfter: r.thumbAfter || "",
+        thumbBefore: r.thumbBefore || "",
+        images: Array.isArray(r.images) ? r.images : [],
+      };
       if (r.rightName) {
         o.rightName = r.rightName;
         o.rightFolder = r.rightFolder;
@@ -887,16 +944,41 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
     });
     TOTAL_PROJECTS = projectData.length;
 
-    if (oldSig === newSig) return; // 변경 없음 → 재렌더 스킵
-
-    // HOUSE 탭이 활성화된 상태에서만 재렌더 (OFFICE는 영향 없음)
     if (
       grid.classList.contains("project-grid") &&
       !grid.classList.contains("office-grid")
     ) {
-      renderHouse(currentSize);
+      // 인자 없이 호출 — 사용자가 "더 보기"로 늘린 houseVisible 유지
+      renderHouse();
     }
   } catch (e) {
     // 조용히 fallback 유지
   }
-})();
+}
+
+syncPortfolioFromApi();
+// 라이브 탭이 띄워진 상태에서도 admin 변경이 즉시 보이도록 짧은 폴링.
+// 활성 탭일 때만 폴링 (백그라운드 탭은 visibilitychange로 즉시 갱신).
+let _portfolioPollTimer = null;
+function startPortfolioPolling() {
+  if (_portfolioPollTimer) return;
+  _portfolioPollTimer = setInterval(() => {
+    if (!document.hidden) syncPortfolioFromApi();
+  }, 8000);
+}
+function stopPortfolioPolling() {
+  if (_portfolioPollTimer) {
+    clearInterval(_portfolioPollTimer);
+    _portfolioPollTimer = null;
+  }
+}
+startPortfolioPolling();
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    syncPortfolioFromApi();
+    startPortfolioPolling();
+  } else {
+    stopPortfolioPolling();
+  }
+});
+window.addEventListener("focus", syncPortfolioFromApi);
