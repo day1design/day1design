@@ -288,6 +288,16 @@
 .popup-overlay.hidden {
   display: none;
 }
+/* parallel 모드 (데스크탑) — dim 없는 플로팅 박스, 페이지 상호작용 허용 */
+.popup-overlay--floating {
+  background: transparent;
+  pointer-events: none;
+  padding-top: 0;
+}
+.popup-overlay--floating .popup {
+  pointer-events: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
 .popup {
   background: #fff;
   max-width: 520px;

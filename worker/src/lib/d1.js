@@ -93,6 +93,19 @@ const SCHEMA = {
     "CreatedAt",
   ],
   AdminSettings: ["Value", "UpdatedAt"],
+  Popups: [
+    "Title",
+    "ImageUrl",
+    "Alt",
+    "LinkUrl",
+    "WidthPx",
+    "TopPx",
+    "LeftPx",
+    "Active",
+    "Order",
+    "CreatedAt",
+    "UpdatedAt",
+  ],
   MessageTemplates: ["Name", "Subject", "Content", "CreatedAt", "UpdatedAt"],
   SmsLogs: [
     "EstimateId",
@@ -345,6 +358,31 @@ export async function d1Delete(env, table, id) {
     throw err;
   }
   return { deleted: true, id };
+}
+
+/**
+ * 한 컬럼만 여러 row 일괄 업데이트 (D1 batch). subrequest 1회로 처리되어
+ * 다건 reorder 같은 시나리오에서 한도(50)·트랜잭션 안전성 모두 보장.
+ * column 은 SCHEMA 화이트리스트로 검증.
+ * @param {*} env
+ * @param {string} table
+ * @param {string} column  업데이트 대상 컬럼명
+ * @param {Array<{id:string, value:any}>} updates
+ */
+export async function d1BatchUpdateColumn(env, table, column, updates) {
+  if (!updates || !updates.length) return { updated: 0 };
+  assertTable(table);
+  const allowed = SCHEMA[table] || [];
+  if (!allowed.includes(column)) {
+    throw new Error(`column ${column} not allowed for ${table}`);
+  }
+  const safeCol = `"${column}"`;
+  const sql = `UPDATE ${table} SET ${safeCol} = ? WHERE id = ?`;
+  const stmts = updates.map((u) =>
+    env.DB.prepare(sql).bind(u.value, String(u.id)),
+  );
+  await env.DB.batch(stmts);
+  return { updated: updates.length };
 }
 
 /** 일괄 생성 (D1 batch 사용) — 마이그레이션·hero putSlides에서 사용 */

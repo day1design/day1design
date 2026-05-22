@@ -285,37 +285,145 @@ if (hamburger) {
   });
 })();
 
-// ========== POPUP ==========
-const popupOverlay = document.getElementById("popupOverlay");
-const popupClose = document.getElementById("popupClose");
-const popupDismiss = document.getElementById("popupDismiss");
-const popupCloseBtn = document.getElementById("popupCloseBtn");
-
-function closePopup() {
-  if (popupOverlay) popupOverlay.classList.add("hidden");
-}
-
-function dismissPopup() {
-  const now = new Date().getTime();
-  localStorage.setItem("day1_popup_dismissed", now.toString());
-  closePopup();
-}
-
-// HTML은 기본 hidden 상태로 시작 (검정 오버레이 플래시 방지).
-// dismiss 이력 없거나 24시간 경과했으면 hidden 제거 → 팝업 표시.
-if (popupOverlay) {
-  const dismissed = localStorage.getItem("day1_popup_dismissed");
-  let shouldShow = true;
-  if (dismissed) {
-    const elapsed = Date.now() - parseInt(dismissed);
-    if (elapsed < 24 * 60 * 60 * 1000) shouldShow = false;
+// ========== POPUP (어드민에서 등록된 활성 팝업을 동적 노출) ==========
+// 좌표: 데스크탑 절대 좌표 (top/left px, 1920×1080 기준). 모바일에서는 화면 중앙 자동.
+// 모드: sequential = 한 번에 1개씩 (닫으면 다음), parallel = 활성 팝업 모두 동시.
+// dismiss: "1일 보지 않음" 클릭 시 localStorage 에 popup id 별로 24시간 기록.
+(function initDynamicPopups() {
+  let root = document.getElementById("popupRoot");
+  if (!root) {
+    root = document.createElement("div");
+    root.id = "popupRoot";
+    root.setAttribute("aria-live", "polite");
+    document.body.appendChild(root);
   }
-  if (shouldShow) popupOverlay.classList.remove("hidden");
-}
+  const POPUP_API =
+    (window.DAY1_API_BASE
+      ? String(window.DAY1_API_BASE).replace(/\/$/, "")
+      : "") + "/api/popups";
+  const DISMISS_KEY_PREFIX = "day1_popup_dismissed_";
+  const DISMISS_MS = 24 * 60 * 60 * 1000;
+  const MOBILE_MAX = 768;
 
-if (popupClose) popupClose.addEventListener("click", closePopup);
-if (popupCloseBtn) popupCloseBtn.addEventListener("click", closePopup);
-if (popupDismiss) popupDismiss.addEventListener("click", dismissPopup);
+  function isDismissed(id) {
+    const v = localStorage.getItem(DISMISS_KEY_PREFIX + id);
+    if (!v) return false;
+    const t = parseInt(v, 10);
+    if (!Number.isFinite(t)) return false;
+    return Date.now() - t < DISMISS_MS;
+  }
+  function setDismissed(id) {
+    localStorage.setItem(DISMISS_KEY_PREFIX + id, String(Date.now()));
+  }
+
+  function isMobile() {
+    return window.innerWidth <= MOBILE_MAX;
+  }
+
+  // mode: 'modal' = 화면 dim + 중앙 정렬 (sequential / 모바일)
+  //       'floating' = dim 없이 좌상단 좌표대로 떠 있음 (parallel 데스크탑)
+  function buildPopupNode(p, mode, onClose) {
+    const isFloating = mode === "floating";
+    const wrap = document.createElement("div");
+    wrap.className = isFloating
+      ? "popup-overlay popup-overlay--floating"
+      : "popup-overlay";
+    wrap.dataset.id = p.id;
+
+    const box = document.createElement("div");
+    box.className = "popup";
+    if (isFloating) {
+      box.style.position = "fixed";
+      box.style.top = (p.topPx || 0) + "px";
+      box.style.left = (p.leftPx || 0) + "px";
+    } else {
+      box.style.position = "relative";
+    }
+    if (p.widthPx) box.style.width = p.widthPx + "px";
+    box.style.maxWidth = "90vw";
+
+    const close = document.createElement("span");
+    close.className = "popup-close";
+    close.setAttribute("aria-label", "닫기");
+    close.innerHTML = "&times;";
+
+    const imgWrap = p.linkUrl
+      ? document.createElement("a")
+      : document.createElement("div");
+    if (p.linkUrl) {
+      imgWrap.href = p.linkUrl;
+      imgWrap.target = "_blank";
+      imgWrap.rel = "noopener";
+    }
+    const img = document.createElement("img");
+    img.src = p.imageUrl;
+    img.alt = p.alt || "";
+    img.style.width = "100%";
+    img.style.display = "block";
+    imgWrap.appendChild(img);
+
+    const footer = document.createElement("div");
+    footer.className = "popup-footer";
+    const dismissBtn = document.createElement("button");
+    dismissBtn.type = "button";
+    dismissBtn.textContent = "1일 동안 보지 않음";
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "닫기";
+    footer.appendChild(dismissBtn);
+    footer.appendChild(closeBtn);
+
+    box.appendChild(close);
+    box.appendChild(imgWrap);
+    box.appendChild(footer);
+    wrap.appendChild(box);
+
+    function remove() {
+      wrap.remove();
+      if (typeof onClose === "function") onClose();
+    }
+    close.addEventListener("click", remove);
+    closeBtn.addEventListener("click", remove);
+    dismissBtn.addEventListener("click", () => {
+      setDismissed(p.id);
+      remove();
+    });
+
+    return wrap;
+  }
+
+  function showSequential(queue) {
+    if (!queue.length) return;
+    const p = queue.shift();
+    if (isDismissed(p.id)) {
+      showSequential(queue);
+      return;
+    }
+    root.appendChild(buildPopupNode(p, "modal", () => showSequential(queue)));
+  }
+
+  function showParallel(list) {
+    list.forEach((p) => {
+      if (isDismissed(p.id)) return;
+      root.appendChild(buildPopupNode(p, "floating"));
+    });
+  }
+
+  fetch(POPUP_API, { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data) return;
+      const list = Array.isArray(data.popups) ? data.popups : [];
+      if (!list.length) return;
+      const mode = data.displayMode === "parallel" ? "parallel" : "sequential";
+      if (mode === "sequential" || isMobile()) {
+        showSequential(list.slice());
+      } else {
+        showParallel(list);
+      }
+    })
+    .catch(() => {});
+})();
 
 // ========== 하단 탭바 Popover LNB (모바일) ==========
 (function initBottomNavPopover() {

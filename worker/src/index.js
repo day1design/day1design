@@ -1,5 +1,6 @@
 import { handleEstimates } from "./routes/estimates.js";
 import { handleHero } from "./routes/hero.js";
+import { handlePopups } from "./routes/popups.js";
 import { handlePortfolio } from "./routes/portfolio.js";
 import { handleCommunity } from "./routes/community.js";
 import { handleAuth } from "./routes/auth.js";
@@ -153,6 +154,8 @@ async function handleApi(request, env, ctx, path) {
     res = await handleEstimates(request, env, ctx, services);
   } else if (path.startsWith("/api/hero")) {
     res = await handleHero(request, env, ctx, services);
+  } else if (path.startsWith("/api/popups")) {
+    res = await handlePopups(request, env, ctx, services);
   } else if (path.startsWith("/api/portfolio")) {
     res = await handlePortfolio(request, env, ctx, services);
   } else if (path.startsWith("/api/community")) {

@@ -292,21 +292,8 @@
     </div>
 
     <!-- ========== POPUP (이미지 기반) ========== -->
-    <!-- 기본 hidden: JS가 dismiss 이력 체크 후 필요 시만 hidden 제거 → 검정 오버레이 플래시 방지 -->
-    <div class="popup-overlay hidden" id="popupOverlay">
-      <div class="popup">
-        <span class="popup-close" id="popupClose">&times;</span>
-        <img
-          src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/hero/popup-banner.webp"
-          alt="데이원디자인 지점 확장 안내"
-          style="width: 100%; display: block"
-        />
-        <div class="popup-footer">
-          <button id="popupDismiss">1일 동안 보지 않음</button>
-          <button id="popupCloseBtn">닫기</button>
-        </div>
-      </div>
-    </div>
+    <!-- 어드민에서 등록한 활성 팝업을 common.js가 fetch 후 동적 삽입 -->
+    <div id="popupRoot" aria-live="polite"></div>
 
     <!-- ========== HERO SLIDER ========== -->
     <section class="hero hero-slider">

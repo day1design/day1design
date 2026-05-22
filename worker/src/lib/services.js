@@ -1,4 +1,5 @@
 import {
+  d1BatchUpdateColumn,
   d1Create,
   d1Delete,
   d1Get,
@@ -31,6 +32,9 @@ export function createTableRepository(env, table) {
     },
     replaceAll(recordsFields) {
       return d1ReplaceAll(env, table, recordsFields);
+    },
+    batchUpdateColumn(column, updates) {
+      return d1BatchUpdateColumn(env, table, column, updates);
     },
   };
 }
@@ -71,6 +75,7 @@ export function createServices(env = {}) {
     community: createTableRepository(env, "Community"),
     analyticsSnapshots: createTableRepository(env, "AnalyticsSnapshots"),
     adminSettings: createTableRepository(env, "AdminSettings"),
+    popups: createTableRepository(env, "Popups"),
     messageTemplates: createTableRepository(env, "MessageTemplates"),
     smsLogs: createTableRepository(env, "SmsLogs"),
     analyticsRaw: createObjectStore(env.IMAGES),

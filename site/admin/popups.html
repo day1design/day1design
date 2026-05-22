@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>팝업 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link
+      rel="preconnect"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+      crossorigin
+    />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260522-popups1" />
+    <script>
+      window.ADMIN_PAGE = { title: "팝업", nav: "popups" };
+    </script>
+    <style>
+      .popups-list {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .popup-card {
+        display: grid;
+        grid-template-columns: 96px 1fr auto;
+        gap: 14px;
+        align-items: center;
+        background: #fff;
+        border: 1px solid #e6e6e6;
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .popup-card .thumb {
+        width: 96px;
+        height: 96px;
+        border-radius: 8px;
+        background: #f3f3f3 center/cover no-repeat;
+        border: 1px solid #e6e6e6;
+      }
+      .popup-card .meta {
+        min-width: 0;
+      }
+      .popup-card .meta .name {
+        font-weight: 700;
+        font-size: 15px;
+        margin: 0 0 4px;
+        word-break: break-all;
+      }
+      .popup-card .meta .sub {
+        font-size: 12px;
+        color: #777;
+        line-height: 1.6;
+      }
+      .popup-card .actions {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .popup-card .badge-off {
+        display: inline-block;
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: #eee;
+        color: #777;
+        margin-left: 6px;
+      }
+      .popup-card .badge-on {
+        display: inline-block;
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: #e0f3e6;
+        color: #1b6b34;
+        margin-left: 6px;
+      }
+      .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 42px;
+        height: 24px;
+      }
+      .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .toggle-switch .slider {
+        position: absolute;
+        cursor: pointer;
+        inset: 0;
+        background: #ccc;
+        border-radius: 24px;
+        transition: 0.2s;
+      }
+      .toggle-switch .slider::before {
+        content: "";
+        position: absolute;
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        top: 3px;
+        background: #fff;
+        border-radius: 50%;
+        transition: 0.2s;
+      }
+      .toggle-switch input:checked + .slider {
+        background: var(--color-brand-grey, #6b7280);
+      }
+      .toggle-switch input:checked + .slider::before {
+        transform: translateX(18px);
+      }
+      .mode-row {
+        background: #fafafa;
+        border: 1px solid #e6e6e6;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
+      }
+      .mode-row .field-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .mode-row label {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .mode-row select {
+        padding: 6px 10px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #fff;
+      }
+      .mode-row .hint {
+        font-size: 12px;
+        color: #777;
+        margin-top: 6px;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .grid-3 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+      }
+      .thumb-preview-large {
+        width: 100%;
+        max-width: 360px;
+        min-height: 80px;
+        background: #f3f3f3 center/contain no-repeat;
+        border: 1px solid #e6e6e6;
+        border-radius: 8px;
+        margin-bottom: 8px;
+      }
+      .thumb-preview-large.empty::before {
+        content: "이미지 없음";
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 80px;
+        color: #aaa;
+        font-size: 12px;
+      }
+      .position-preview {
+        position: relative;
+        width: 100%;
+        max-width: 480px;
+        aspect-ratio: 1920 / 1080;
+        background: repeating-linear-gradient(
+          45deg,
+          #f6f6f6 0 8px,
+          #fafafa 8px 16px
+        );
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .position-preview .ghost {
+        position: absolute;
+        background: rgba(20, 80, 160, 0.45);
+        border: 1px dashed #1455a0;
+        min-width: 12px;
+        min-height: 8px;
+      }
+      .position-preview .label-coord {
+        position: absolute;
+        top: 4px;
+        left: 6px;
+        font-size: 10px;
+        color: #555;
+        font-family: ui-monospace, monospace;
+      }
+      @media (max-width: 640px) {
+        .popup-card {
+          grid-template-columns: 72px 1fr;
+        }
+        .popup-card .actions {
+          grid-column: 1 / -1;
+          justify-content: flex-end;
+        }
+        .grid-2,
+        .grid-3 {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <section class="admin-section">
+          <p class="admin-sub" style="margin-bottom: 16px">
+            메인 페이지·내부 페이지에 노출되는 이미지 팝업. 활성화된 팝업만
+            실제로 노출됩니다. 좌표는 데스크탑 기준(1920×1080), 모바일에서는
+            화면 중앙으로 자동 정렬됩니다.
+          </p>
+
+          <div class="mode-row">
+            <div class="field-row">
+              <label for="displayMode">여러 팝업 표시 방식</label>
+              <select id="displayMode">
+                <option value="sequential">
+                  순차 — 한 번에 1개씩 (닫으면 다음 노출)
+                </option>
+                <option value="parallel">
+                  나란히 — 활성 팝업 모두 동시 노출
+                </option>
+              </select>
+              <button type="button" class="btn btn-primary" id="btnSaveMode">
+                저장
+              </button>
+            </div>
+            <p class="hint">
+              순차: 사용자가 첫 팝업을 닫아야 다음 팝업이 보입니다. 노출 순서는
+              아래 목록의 위→아래 순서.<br />
+              나란히: 활성 팝업이 모두 자기 좌표대로 동시에 노출됩니다 (서로
+              겹칠 수 있음).
+            </p>
+          </div>
+
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 10px;
+            "
+          >
+            <div class="count-label">
+              등록된 팝업: <strong id="popupCount">0</strong>
+            </div>
+            <button type="button" class="btn btn-primary" id="btnNew">
+              + 팝업 추가
+            </button>
+          </div>
+
+          <div class="popups-list" id="popupsList"></div>
+        </section>
+      </main>
+    </div>
+
+    <!-- 팝업 편집 모달 -->
+    <div class="modal" id="popupModal" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-panel" style="max-width: 720px">
+        <div class="modal-head">
+          <h2 id="popupModalTitle">팝업 편집</h2>
+          <button class="icon-btn" data-close type="button">✕</button>
+        </div>
+        <form id="popupForm" class="modal-body">
+          <div class="field">
+            <label>이름 (어드민 식별용)</label>
+            <input
+              type="text"
+              name="Title"
+              placeholder="예: 봄 프로모션 / 지점 확장 안내"
+            />
+          </div>
+
+          <div class="field">
+            <label>팝업 이미지 <span class="req">*</span></label>
+            <div class="thumb-preview-large empty" id="popupImagePreview"></div>
+            <input type="file" id="popupImageFile" accept="image/*" hidden />
+            <button type="button" class="btn btn-ghost" id="btnPickPopupImage">
+              📤 이미지 업로드
+            </button>
+            <input type="hidden" name="ImageUrl" />
+          </div>
+
+          <div class="field">
+            <label>Alt 텍스트 (접근성/SEO)</label>
+            <input
+              type="text"
+              name="Alt"
+              placeholder="이미지를 설명하는 짧은 문구"
+            />
+          </div>
+
+          <div class="field">
+            <label>클릭 시 이동 URL (선택)</label>
+            <input
+              type="text"
+              name="LinkUrl"
+              placeholder="https://… (비우면 클릭 동작 없음)"
+            />
+          </div>
+
+          <div class="field">
+            <label>이미지 가로 크기 (px)</label>
+            <input
+              type="number"
+              name="WidthPx"
+              min="50"
+              max="2000"
+              placeholder="예: 520 (비우면 원본 크기)"
+            />
+            <p class="hint" style="margin-top: 4px">
+              세로는 비율 유지로 자동. 모바일에서는 화면 폭에 맞춰 축소됩니다.
+            </p>
+          </div>
+
+          <div class="field">
+            <label>화면 위치 좌표 (데스크탑 기준, px)</label>
+            <div class="grid-2">
+              <div>
+                <label
+                  style="font-size: 12px; color: #777; font-weight: 400"
+                  for="popupTop"
+                  >Top</label
+                >
+                <input
+                  type="number"
+                  name="TopPx"
+                  id="popupTop"
+                  value="100"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label
+                  style="font-size: 12px; color: #777; font-weight: 400"
+                  for="popupLeft"
+                  >Left</label
+                >
+                <input
+                  type="number"
+                  name="LeftPx"
+                  id="popupLeft"
+                  value="100"
+                  min="0"
+                />
+              </div>
+            </div>
+            <p class="hint" style="margin-top: 6px">
+              화면 좌상단 (0, 0) 기준. 모바일에서는 무시되고 자동 중앙
+              정렬됩니다.
+            </p>
+            <div class="position-preview" id="positionPreview">
+              <div class="label-coord" id="positionLabel">top:0 left:0</div>
+              <div class="ghost" id="positionGhost"></div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label>표시 순서 (작을수록 먼저)</label>
+              <input type="number" name="Order" value="0" />
+            </div>
+            <div class="field" style="display: flex; align-items: flex-end">
+              <label style="display: flex; align-items: center; gap: 10px">
+                <span class="toggle-switch">
+                  <input type="checkbox" name="Active" />
+                  <span class="slider"></span>
+                </span>
+                <span>활성화 (사이트에 노출)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-close>취소</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmit">
+              저장
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script defer src="config.js"></script>
+    <script defer src="admin.js"></script>
+    <script defer src="popups.js"></script>
+  </body>
+</html>

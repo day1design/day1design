@@ -202,6 +202,13 @@ const MENU = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   },
   {
+    nav: "popups",
+    href: "popups",
+    label: "팝업",
+    shortLabel: "팝업",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="14" height="11" rx="2"/><rect x="8" y="9" width="13" height="11" rx="2" fill="white"/></svg>',
+  },
+  {
     nav: "community",
     href: "community",
     label: "커뮤니티",
@@ -537,7 +544,8 @@ function compressToWebP(file, maxWidth = 1920, quality = 0.82) {
  * 이미지 파일을 WebP로 자동 변환 후 R2 업로드.
  * skipCompressUnder(bytes) 가 지정되고 파일이 그 이하면 원본 그대로 업로드.
  * @param {File} file
- * @param {object} opts - { folder, maxWidth, quality, skipCompressUnder }
+ * @param {object} opts - { folder, maxWidth, quality, skipCompressUnder, onLocalPreview }
+ *   onLocalPreview(localUrl): 압축 직후 objectURL 콜백 — 업로드 완료 전 즉시 미리보기용
  * @returns {Promise<{url, key}>}
  */
 async function uploadImage(file, opts = {}) {
@@ -545,6 +553,8 @@ async function uploadImage(file, opts = {}) {
   const maxWidth = opts.maxWidth || 1920;
   const quality = opts.quality || 0.82;
   const skipCompressUnder = Number(opts.skipCompressUnder) || 0;
+  const onLocalPreview =
+    typeof opts.onLocalPreview === "function" ? opts.onLocalPreview : null;
 
   let c;
   if (
@@ -557,6 +567,13 @@ async function uploadImage(file, opts = {}) {
     c = { blob: file, name: file.name, size: file.size, type: file.type };
   } else {
     c = await compressToWebP(file, maxWidth, quality);
+  }
+
+  // 즉시 미리보기 (objectURL) — 호출처가 받아 화면에 바로 표시
+  if (onLocalPreview && c.blob) {
+    try {
+      onLocalPreview(URL.createObjectURL(c.blob));
+    } catch {}
   }
 
   const fd = new FormData();
