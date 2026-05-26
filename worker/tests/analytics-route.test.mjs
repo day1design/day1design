@@ -469,7 +469,7 @@ test("analytics summary refresh stores GA4 payload in D1 and R2", async () => {
     })),
     [
       { key: "google", name: "Google", sessions: 11, visitors: 7 },
-      { key: "facebook", name: "Facebook", sessions: 9, visitors: 5 },
+      { key: "facebook", name: "FB", sessions: 9, visitors: 5 },
     ],
   );
   assert.equal(services.snapshots.length, 1);

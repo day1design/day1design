@@ -18,10 +18,17 @@ const STATUS_COLORS = {
   취소: "#ef4444",
 };
 
+// 라벨 규칙 (사용자 명시):
+//   - 광고(UtmMedium=paid) 유입 → "[AD]IG" / "[AD]FB" — Worker 측 채널 키
+//     instagram_ad / facebook_ad 로 분기되어 옴.
+//   - 자연 유입(social·organic·referral 등) → "IG" / "FB" — 그냥 instagram /
+//     facebook 채널 키. 광고와 별도 라인으로 표시되어 비중을 한눈에 비교.
 const SOURCE_LABELS = {
   homepage: "홈페이지",
-  instagram: "Instagram",
-  facebook: "Facebook",
+  instagram_ad: "[AD]IG",
+  instagram: "IG",
+  facebook_ad: "[AD]FB",
+  facebook: "FB",
   threads: "Threads",
   meta: "Meta",
   google: "Google",
@@ -38,10 +45,14 @@ const SOURCE_LABELS = {
 // 브랜드 색상 — 사용자 지정: Instagram 보라 · Facebook 블루 · Google 주황 ·
 // YouTube 부드러운 빨강. Threads 는 브랜드 블랙. Meta(fallback) 는 가족 채널
 // 통합용이라 회사 블루 톤.
+// 광고(paid) 채널은 브랜드 정색, 자연 채널은 같은 hue 의 옅은 톤 — 차트에서
+// 광고/자연 비중을 한눈에 비교하도록 의도적으로 같은 계열로 구성.
 const SOURCE_COLORS = {
   homepage: "#1a2f4e",
-  instagram: "#833AB4",
-  facebook: "#1877F2",
+  instagram_ad: "#833AB4",
+  instagram: "#C8A2D6",
+  facebook_ad: "#1877F2",
+  facebook: "#8AB4F8",
   threads: "#101010",
   meta: "#0668E1",
   google: "#FF9800",
@@ -57,6 +68,8 @@ const SOURCE_COLORS = {
 
 const SUBMISSION_SOURCE_ORDER = [
   "homepage",
+  "instagram_ad",
+  "facebook_ad",
   "instagram",
   "facebook",
   "threads",

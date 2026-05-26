@@ -14,8 +14,10 @@ const VISITOR_DETAIL_DAY_LIMIT = 370;
 const VISITOR_DETAIL_EVENT_LIMIT = 80;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const SOURCE_CHANNELS = {
-  instagram: "Instagram",
-  facebook: "Facebook",
+  instagram_ad: "[AD]IG",
+  instagram: "IG",
+  facebook_ad: "[AD]FB",
+  facebook: "FB",
   threads: "Threads",
   meta: "Meta",
   google: "Google",
@@ -1541,11 +1543,12 @@ function classifyTrafficSource({ source, medium, channelGroup }) {
   ) {
     return sourceChannel("direct");
   }
-  // Meta 가족은 정확히 분리 — instagram / facebook / threads 별도 채널.
-  // 매칭 못 한 모호한 meta 출처(예: fbclid 단독)는 "meta" fallback.
-  // 단어 경계 \b 로 ig/fb 같은 짧은 source 도 정확히 잡음.
+  // Meta 가족은 정확히 분리 — instagram / facebook / threads 별도 채널 +
+  // 광고(paid)/자연 분기. UtmMedium='paid' (또는 channelGroup 에 paid 포함) 이면
+  // *_ad 채널로 분류 → admin 에서 [AD]IG/[AD]FB 라벨로 진한 색 표시.
+  const isPaid = med === "paid" || /paid/.test(group);
   if (/\b(instagram|ig)\b|ig\.com/.test(haystack)) {
-    return sourceChannel("instagram");
+    return sourceChannel(isPaid ? "instagram_ad" : "instagram");
   }
   if (/\bthreads\b/.test(haystack)) return sourceChannel("threads");
   if (
@@ -1553,7 +1556,7 @@ function classifyTrafficSource({ source, medium, channelGroup }) {
       haystack,
     )
   ) {
-    return sourceChannel("facebook");
+    return sourceChannel(isPaid ? "facebook_ad" : "facebook");
   }
   if (/\bmeta\b/.test(haystack)) return sourceChannel("meta");
   if (/(youtube|youtu\.be)/.test(haystack)) return sourceChannel("youtube");
