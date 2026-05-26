@@ -6,7 +6,10 @@ import { handleCommunity } from "./routes/community.js";
 import { handleAuth } from "./routes/auth.js";
 import { handleUpload } from "./routes/upload.js";
 import { handleMetaLead } from "./routes/meta-lead.js";
-import { handleAnalytics } from "./routes/analytics.js";
+import {
+  handleAnalytics,
+  runScheduledAnalyticsSnapshot,
+} from "./routes/analytics.js";
 import { handleHeatmap } from "./routes/heatmap.js";
 import { handleAudit } from "./routes/audit.js";
 import { handleMemos, handleHistory } from "./routes/memos.js";
@@ -242,20 +245,33 @@ export default {
     }
   },
 
-  // Cron: 매일 KST 04:00 (= UTC 19:00) — Meta 광고 어제 데이터 sync
+  // Cron: 매일 KST 04:00 (= UTC 19:00)
+  //   1) Meta 광고 어제 데이터 sync
+  //   2) Analytics summary daily snapshot (today/7/30/cur-month) 갱신
   async scheduled(event, env, ctx) {
     ctx.waitUntil(
       (async () => {
         try {
           await runScheduledSync(env, ctx);
         } catch (e) {
-          // Meta 전용 채널로 알림
           await notifyTelegram(
             env,
             `[day1design/cron] meta-ads scheduled sync 실패\n${(e?.message || "").slice(0, 200)}`,
             {
               botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
               chatId: env.META_RATE_TELEGRAM_CHAT_ID,
+            },
+          );
+        }
+        try {
+          await runScheduledAnalyticsSnapshot(env, ctx);
+        } catch (e) {
+          await notifyTelegram(
+            env,
+            `[day1design/cron] analytics snapshot 실패\n${(e?.message || "").slice(0, 200)}`,
+            {
+              botToken: env.TELEGRAM_BOT_TOKEN,
+              chatId: env.TELEGRAM_ADMIN_CHAT_ID,
             },
           );
         }

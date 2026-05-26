@@ -112,7 +112,7 @@ async function getFunnel(request, env) {
                 ROW_NUMBER() OVER (PARTITION BY SessionId ORDER BY CreatedAt ASC) AS rn
          FROM HeatmapEvents
          WHERE EventType = 'page_view'
-           AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+           AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
            AND SessionId != ''
        )
        SELECT Page, COUNT(*) AS Cnt
@@ -132,7 +132,7 @@ async function getFunnel(request, env) {
                 ROW_NUMBER() OVER (PARTITION BY SessionId ORDER BY CreatedAt ASC) AS rn
          FROM HeatmapEvents
          WHERE EventType = 'page_view'
-           AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+           AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
            AND SessionId != ''
        )
        SELECT Page, COUNT(*) AS Cnt
@@ -150,7 +150,7 @@ async function getFunnel(request, env) {
       `SELECT COUNT(DISTINCT SessionId) AS Cnt
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''`,
     )
       .bind(startDate, endDate)
@@ -159,7 +159,7 @@ async function getFunnel(request, env) {
     // 견적 접수 수 (KST 변환 없이 SubmittedAt UTC ISO 첫 10자 비교 — Estimates는 UTC 저장)
     const subsRow = await env.DB.prepare(
       `SELECT COUNT(*) AS Cnt FROM Estimates
-       WHERE substr(SubmittedAt, 1, 10) BETWEEN ? AND ?`,
+       WHERE substr(datetime(SubmittedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?`,
     )
       .bind(startDate, endDate)
       .first();
@@ -875,7 +875,7 @@ async function fetchLiveTouches(env, range) {
       `SELECT COUNT(DISTINCT SessionId) AS Touches
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''`,
     )
       .bind(range.startDate, range.endDate)
@@ -914,7 +914,7 @@ async function fetchSelfStats(env, range) {
       `SELECT COUNT(DISTINCT SessionId) AS Cnt
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''`,
     )
       .bind(startDate, endDate)
@@ -929,13 +929,13 @@ async function fetchSelfStats(env, range) {
       `SELECT COUNT(DISTINCT a.SessionId) AS Cnt
        FROM HeatmapEvents a
        WHERE a.EventType = 'page_view'
-         AND substr(a.CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(a.CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND a.SessionId != ''
          AND EXISTS (
            SELECT 1 FROM HeatmapEvents b
            WHERE b.SessionId = a.SessionId
              AND b.EventType = 'page_view'
-             AND substr(b.CreatedAt, 1, 10) != substr(a.CreatedAt, 1, 10)
+             AND substr(datetime(b.CreatedAt, '+9 hours'), 1, 10) != substr(datetime(a.CreatedAt, '+9 hours'), 1, 10)
          )`,
     )
       .bind(startDate, endDate)
@@ -952,7 +952,7 @@ async function fetchSelfStats(env, range) {
          COUNT(DISTINCT SessionId) AS Sessions
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''`,
     )
       .bind(startDate, endDate)
@@ -969,9 +969,9 @@ async function fetchSelfStats(env, range) {
          SELECT
            (julianday(MAX(CreatedAt)) - julianday(MIN(CreatedAt))) * 86400 AS DwellSec
          FROM HeatmapEvents
-         WHERE substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         WHERE substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
            AND SessionId != ''
-         GROUP BY SessionId, substr(CreatedAt, 1, 10)
+         GROUP BY SessionId, substr(datetime(CreatedAt, '+9 hours'), 1, 10)
          HAVING COUNT(*) > 1
        )`,
     )
@@ -986,7 +986,7 @@ async function fetchSelfStats(env, range) {
       `SELECT substr(CreatedAt, 12, 2) AS Hour, COUNT(*) AS Cnt
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
        GROUP BY Hour
        ORDER BY Cnt DESC
        LIMIT 1`,
@@ -1006,7 +1006,7 @@ async function fetchSelfStats(env, range) {
       `SELECT Device, COUNT(DISTINCT SessionId) AS Cnt
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''
        GROUP BY Device`,
     )
@@ -1028,7 +1028,7 @@ async function fetchSelfStats(env, range) {
          COUNT(DISTINCT SessionId) AS Cnt
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''
        GROUP BY City, Country
        ORDER BY Cnt DESC
@@ -1047,7 +1047,7 @@ async function fetchSelfStats(env, range) {
   try {
     const row = await env.DB.prepare(
       `SELECT COUNT(*) AS Cnt FROM Estimates
-       WHERE substr(SubmittedAt, 1, 10) BETWEEN ? AND ?`,
+       WHERE substr(datetime(SubmittedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?`,
     )
       .bind(startDate, endDate)
       .first();
@@ -1070,7 +1070,7 @@ async function fetchSelfStats(env, range) {
          COUNT(*) AS Sessions
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''
        GROUP BY src, med, ref`,
     )
@@ -1098,12 +1098,12 @@ async function fetchSelfStats(env, range) {
   try {
     const res = await env.DB.prepare(
       `SELECT
-         substr(CreatedAt, 1, 10) AS d,
+         substr(datetime(CreatedAt, '+9 hours'), 1, 10) AS d,
          COUNT(DISTINCT SessionId) AS Visitors,
          COUNT(*) AS Pageviews
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''
        GROUP BY d
        ORDER BY d ASC`,
@@ -1121,9 +1121,23 @@ async function fetchSelfStats(env, range) {
   return result;
 }
 
+// KST 자정 기준 "오늘" 을 구함 — Worker 는 UTC 환경이므로 new Date() 의
+// getFullYear/Month/Date 가 UTC date 를 반환. KST(+9h) 로 보정해야 사용자
+// 직관과 일치 (KST 자정~09시 트래픽이 어제로 묶이던 사고 차단).
+function kstToday() {
+  const now = new Date();
+  const kstMs = now.getTime() + 9 * 60 * 60 * 1000;
+  const kst = new Date(kstMs);
+  const y = kst.getUTCFullYear();
+  const m = kst.getUTCMonth();
+  const d = kst.getUTCDate();
+  // KST 자정 → 동일 시각의 Date 객체 반환 (이후 dayKey 가 같은 calendar date 반환)
+  return new Date(Date.UTC(y, m, d));
+}
+
 function resolveRange(url) {
   const key = url.searchParams.get("range") || "30";
-  const today = startOfDay(new Date());
+  const today = kstToday();
   let start = new Date(today);
   let end = endOfDay(today);
   let rangeKey = key;
@@ -1216,6 +1230,33 @@ function snapshotFromRecord(record) {
       rawR2Key: record.fields.RawR2Key || "",
     },
   };
+}
+
+// cron 진입점 — 매일 KST 04:00 (UTC 19:00) 에 호출되어 today/7/30/cur-month
+// range 의 fresh GA4 fetch + self stats 머지 + persistSnapshot.
+// admin 안 들어가도 데일리 누적 보장. 6h TTL 이라 cron 직후 사용자 진입 시 즉시
+// fresh 응답.
+export async function runScheduledAnalyticsSnapshot(env, ctx) {
+  const services = createServices(env);
+  const rangeKeys = ["today", "7", "30", "cur-month"];
+  const fakeUrl = new URL("https://internal/api/analytics/summary");
+  const errors = [];
+  for (const key of rangeKeys) {
+    try {
+      fakeUrl.searchParams.set("range", key);
+      fakeUrl.searchParams.set("refresh", "1");
+      const range = resolveRange(fakeUrl);
+      const selfStats = await fetchSelfStats(env, range);
+      const fresh = await collectGoogleSummary(env, range);
+      const payload = fresh.ok ? { ...fresh, self: selfStats } : fresh;
+      if (fresh.ok) {
+        await persistSnapshot(services, range, payload);
+      }
+    } catch (e) {
+      errors.push({ key, code: safeErrorCode(e) });
+    }
+  }
+  return { ok: errors.length === 0, errors };
 }
 
 async function persistSnapshot(services, range, payload) {
@@ -1349,7 +1390,7 @@ async function collectGoogleSummary(env, range) {
       `SELECT COUNT(DISTINCT SessionId) AS Touches
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?`,
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?`,
     )
       .bind(range.startDate, range.endDate)
       .first();
