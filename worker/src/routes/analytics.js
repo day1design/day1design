@@ -827,7 +827,10 @@ async function getSummary(request, env, services) {
       selfStats.trend && selfStats.trend.length
         ? selfStats.trend
         : base.trend || [],
-    sources: reclassifySources(base.sources),
+    sources:
+      selfStats.sources && selfStats.sources.length
+        ? selfStats.sources
+        : reclassifySources(base.sources),
     self: selfStats,
     ...extra,
   });
@@ -898,6 +901,7 @@ async function fetchSelfStats(env, range) {
     submissions: 0,
     conversionRate: 0,
     trend: [],
+    sources: [],
   };
 
   // 1) 터치 + 신규 + 재방문 (단순 정의: 기간 시작 이전 등장 이력 유무)
@@ -1050,7 +1054,44 @@ async function fetchSelfStats(env, range) {
       result.touches > 0 ? result.submissions / result.touches : 0;
   } catch {}
 
-  // 8) 일별 trend (자체 측정 — visitors=고유세션, pageviews=총 페이지뷰)
+  // 8a) 출처 (UTM source/medium + Referrer 기반 자체 측정)
+  //   GA4 측정이 끊겨도 자체 sources 가 admin 에 표시됨. 라이브에서 사용자가
+  //   ig/paid · fb/paid 등으로 들어오는 트래픽이 1000명 단위인데 admin sources
+  //   에 안 보이던 사고 차단.
+  try {
+    const res = await env.DB.prepare(
+      `SELECT
+         COALESCE(NULLIF(UtmSource, ''), '(none)') AS src,
+         COALESCE(NULLIF(UtmMedium, ''), '') AS med,
+         COALESCE(NULLIF(Referrer, ''), '') AS ref,
+         COUNT(DISTINCT SessionId) AS Visitors,
+         COUNT(*) AS Sessions
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND SessionId != ''
+       GROUP BY src, med, ref`,
+    )
+      .bind(startDate, endDate)
+      .all();
+    const fakeRows = (res.results || []).map((r) => {
+      const srcVal = r.src === "(none)" && r.ref ? r.ref : r.src;
+      return {
+        dimensionValues: [
+          { value: String(srcVal || "") },
+          { value: String(r.med || "") },
+          { value: "" },
+        ],
+        metricValues: [
+          { value: String(r.Sessions || 0) },
+          { value: String(r.Visitors || 0) },
+        ],
+      };
+    });
+    result.sources = aggregateTrafficSources(fakeRows);
+  } catch {}
+
+  // 8b) 일별 trend (자체 측정 — visitors=고유세션, pageviews=총 페이지뷰)
   //   GA4 lag·누락에 영향 없이 차트/히트맵이 항상 실시간 D1 기준으로 동작.
   try {
     const res = await env.DB.prepare(
