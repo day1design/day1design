@@ -805,47 +805,58 @@ async function getSummary(request, env, services) {
   // 캐시 hit 시에도 자체측정 통계는 D1에서 실시간 머지 (GA4 캐시와 별개로 항상 최신)
   const selfStats = await fetchSelfStats(env, range);
 
+  // 응답 머지 헬퍼 — visitors/pageviews/trend 는 자체 측정(D1 HeatmapEvents)을
+  // 우선. self 측정값이 0/빈 배열이면 GA4 캐시 값으로 fallback (라이브에는 항상
+  // self 데이터가 있으니 사실상 self 우선이고, dev/test 환경에서만 GA4 사용).
+  // GA4 의 avgDuration/bounceRate/sources/topPages/searchQueries 는 그대로.
+  const mergeWithSelf = (base, extra = {}) => ({
+    ...base,
+    summary: {
+      ...(base.summary || {}),
+      visitors: selfStats.touches || base?.summary?.visitors || 0,
+      pageviews: selfStats.pageviews || base?.summary?.pageviews || 0,
+      touches: selfStats.touches,
+      newVisitors: selfStats.newVisitors,
+      returningVisitors: selfStats.returningVisitors,
+    },
+    trend:
+      selfStats.trend && selfStats.trend.length
+        ? selfStats.trend
+        : base.trend || [],
+    self: selfStats,
+    ...extra,
+  });
+
   if (!forceRefresh && latest && !isExpired(latest.createdAt)) {
     const cached = latest.payload || {};
-    return jsonOk({
-      ...cached,
-      summary: {
-        ...(cached.summary || {}),
-        touches: selfStats.touches,
-        newVisitors: selfStats.newVisitors,
-        returningVisitors: selfStats.returningVisitors,
-      },
-      self: selfStats,
-      persisted: latest.persisted,
-      cached: true,
-    });
+    return jsonOk(
+      mergeWithSelf(cached, { persisted: latest.persisted, cached: true }),
+    );
   }
 
   const fresh = await collectGoogleSummary(env, range);
   if (!fresh.ok) {
     if (latest) {
       const cached = latest.payload || {};
-      return jsonOk({
-        ...cached,
-        summary: {
-          ...(cached.summary || {}),
-          touches: selfStats.touches,
-          newVisitors: selfStats.newVisitors,
-          returningVisitors: selfStats.returningVisitors,
-        },
-        self: selfStats,
-        persisted: latest.persisted,
-        cached: true,
-        stale: true,
-        errors: fresh.errors,
-      });
+      return jsonOk(
+        mergeWithSelf(cached, {
+          persisted: latest.persisted,
+          cached: true,
+          stale: true,
+          errors: fresh.errors,
+        }),
+      );
     }
-    return jsonOk(fresh);
+    // GA4 fetch 실패 + 캐시 없음 — 자체 측정만으로 응답 (옛 동작은 fresh 그대로
+    // 반환했지만 그러면 visitors/trend 전부 빈 값. 자체 측정으로 폴백)
+    return jsonOk(mergeWithSelf(fresh, { cached: false }));
   }
 
-  fresh.self = selfStats;
-  const persisted = await persistSnapshot(services, range, fresh);
-  return jsonOk({ ...fresh, persisted, cached: false });
+  const persisted = await persistSnapshot(services, range, {
+    ...fresh,
+    self: selfStats,
+  });
+  return jsonOk(mergeWithSelf(fresh, { persisted, cached: false }));
 }
 
 async function fetchLiveTouches(env, range) {
@@ -871,6 +882,7 @@ async function fetchSelfStats(env, range) {
   const endDate = range.endDate;
   const result = {
     touches: 0,
+    pageviews: 0,
     newVisitors: 0,
     returningVisitors: 0,
     avgPageviewsPerSession: 0,
@@ -880,6 +892,7 @@ async function fetchSelfStats(env, range) {
     topLocations: [],
     submissions: 0,
     conversionRate: 0,
+    trend: [],
   };
 
   // 1) 터치 + 신규 + 재방문 (단순 정의: 기간 시작 이전 등장 이력 유무)
@@ -1021,6 +1034,31 @@ async function fetchSelfStats(env, range) {
     result.submissions = Number(row?.Cnt || 0);
     result.conversionRate =
       result.touches > 0 ? result.submissions / result.touches : 0;
+  } catch {}
+
+  // 8) 일별 trend (자체 측정 — visitors=고유세션, pageviews=총 페이지뷰)
+  //   GA4 lag·누락에 영향 없이 차트/히트맵이 항상 실시간 D1 기준으로 동작.
+  try {
+    const res = await env.DB.prepare(
+      `SELECT
+         substr(CreatedAt, 1, 10) AS d,
+         COUNT(DISTINCT SessionId) AS Visitors,
+         COUNT(*) AS Pageviews
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND SessionId != ''
+       GROUP BY d
+       ORDER BY d ASC`,
+    )
+      .bind(startDate, endDate)
+      .all();
+    result.trend = (res.results || []).map((r) => ({
+      date: String(r.d),
+      visitors: Number(r.Visitors || 0),
+      pageviews: Number(r.Pageviews || 0),
+    }));
+    result.pageviews = result.trend.reduce((sum, x) => sum + x.pageviews, 0);
   } catch {}
 
   return result;
