@@ -95,7 +95,7 @@ function render() {
     card.innerHTML = `
       <div ${thumbAttrs}>
         ${emptyHint}
-        <button type="button" class="drag-card-badge" data-act="setpos" title="${badgeTitle}"${locked ? " disabled" : ""}>${(r.order ?? 0) + 1}</button>
+        <button type="button" class="drag-card-badge" data-act="setpos" title="${badgeTitle}"${locked ? " disabled" : ""}>${fullIdx + 1}</button>
         <div class="drag-card-actions">
           <button type="button" class="drag-card-action" data-act="edit" title="편집">✎</button>
           <button type="button" class="drag-card-action danger" data-act="del" title="삭제">✕</button>
@@ -106,7 +106,7 @@ function render() {
         <div class="drag-card-tags">
           <span class="badge">${adminUtil.escapeHtml(r.category || "HOUSE")}</span>
           ${Array.isArray(r.images) && r.images.length ? `<span class="badge">사진 ${r.images.length}장</span>` : ""}
-          ${r.rightName ? `<span class="badge">+ ${adminUtil.escapeHtml(r.rightName)}</span>` : ""}
+          ${r.rightId || r.rightFolder ? `<span class="badge ref-badge">↗ ${adminUtil.escapeHtml(r.rightName || "참조")}${r.rightCount ? ` · 사진 ${r.rightCount}장` : ""}</span>` : ""}
         </div>
       </div>
     `;
@@ -502,36 +502,32 @@ const segmentedBtns = modeRow ? modeRow.querySelectorAll(".segmented-btn") : [];
 // 상세 이미지 참조 원본 드롭다운 채우기 — 자기 자신 제외, 폴더값 기준 매칭.
 // (옛 "페어링 = 옆에 같이 보임" 개념 아님. rightFolder 는 상세 모달 갤러리를
 //  어느 원본글에서 가져올지만 정의함. 표지·카드 위치는 자기 것 그대로.)
+// pairSource 의 option value = 참조 대상 record 의 영구 id.
+// (옛 방식은 folder 슬러그를 키로 사용 → 같은 이름 등록 시 슬러그가 충돌
+//  하고 라이브에서 자기참조 가드에 막혀 상세이미지가 안 나오는 사고 빈발.
+//  id 기반 참조로 전환 후로는 같은 이름 등록도 정상 동작.)
 function populatePairSource(excludeId) {
   if (!pairSource) return;
   const cur = pairSource.value;
+  // records 는 이미 Order ASC 정렬 — 표시 번호 = 카드 위치
   pairSource.innerHTML =
     '<option value="">— 참조 안 함 (자기 상세 이미지 사용) —</option>' +
     records
-      .slice()
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      .filter((r) => r.id !== excludeId && r.folder)
-      .map(
-        (r) =>
-          `<option value="${adminUtil.escapeHtml(r.folder)}" data-name="${adminUtil.escapeHtml(r.name || "")}" data-count="${r.count || 0}">${(r.order ?? 0) + 1}. ${adminUtil.escapeHtml(r.name || "(이름 없음)")}</option>`,
-      )
+      .filter((r) => r.id !== excludeId)
+      .map((r) => {
+        const pos = records.findIndex((x) => x.id === r.id) + 1;
+        const count = (Array.isArray(r.images) && r.images.length) || 0;
+        return `<option value="${r.id}">${pos}. ${adminUtil.escapeHtml(r.name || "(이름 없음)")}${count ? ` · 사진 ${count}장` : ""}</option>`;
+      })
       .join("");
   if (cur) pairSource.value = cur;
 }
 
 if (pairSource) {
-  pairSource.addEventListener("change", () => {
-    const sel = pairSource.options[pairSource.selectedIndex];
-    if (!sel || !sel.value) {
-      form.elements.rightName.value = "";
-      form.elements.rightFolder.value = "";
-      form.elements.rightCount.value = 0;
-      return;
-    }
-    form.elements.rightFolder.value = sel.value;
-    form.elements.rightName.value = sel.dataset.name || "";
-    form.elements.rightCount.value = sel.dataset.count || 0;
-  });
+  // 참조 설정 변경은 rightId 만 바꿈 — own 갤러리는 사용자 의도대로 보존.
+  // (라이브는 own 우선이라 own 이 있으면 참조는 자동 비활성. own 비우려면
+  //  갤러리 항목을 사용자가 직접 제거해야 함 = 명시적 의도)
+  pairSource.addEventListener("change", () => {});
 }
 
 function setMode(mode) {
@@ -540,13 +536,9 @@ function setMode(mode) {
   });
   copySourceRow.hidden = mode !== "copy";
   if (mode === "new") {
-    // 신규 폼 초기화
     form.elements.name.value = "";
     form.elements.folder.value = "";
     form.elements.category.value = "HOUSE";
-    form.elements.rightName.value = "";
-    form.elements.rightFolder.value = "";
-    form.elements.rightCount.value = 0;
     modalThumbAfter = "";
     modalImages = [];
     folderManuallyEdited = false;
@@ -562,14 +554,13 @@ segmentedBtns.forEach((b) => {
 });
 
 function populateCopySource() {
+  // records 는 이미 Order ASC 로 정렬됨 → 표시 번호 = index + 1
   copySource.innerHTML =
     '<option value="">— 선택 —</option>' +
     records
-      .slice()
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .map(
-        (r) =>
-          `<option value="${r.id}">${(r.order ?? 0) + 1}. ${adminUtil.escapeHtml(r.name || "(이름 없음)")}</option>`,
+        (r, i) =>
+          `<option value="${r.id}">${i + 1}. ${adminUtil.escapeHtml(r.name || "(이름 없음)")}</option>`,
       )
       .join("");
 }
@@ -577,24 +568,21 @@ function populateCopySource() {
 copySource.addEventListener("change", () => {
   const src = records.find((x) => x.id === copySource.value);
   if (!src) return;
-  // 이름·카테고리·갤러리 복사 + 상세 이미지 참조 원본을 src 로 자동 지정
-  // (= 새 글이 src 의 상세 이미지를 가져와 모달에 사용. 표지는 새로 업로드.)
+  // "기존 글 가져오기" = 원본 글의 이름/카테고리/갤러리를 복사해 독립 글 생성.
+  // 이건 명시적으로 "참조 아님" — 복사된 글은 이후 원본과 무관하게 편집 가능.
+  // (참조하고 싶으면 신규 등록 + 참조 드롭다운 사용 → 원본 변경 자동 반영)
   form.elements.name.value = src.name || "";
   form.elements.folder.value =
     (adminUtil.slugify(src.name) || "project") + "-" + Date.now().toString(36);
   folderManuallyEdited = true;
   form.elements.category.value = src.category || "HOUSE";
-  form.elements.rightFolder.value = src.folder || "";
-  form.elements.rightName.value = src.name || "";
-  form.elements.rightCount.value = src.count || 0;
-  modalThumbAfter = ""; // 썸네일은 비워두고 새로 업로드 받기
+  modalThumbAfter = ""; // 표지는 새로 업로드 받기
   modalImages = Array.isArray(src.images) ? src.images.slice() : [];
   renderThumbPreview("thumbAfterPreview", "btnClearThumbAfter", "");
   renderGallery();
-  // 상세 이미지 참조 원본 드롭다운에 src record 선택 표시
-  if (pairSource) pairSource.value = src.folder || "";
+  if (pairSource) pairSource.value = ""; // 복사 모드는 참조 미설정
   adminUtil.toast(
-    `"${src.name}"의 내용을 불러왔습니다. 대표 이미지만 새로 업로드하세요`,
+    `"${src.name}"의 내용을 복사했습니다. 표지 이미지를 새로 업로드하세요. (이후 편집은 원본과 독립적)`,
   );
 });
 
@@ -627,9 +615,6 @@ function openEdit(id) {
   form.elements.name.value = r.name || "";
   form.elements.folder.value = r.folder || "";
   form.elements.category.value = r.category || "HOUSE";
-  form.elements.rightName.value = r.rightName || "";
-  form.elements.rightFolder.value = r.rightFolder || "";
-  form.elements.rightCount.value = r.rightCount || 0;
   modalThumbAfter = r.thumbAfter || "";
   modalImages = Array.isArray(r.images) ? r.images.slice() : [];
   folderManuallyEdited = true; // 기존 folder 유지
@@ -639,9 +624,21 @@ function openEdit(id) {
     modalThumbAfter,
   );
   renderGallery();
-  // 상세 이미지 참조 원본 드롭다운: 자기 자신 제외, 현재 rightFolder 선택
+  // 상세 이미지 참조 원본 드롭다운 — 영구 id 로 매칭. (옛 record 중 RightId
+  // 백필이 안 된 경우엔 r.rightFolder 로 폴백 매칭)
   populatePairSource(r.id);
-  if (pairSource) pairSource.value = r.rightFolder || "";
+  if (pairSource) {
+    if (r.rightId) {
+      pairSource.value = r.rightId;
+    } else if (r.rightFolder) {
+      const legacy = records.find(
+        (x) => x.id !== r.id && x.folder === r.rightFolder,
+      );
+      pairSource.value = legacy ? legacy.id : "";
+    } else {
+      pairSource.value = "";
+    }
+  }
   openModal(`편집 · ${r.name}`);
 }
 
@@ -675,20 +672,37 @@ form.addEventListener("submit", async (e) => {
     btnSubmit.disabled = false;
     return;
   }
-  const folder =
+  let folder =
     form.elements.folder.value.trim() ||
     adminUtil.slugify(name) ||
     "project-" + Date.now();
+  // folder 충돌 회피 — 같은 슬러그가 이미 있으면 자동 suffix.
+  // (옛 사고: 같은 이름으로 두 개 등록 → 동일 slugify 결과 → 라이브에서
+  //  자기참조 가드에 막혀 상세이미지가 안 나오던 사례 차단)
+  const collidesWith = (slug) =>
+    records.some((r) => r.id !== editingId && (r.folder || "") === slug);
+  if (collidesWith(folder)) {
+    const base = folder;
+    let n = 2;
+    while (collidesWith(`${base}-${n}`)) n += 1;
+    folder = `${base}-${n}`;
+  }
+  // 참조 (영구 id). 라이브에서 own 우선이므로 own images 는 그대로 보존 —
+  // 사용자가 명시적으로 갤러리를 비워야만 참조가 활성. (own 자동 삭제는 X)
+  const rightId = (pairSource && pairSource.value) || "";
   const payload = {
     name,
     folder,
     category: form.elements.category.value,
     thumbAfter: modalThumbAfter,
     images: modalImages,
-    // Count는 Worker가 images.length로 자동 설정
-    rightName: form.elements.rightName.value.trim(),
-    rightFolder: form.elements.rightFolder.value.trim(),
-    rightCount: Number(form.elements.rightCount.value) || 0,
+    rightId,
+    // 레거시 컬럼 매 저장마다 초기화 — Worker 가 RightId 기준으로 derive 해서
+    // 응답하므로 D1 에는 빈 값 저장. 옛 stale RightFolder 가 남아 라이브 폴백
+    // 분기에서 의도치 않게 참조가 살아 있는 사고 차단.
+    rightFolder: "",
+    rightName: "",
+    rightCount: 0,
   };
   try {
     if (editingId) {

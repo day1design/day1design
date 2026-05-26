@@ -182,9 +182,22 @@ function buildHouseCards() {
     // 원본글의 상세이미지(images/count/folder)를 그대로 가져옴.
     // 표지(thumbAfter)는 위에서 이미 자기 것으로 결정됨 → 항상 본인 유지.
     let modalProj = proj;
+    // own 우선: 본인 상세이미지가 있으면 본인 것 사용 (라이브 동작 보존).
+    // own 이 없을 때만 참조 분기 진입.
+    // 참조 1순위: 영구 id (rightId). 이름·folder 변경에 영향 안 받음.
+    // 2순위: 레거시 rightFolder (RightId 백필 안 된 옛 record). 자기참조는
+    //   object identity 로 차단 — folder 슬러그가 자기 자신과 같아도 다른 글
+    //   을 정확히 찾도록 (옛 사고: -1001 = -1 동일 folder → 자기참조 오판).
     const ownHasImages = Array.isArray(proj.images) && proj.images.length > 0;
-    if (!ownHasImages && proj.rightFolder && proj.rightFolder !== proj.folder) {
-      const right = projectData.find((x) => x.folder === proj.rightFolder);
+    if (!ownHasImages) {
+      let right = null;
+      if (proj.rightId) {
+        right = projectData.find((x) => x.id === proj.rightId && x !== proj);
+      } else if (proj.rightFolder) {
+        right = projectData.find(
+          (x) => x !== proj && x.folder === proj.rightFolder,
+        );
+      }
       if (right) {
         modalProj = {
           ...proj,
@@ -915,11 +928,11 @@ async function syncPortfolioFromApi() {
     const d = await res.json();
     if (!Array.isArray(d.records)) return;
 
-    // 변경 감지용 signature — id/order/사진/상세이미지 참조원본 모두 포함
+    // 변경 감지용 signature — id/order/사진/참조 (rightId 우선) 모두 포함
     const sig = d.records
       .map(
         (r) =>
-          `${r.id}|${r.order}|${r.thumbAfter || ""}|${(Array.isArray(r.images) && r.images.length) || 0}|${r.rightFolder || ""}`,
+          `${r.id}|${r.order}|${r.thumbAfter || ""}|${(Array.isArray(r.images) && r.images.length) || 0}|${r.rightId || r.rightFolder || ""}`,
       )
       .join("||");
     if (sig === _portfolioLastSig) return; // 변경 없음 → 그대로 둠
@@ -928,6 +941,7 @@ async function syncPortfolioFromApi() {
     projectData.length = 0;
     d.records.forEach((r) => {
       const o = {
+        id: r.id,
         name: r.name,
         folder: r.folder,
         count: r.count,
@@ -935,6 +949,9 @@ async function syncPortfolioFromApi() {
         thumbBefore: r.thumbBefore || "",
         images: Array.isArray(r.images) ? r.images : [],
       };
+      // 참조: 영구 id (rightId) 가 우선. rightName/rightFolder/rightCount 는
+      // Worker 가 RightId 기준으로 derive 해서 응답 — 이름이 바뀌어도 자동 동기.
+      if (r.rightId) o.rightId = r.rightId;
       if (r.rightName) {
         o.rightName = r.rightName;
         o.rightFolder = r.rightFolder;

@@ -63,6 +63,7 @@ const SCHEMA = {
     "Count",
     "Category",
     "Order",
+    "RightId",
     "RightFolder",
     "RightCount",
     "RightName",
