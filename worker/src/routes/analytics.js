@@ -896,32 +896,41 @@ async function fetchSelfStats(env, range) {
   };
 
   // 1) 터치 + 신규 + 재방문 (단순 정의: 기간 시작 이전 등장 이력 유무)
+  // 옛 코드는 WITH InRange + IN 서브쿼리 조합인데 D1 에서 silent fail —
+  // touches=0 으로 떨어져 어드민 KPI 가 0 표시되던 사고. 3 개 분리 쿼리로 교체.
   try {
-    const row = await env.DB.prepare(
-      `WITH InRange AS (
-         SELECT DISTINCT SessionId
-         FROM HeatmapEvents
-         WHERE EventType = 'page_view'
-           AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
-           AND SessionId != ''
-       ),
-       BeforeRange AS (
-         SELECT DISTINCT SessionId
-         FROM HeatmapEvents
-         WHERE EventType = 'page_view'
-           AND substr(CreatedAt, 1, 10) < ?
-           AND SessionId != ''
-       )
-       SELECT
-         (SELECT COUNT(*) FROM InRange) AS Touches,
-         (SELECT COUNT(*) FROM InRange WHERE SessionId IN (SELECT SessionId FROM BeforeRange)) AS Returning,
-         (SELECT COUNT(*) FROM InRange WHERE SessionId NOT IN (SELECT SessionId FROM BeforeRange)) AS NewVisitors`,
+    const touchesRow = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT SessionId) AS Cnt
+       FROM HeatmapEvents
+       WHERE EventType = 'page_view'
+         AND substr(CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND SessionId != ''`,
     )
-      .bind(startDate, endDate, startDate)
+      .bind(startDate, endDate)
       .first();
-    result.touches = Number(row?.Touches || 0);
-    result.returningVisitors = Number(row?.Returning || 0);
-    result.newVisitors = Number(row?.NewVisitors || 0);
+    result.touches = Number(touchesRow?.Cnt || 0);
+
+    // 재방문 정의: 기간 내 등장한 SessionId 중, 같은 SessionId 가 history 전체
+    // 어느 다른 날에도 등장한 적 있음 (기간 시작 이전이든 기간 안 다른 날이든).
+    // → 옛 정의는 "기간 시작 이전 only" 라 첫 데이터일을 포함하는 range 에서 항상
+    //   0이 나와 직관과 안 맞던 사고 차단 (7일 range 재방문 0 사고).
+    const returningRow = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT a.SessionId) AS Cnt
+       FROM HeatmapEvents a
+       WHERE a.EventType = 'page_view'
+         AND substr(a.CreatedAt, 1, 10) BETWEEN ? AND ?
+         AND a.SessionId != ''
+         AND EXISTS (
+           SELECT 1 FROM HeatmapEvents b
+           WHERE b.SessionId = a.SessionId
+             AND b.EventType = 'page_view'
+             AND substr(b.CreatedAt, 1, 10) != substr(a.CreatedAt, 1, 10)
+         )`,
+    )
+      .bind(startDate, endDate)
+      .first();
+    result.returningVisitors = Number(returningRow?.Cnt || 0);
+    result.newVisitors = Math.max(0, result.touches - result.returningVisitors);
   } catch {}
 
   // 2) 평균 페이지뷰 / 세션
