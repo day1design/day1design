@@ -20,6 +20,9 @@ const STATUS_COLORS = {
 
 const SOURCE_LABELS = {
   homepage: "홈페이지",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  threads: "Threads",
   meta: "Meta",
   google: "Google",
   naver: "Naver",
@@ -32,22 +35,31 @@ const SOURCE_LABELS = {
   other: "기타",
 };
 
+// 브랜드 색상 — 사용자 지정: Instagram 보라 · Facebook 블루 · Google 주황 ·
+// YouTube 부드러운 빨강. Threads 는 브랜드 블랙. Meta(fallback) 는 가족 채널
+// 통합용이라 회사 블루 톤.
 const SOURCE_COLORS = {
   homepage: "#1a2f4e",
-  meta: "#1877f2",
-  google: "#4285f4",
-  naver: "#03c75a",
-  youtube: "#ff0033",
-  kakao: "#f7d600",
-  direct: "#6b7280",
-  search: "#0ea5e9",
-  social: "#8b5cf6",
-  referral: "#14b8a6",
-  other: "#b8c0cc",
+  instagram: "#833AB4",
+  facebook: "#1877F2",
+  threads: "#101010",
+  meta: "#0668E1",
+  google: "#FF9800",
+  naver: "#03C75A",
+  youtube: "#E84545",
+  kakao: "#FAE100",
+  direct: "#6B7280",
+  search: "#0EA5E9",
+  social: "#8B5CF6",
+  referral: "#14B8A6",
+  other: "#B8C0CC",
 };
 
 const SUBMISSION_SOURCE_ORDER = [
   "homepage",
+  "instagram",
+  "facebook",
+  "threads",
   "meta",
   "google",
   "naver",
