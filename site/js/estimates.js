@@ -12,6 +12,8 @@ const complete = document.getElementById("wizardComplete");
 
 function goToStep(n) {
   currentStep = n;
+  const err = document.getElementById("wizardStepError");
+  if (err) err.style.display = "none";
   steps.forEach((s) =>
     s.classList.toggle("active", parseInt(s.dataset.step) === n),
   );
@@ -198,21 +200,180 @@ document.querySelectorAll('.file-drop input[type="file"]').forEach((input) => {
   });
 });
 
+// ========== STEP VALIDATION ==========
+// 단계별 필수 입력 가드 — 빈 채로 다음/제출 못 하게 막고
+// 어떤 항목이 비었는지 화면에서 안내(is-invalid + 스크롤 + 메시지).
+const STEP_RULES = {
+  1: [
+    { kind: "input", name: "name", label: "이름" },
+    { kind: "phone", label: "연락처" },
+    { kind: "email", label: "이메일" },
+    { kind: "checkbox", name: "privacy", label: "개인정보 수집 동의" },
+  ],
+  2: [
+    { kind: "card", name: "space_type", label: "공간유형" },
+    { kind: "card", name: "space_size", label: "공간면적" },
+    { kind: "input", name: "address", label: "현장주소" },
+  ],
+  3: [{ kind: "input", name: "schedule", label: "공사희망일정" }],
+  4: [
+    { kind: "card", name: "referral", label: "문의경로" },
+    { kind: "card", name: "branch", label: "방문 상담 지점" },
+    { kind: "input", name: "budget", label: "가용 예산" },
+  ],
+};
+
+function getFormGroupForRule(rule) {
+  if (rule.kind === "card") {
+    const cards = form.querySelector(`.option-cards[data-name="${rule.name}"]`);
+    return {
+      group: cards ? cards.closest(".form-group") : null,
+      target: cards,
+      focusEl: cards ? cards.querySelector(".option-card") : null,
+    };
+  }
+  if (rule.kind === "phone") {
+    const el = form.querySelector('[name="phone1"]');
+    return {
+      group: el ? el.closest(".form-group") : null,
+      target: el,
+      focusEl: el,
+    };
+  }
+  if (rule.kind === "email") {
+    const el = form.querySelector('[name="email_id"]');
+    return {
+      group: el ? el.closest(".form-group") : null,
+      target: el,
+      focusEl: el,
+    };
+  }
+  const el = form.querySelector(`[name="${rule.name}"]`);
+  return {
+    group: el ? el.closest(".form-group") : null,
+    target: el,
+    focusEl: el,
+  };
+}
+
+function isRuleSatisfied(rule) {
+  if (rule.kind === "card") return !!selections[rule.name];
+  if (rule.kind === "phone") {
+    const p1 = (form.querySelector('[name="phone1"]')?.value || "").trim();
+    const p2 = (form.querySelector('[name="phone2"]')?.value || "").trim();
+    const p3 = (form.querySelector('[name="phone3"]')?.value || "").trim();
+    return !!(p1 && p2 && p3);
+  }
+  if (rule.kind === "email") {
+    const id = (form.querySelector('[name="email_id"]')?.value || "").trim();
+    const domain = (
+      form.querySelector('[name="email_domain"]')?.value || ""
+    ).trim();
+    return !!(id && domain);
+  }
+  if (rule.kind === "checkbox") {
+    const el = form.querySelector(`[name="${rule.name}"]`);
+    return !!(el && el.checked);
+  }
+  const el = form.querySelector(`[name="${rule.name}"]`);
+  return !!(el && el.value.trim());
+}
+
+function clearInvalidMarks(stepNum) {
+  const stepEl = form.querySelector(`.wizard-step[data-step="${stepNum}"]`);
+  if (!stepEl) return;
+  stepEl
+    .querySelectorAll(".form-group.is-invalid")
+    .forEach((el) => el.classList.remove("is-invalid"));
+  stepEl
+    .querySelectorAll(".option-cards.is-invalid")
+    .forEach((el) => el.classList.remove("is-invalid"));
+}
+
+function showStepError(stepNum, missing) {
+  let msgEl = document.getElementById("wizardStepError");
+  if (!msgEl) {
+    msgEl = document.createElement("div");
+    msgEl.id = "wizardStepError";
+    msgEl.style.cssText =
+      "color:#c5371a;font-size:13px;margin:10px 0 0;text-align:center;line-height:1.5;";
+    const nav = document.querySelector(".wizard-nav");
+    if (nav && nav.parentNode) nav.parentNode.insertBefore(msgEl, nav);
+  }
+  const labels = missing.map((r) => r.label).join(", ");
+  msgEl.textContent = `필수 항목을 입력해주세요: ${labels}`;
+  msgEl.style.display = "block";
+}
+
+function hideStepError() {
+  const msgEl = document.getElementById("wizardStepError");
+  if (msgEl) msgEl.style.display = "none";
+}
+
+function validateAndMarkStep(stepNum) {
+  clearInvalidMarks(stepNum);
+  const rules = STEP_RULES[stepNum] || [];
+  const missing = rules.filter((r) => !isRuleSatisfied(r));
+  if (!missing.length) {
+    hideStepError();
+    return true;
+  }
+  let firstTarget = null;
+  let firstFocus = null;
+  missing.forEach((rule) => {
+    const { group, target, focusEl } = getFormGroupForRule(rule);
+    if (group) group.classList.add("is-invalid");
+    if (target && target.classList.contains("option-cards")) {
+      target.classList.add("is-invalid");
+    }
+    if (!firstTarget && (group || target)) {
+      firstTarget = group || target;
+      firstFocus = focusEl;
+    }
+  });
+  showStepError(stepNum, missing);
+  if (firstTarget) {
+    requestAnimationFrame(() => {
+      firstTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (firstFocus && typeof firstFocus.focus === "function") {
+        try {
+          firstFocus.focus({ preventScroll: true });
+        } catch {
+          firstFocus.focus();
+        }
+      }
+    });
+  }
+  return false;
+}
+
+// 사용자가 빠진 필드를 채우면 is-invalid 자동 해제
+form.addEventListener("input", (e) => {
+  const grp = e.target.closest(".form-group");
+  if (grp) grp.classList.remove("is-invalid");
+  hideStepError();
+});
+form.addEventListener("change", (e) => {
+  const grp = e.target.closest(".form-group");
+  if (grp) grp.classList.remove("is-invalid");
+  hideStepError();
+});
+// option-card 클릭은 selections 갱신 직후 호출되도록 capture phase로
+document.querySelectorAll(".option-cards").forEach((group) => {
+  group.addEventListener("click", () => {
+    group.classList.remove("is-invalid");
+    const grp = group.closest(".form-group");
+    if (grp) grp.classList.remove("is-invalid");
+    hideStepError();
+  });
+});
+
 // Navigation
 btnNext.addEventListener("click", () => {
+  if (!validateAndMarkStep(currentStep)) return;
   if (currentStep < TOTAL_STEPS) {
     goToStep(currentStep + 1);
   } else {
-    // Submit
-    const privacyCheck = form.querySelector('input[name="privacy"]');
-    if (!privacyCheck.checked) {
-      goToStep(1);
-      requestAnimationFrame(() => {
-        privacyCheck.scrollIntoView({ behavior: "smooth", block: "center" });
-        privacyCheck.focus();
-      });
-      return;
-    }
     // 1) DOM 값 캡처 (UI 전환 전에)
     const payload = buildSubmitPayload();
     // 2) 즉시 완료 화면 전환 (사용자는 대기 없음)
@@ -413,6 +574,7 @@ function buildSubmitPayload() {
     schedule: val("schedule"),
     referral: referralValue,
     branch: selections.branch || "",
+    budget: val("budget"),
     detail: val("detail"),
     privacy_agreed: !!f.querySelector('input[name="privacy"]').checked,
     concept_files_count: compressedFiles.concept_files.length,
@@ -469,6 +631,29 @@ async function retryPending() {
     pending = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
   } catch (e) {
     return;
+  }
+  if (!pending.length) return;
+  // budget 누락 등 옛 스키마 pending은 항상 400을 받아 무한 재시도되므로 폐기.
+  // worker validation 필수 필드가 빠진 것은 자동 폐기.
+  const before = pending.length;
+  pending = pending.filter(
+    (f) =>
+      f &&
+      f.name &&
+      f.phone &&
+      f.email &&
+      f.budget &&
+      f.space_type &&
+      f.space_size &&
+      f.address &&
+      f.schedule &&
+      f.referral &&
+      f.branch,
+  );
+  if (pending.length !== before) {
+    try {
+      localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    } catch (e) {}
   }
   if (!pending.length) return;
   const remaining = [];
