@@ -963,9 +963,10 @@ async function loadTrafficAnalytics(range) {
       start: dayKey(range.start),
       end: dayKey(range.end),
     });
-    const data = await adminUtil.apiCached(`/api/analytics/summary?${params}`, {
-      ttl: 30_000,
-    });
+    // 캐시 미사용 — 필터 바꿀 때마다 항상 fresh fetch. Worker 측 snapshot
+    // (6h TTL) 이 GA4 호출 부담은 막아주므로 매번 호출해도 빠름. (사용자가
+    // sessionStorage 를 수동으로 비워야만 새 데이터가 보이던 사고 차단)
+    const data = await adminUtil.api(`/api/analytics/summary?${params}`);
     if (seq !== analyticsLoadSeq) return;
     renderTrafficAnalytics(data);
   } catch (e) {

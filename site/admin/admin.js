@@ -370,6 +370,10 @@ function initShell() {
 
 // 로그인 체크 + shell 주입 (DOM 준비되면 즉시)
 function bootstrap() {
+  // 페이지 진입마다 sessionStorage 의 admin_cache 통째 무효화 — 캐시된 옛
+  // 응답이 새 데이터/필터를 가리던 사고 차단. apiCached 는 페이지 내 빠른
+  // 재호출만 절감하고, 새 페이지 진입 = 신선한 데이터 보장.
+  cacheInvalidate();
   initShell();
   if (!isLoginPage()) {
     ensureAuth().then((ok) => {
