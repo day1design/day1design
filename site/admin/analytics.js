@@ -964,7 +964,7 @@ async function loadTrafficAnalytics(range) {
       end: dayKey(range.end),
     });
     const data = await adminUtil.apiCached(`/api/analytics/summary?${params}`, {
-      ttl: 10 * 60_000,
+      ttl: 30_000,
     });
     if (seq !== analyticsLoadSeq) return;
     renderTrafficAnalytics(data);

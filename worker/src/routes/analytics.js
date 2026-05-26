@@ -14,6 +14,9 @@ const VISITOR_DETAIL_DAY_LIMIT = 370;
 const VISITOR_DETAIL_EVENT_LIMIT = 80;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const SOURCE_CHANNELS = {
+  instagram: "Instagram",
+  facebook: "Facebook",
+  threads: "Threads",
   meta: "Meta",
   google: "Google",
   naver: "Naver",
@@ -806,9 +809,10 @@ async function getSummary(request, env, services) {
   const selfStats = await fetchSelfStats(env, range);
 
   // 응답 머지 헬퍼 — visitors/pageviews/trend 는 자체 측정(D1 HeatmapEvents)을
-  // 우선. self 측정값이 0/빈 배열이면 GA4 캐시 값으로 fallback (라이브에는 항상
-  // self 데이터가 있으니 사실상 self 우선이고, dev/test 환경에서만 GA4 사용).
-  // GA4 의 avgDuration/bounceRate/sources/topPages/searchQueries 는 그대로.
+  // 우선. self 측정값이 0/빈 배열이면 GA4 캐시 값으로 fallback.
+  // sources 는 cached 의 rawSources 를 현재 classifyTrafficSource 로 재분류
+  // → 옛 snapshot 의 "Meta 합산" 이 새 분류(Instagram/Facebook/Threads 분리)로
+  //   즉시 반영. snapshot 재생성 안 기다림.
   const mergeWithSelf = (base, extra = {}) => ({
     ...base,
     summary: {
@@ -823,6 +827,7 @@ async function getSummary(request, env, services) {
       selfStats.trend && selfStats.trend.length
         ? selfStats.trend
         : base.trend || [],
+    sources: reclassifySources(base.sources),
     self: selfStats,
     ...extra,
   });
@@ -1399,6 +1404,45 @@ async function collectGa4(env, propertyId, refreshToken, range) {
   };
 }
 
+// cached snapshot 의 sources (옛 분류) 를 raw 기반으로 재분류.
+// snapshot 안 갈아엎고도 새 채널 정의를 응답에 즉시 반영.
+function reclassifySources(sources) {
+  if (!Array.isArray(sources) || sources.length === 0) return sources || [];
+  const fakeRows = [];
+  for (const src of sources) {
+    const rawList = Array.isArray(src.rawSources) ? src.rawSources : [];
+    if (rawList.length === 0) {
+      // raw 없으면 옛 source 키를 dimension 으로 흉내 (보수적 폴백)
+      fakeRows.push({
+        dimensionValues: [
+          { value: src.name || "" },
+          { value: "" },
+          { value: "" },
+        ],
+        metricValues: [
+          { value: String(src.sessions || 0) },
+          { value: String(src.visitors || 0) },
+        ],
+      });
+      continue;
+    }
+    for (const r of rawList) {
+      fakeRows.push({
+        dimensionValues: [
+          { value: r.source || "" },
+          { value: r.medium || "" },
+          { value: r.channelGroup || "" },
+        ],
+        metricValues: [
+          { value: String(r.sessions || 0) },
+          { value: String(r.visitors || 0) },
+        ],
+      });
+    }
+  }
+  return aggregateTrafficSources(fakeRows);
+}
+
 function aggregateTrafficSources(rows) {
   const grouped = new Map();
 
@@ -1456,13 +1500,21 @@ function classifyTrafficSource({ source, medium, channelGroup }) {
   ) {
     return sourceChannel("direct");
   }
+  // Meta 가족은 정확히 분리 — instagram / facebook / threads 별도 채널.
+  // 매칭 못 한 모호한 meta 출처(예: fbclid 단독)는 "meta" fallback.
+  // 단어 경계 \b 로 ig/fb 같은 짧은 source 도 정확히 잡음.
+  if (/\b(instagram|ig)\b|ig\.com/.test(haystack)) {
+    return sourceChannel("instagram");
+  }
+  if (/\bthreads\b/.test(haystack)) return sourceChannel("threads");
   if (
-    /(facebook|instagram|meta|fb\.|fb_|ig\.|ig_|threads|l\.facebook|lm\.facebook|m\.facebook)/.test(
+    /\b(facebook|fb)\b|fb\.|fbclid|l\.facebook|lm\.facebook|m\.facebook/.test(
       haystack,
     )
   ) {
-    return sourceChannel("meta");
+    return sourceChannel("facebook");
   }
+  if (/\bmeta\b/.test(haystack)) return sourceChannel("meta");
   if (/(youtube|youtu\.be)/.test(haystack)) return sourceChannel("youtube");
   if (/(naver|search\.naver|blog\.naver|cafe\.naver)/.test(haystack)) {
     return sourceChannel("naver");
