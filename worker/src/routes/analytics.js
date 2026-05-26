@@ -819,8 +819,10 @@ async function getSummary(request, env, services) {
     ...base,
     summary: {
       ...(base.summary || {}),
-      visitors: selfStats.touches || base?.summary?.visitors || 0,
-      pageviews: selfStats.pageviews || base?.summary?.pageviews || 0,
+      // visitors / pageviews / avgDuration / bounceRate 는 GA4 본연 값 그대로 —
+      // 자체측정 터치와 의미가 달라 머지 금지. (옛 사고: GA4 lag 우회한다고
+      // self.touches 를 visitors 로 덮어써서 두 메트릭이 한 값으로 합쳐졌던 것 분리.)
+      // 자체측정 카드(touches / newVisitors / returningVisitors) 는 self 그대로.
       touches: selfStats.touches,
       newVisitors: selfStats.newVisitors,
       returningVisitors: selfStats.returningVisitors,
