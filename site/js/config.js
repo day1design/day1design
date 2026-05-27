@@ -5,7 +5,6 @@
 window.DAY1_API_BASE = "https://day1design-api.day1design-co.workers.dev";
 
 // GA4 Measurement ID — common.js 의 gtag 초기화가 이 값을 G-XXXXX 형식 검증 후
-// 활성. 비어 있으면 GA4 측정 자체가 안 됨 (2026-05-20 deploy 시점부터 누락되어
-// 5/22 이후 GA4 trend 가 빈 값으로 응답하던 사고).
-// Property ID 537274300 의 데이터 스트림 측정 ID.
-window.DAY1_GA4_ID = "G-V7VLPPDY9B";
+// 활성. 비어 있으면 GA4 측정 자체가 안 됨.
+// Property 537274300 · 스트림 14863296006 (https://day1design.co.kr) 측정 ID.
+window.DAY1_GA4_ID = "G-F6TGWLBL7T";
