@@ -1,0 +1,675 @@
+/* ========== WIZARD FORM ==========
+   개선: 일정한 폭 + 정보구조가 반영되는 2컬럼 라벨 레이아웃
+   - 라벨 110px 고정 | 입력 영역 1fr
+   - 카드 컨테이너로 시각적 프레임 고정
+   - 옵션카드 3열 고정 그리드
+   - 복합 입력 행 고정 비율
+   =================================== */
+.wizard-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: calc(var(--header-height) + 40px) 20px 80px;
+}
+
+/* 2-Column Layout — 고정 폭 그리드 (뷰포트 변화에도 폼 카드 폭 불변) */
+.wizard-layout {
+  display: grid;
+  grid-template-columns: 640px 300px;
+  gap: 40px;
+  justify-content: center;
+  align-items: start;
+}
+.wizard-main {
+  width: 640px;
+  min-width: 0;
+}
+.wizard-layout.is-complete {
+  display: block;
+}
+.wizard-layout.is-complete .wizard-main {
+  margin: 0 auto;
+}
+
+/* Summary Panel */
+.wizard-summary {
+  width: 300px;
+  flex-shrink: 0;
+  position: sticky;
+  top: calc(var(--header-height) + 20px);
+  background: #fff;
+  border: 1px solid var(--color-divider);
+  border-radius: 10px;
+  padding: 24px 22px;
+}
+.wizard-summary h3 {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-heading);
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-divider);
+  letter-spacing: 1px;
+}
+.summary-section {
+  margin-bottom: 16px;
+}
+.summary-section:last-child {
+  margin-bottom: 0;
+}
+.summary-section h4 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-brand-beige);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.summary-section dl {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 6px 10px;
+}
+.summary-section dt {
+  font-size: 12px;
+  color: var(--color-text-light);
+  white-space: nowrap;
+}
+.summary-section dd {
+  font-size: 12px;
+  color: var(--color-text-primary);
+  font-weight: 500;
+  /* 긴 이메일/URL만 강제 break (한글은 어절 단위 — 세로 텍스트 방지) */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+.summary-section dd.empty {
+  color: var(--color-text-light);
+  font-weight: 400;
+}
+
+/* Progress Bar */
+.wizard-progress {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 48px;
+  position: relative;
+}
+.wizard-progress::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: var(--color-divider);
+}
+.wizard-progress .step-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--color-divider);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--color-text-light);
+  position: relative;
+  z-index: 1;
+  transition: var(--transition);
+}
+.wizard-progress .step-dot.active,
+.wizard-progress .step-dot.done {
+  border-color: var(--color-brand-beige);
+  background: var(--color-brand-beige);
+  color: #fff;
+}
+.step-label {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--color-text-light);
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+}
+.step-dot.active .step-label,
+.step-dot.done .step-label {
+  color: var(--color-brand-beige);
+}
+
+/* ---------- STEP as CARD ---------- */
+.wizard-step {
+  display: none;
+  background: #fff;
+  border: 1px solid var(--color-divider);
+  border-radius: 10px;
+  padding: 28px 32px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  animation: fadeIn 0.3s ease;
+}
+.wizard-step.active {
+  display: block;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Card head */
+.form-card-head {
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.form-card-head .step-idx {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-brand-beige);
+  color: #fff;
+  font-size: 12px;
+  text-align: center;
+  line-height: 24px;
+  margin-right: 10px;
+  vertical-align: 2px;
+  font-family: var(--font-en);
+}
+.form-card-head h2 {
+  display: inline-block;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--color-text-heading);
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+.form-card-head .step-desc {
+  font-size: 13px;
+  color: var(--color-text-light);
+  margin: 6px 0 0 34px;
+}
+
+/* ---------- 2-COLUMN FORM GROUP ---------- */
+.form-group {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+.form-group:last-child {
+  margin-bottom: 0;
+}
+.form-group .field-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-heading);
+  padding-top: 11px;
+  line-height: 1.4;
+  margin: 0;
+}
+.form-group .field-label .req {
+  color: #c5371a;
+  margin-left: 2px;
+}
+.form-group .field-input {
+  min-width: 0;
+}
+
+/* Inputs (consistent) */
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group input[type="tel"],
+.form-group textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #e0dcd4;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: #fafaf8;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: var(--transition);
+}
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: var(--color-brand-beige);
+  outline: none;
+  background: #fff;
+}
+.form-group.is-invalid input,
+.form-group.is-invalid textarea,
+.option-cards.is-invalid .option-card {
+  border-color: #c5371a;
+  background: #fff7f3;
+}
+.option-cards.is-invalid .option-card.selected {
+  background: var(--color-brand-beige);
+  border-color: var(--color-brand-beige);
+}
+.form-group textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* Email input */
+.email-row {
+  display: grid;
+  grid-template-columns: 2fr 16px 1.2fr 1.2fr;
+  align-items: center;
+  gap: 8px;
+}
+.email-row .at {
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+}
+.email-row select {
+  width: 100%;
+  padding: 10px 8px;
+  border: 1px solid #e0dcd4;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: #fafaf8;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: var(--transition);
+}
+.email-row select:focus {
+  border-color: var(--color-brand-beige);
+  outline: none;
+}
+
+/* Phone input */
+.phone-row {
+  display: grid;
+  grid-template-columns: 1fr 14px 1fr 14px 1fr;
+  align-items: center;
+  gap: 0;
+}
+.phone-row .dash {
+  text-align: center;
+  color: #ccc;
+  font-size: 16px;
+}
+
+/* Address input */
+.address-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.address-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.address-row input[name="postcode"] {
+  grid-column: 1;
+}
+.address-row .btn-address {
+  grid-column: 3;
+}
+.btn-address {
+  padding: 0 18px;
+  height: 40px;
+  background: var(--color-brand-beige);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+.btn-address:hover {
+  opacity: 0.85;
+}
+
+/* Option cards — PC: 5-col 한줄 고정, 모바일: 2-col */
+.option-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.option-card {
+  padding: 9px 6px;
+  border: 1px solid #e0dcd4;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: var(--transition);
+  background: #fafaf8;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  letter-spacing: -0.2px;
+}
+.option-card:hover {
+  border-color: var(--color-brand-beige);
+}
+.option-card.selected {
+  border-color: var(--color-brand-beige);
+  background: var(--color-brand-beige);
+  color: #fff;
+}
+.option-card input {
+  display: none;
+}
+
+/* File upload */
+.file-drop {
+  display: block;
+  border: 2px dashed #ddd;
+  border-radius: 8px;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: var(--transition);
+  background: #fafaf8;
+}
+.file-drop:hover {
+  border-color: var(--color-brand-beige);
+  background: #f5f2ec;
+}
+.file-drop .file-icon {
+  font-size: 24px;
+  margin-bottom: 6px;
+  opacity: 0.4;
+}
+.file-drop p {
+  font-size: 13px;
+  color: var(--color-text-light);
+}
+.file-drop input {
+  display: none;
+}
+.file-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.file-preview-item {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--color-divider);
+}
+.file-preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.file-preview-item .file-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.file-preview-item .file-size {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 9px;
+  text-align: center;
+  padding: 1px 0;
+}
+
+/* Privacy */
+.privacy-box {
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 14px;
+  font-size: 11px;
+  color: #999;
+  line-height: 1.7;
+  margin-bottom: 12px;
+  background: #fafaf8;
+}
+.privacy-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.privacy-check input {
+  accent-color: var(--color-brand-beige);
+}
+
+/* Navigation buttons */
+.wizard-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+  gap: 12px;
+}
+.wizard-nav .btn-prev {
+  padding: 13px 32px;
+  border: 1px solid var(--color-divider);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition);
+  background: #fff;
+}
+.wizard-nav .btn-prev:hover {
+  border-color: var(--color-brand-beige);
+}
+.wizard-nav .btn-next,
+.wizard-nav .btn-submit {
+  padding: 13px 40px;
+  background: var(--color-brand-beige);
+  color: #fff;
+  font-size: 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition);
+  letter-spacing: 1px;
+}
+.wizard-nav .btn-next:hover,
+.wizard-nav .btn-submit:hover {
+  opacity: 0.85;
+}
+.wizard-nav .btn-prev.hidden {
+  visibility: hidden;
+}
+
+/* Intro section — 박스형 정보 요소 (입력폼 영역과 같은 가로폭) */
+.wizard-intro {
+  background: var(--color-bg-cream);
+  border-left: 3px solid var(--color-brand-beige);
+  padding: 22px 28px;
+  margin-bottom: 32px;
+  border-radius: 4px;
+}
+.wizard-intro p {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  line-height: 1.85;
+  margin: 0 0 12px;
+  text-align: left;
+}
+.wizard-intro p:last-child {
+  margin-bottom: 0;
+}
+.wizard-intro .notice {
+  font-size: 12px;
+  color: #c5371a;
+  line-height: 1.75;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(90, 84, 72, 0.18);
+  margin-top: 14px;
+  text-align: left;
+}
+.wizard-intro .intro-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.wizard-intro .intro-notes li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 13px;
+  line-height: 1.85;
+  color: #c5371a;
+  margin: 0;
+}
+.wizard-intro .intro-notes li + li {
+  margin-top: 8px;
+}
+.wizard-intro .intro-notes li::before {
+  content: "✱";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #c5371a;
+}
+
+/* Completion */
+.wizard-complete {
+  text-align: center;
+  padding: 60px 0;
+  background: #fff;
+  border: 1px solid var(--color-divider);
+  border-radius: 10px;
+}
+.wizard-complete .check-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--color-brand-beige);
+  color: #fff;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 24px;
+}
+.wizard-complete h2 {
+  font-size: 22px;
+  color: var(--color-text-heading);
+  margin-bottom: 12px;
+}
+.wizard-complete p {
+  font-size: 14px;
+  color: var(--color-text-light);
+  line-height: 1.7;
+}
+
+/* Responsive — 1020px 미만: 사이드 요약 숨기고 단일 컬럼(최대 640px) */
+@media (max-width: 1020px) {
+  .wizard-layout {
+    display: block;
+  }
+  .wizard-summary {
+    display: none;
+  }
+  .wizard-main {
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+}
+/* 560px 미만(모바일): 2컬럼 라벨 해제, 옵션카드 2열 */
+@media (max-width: 560px) {
+  .wizard-step {
+    padding: 22px 16px;
+  }
+  .form-group {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .form-group .field-label {
+    padding-top: 0;
+  }
+  .form-card-head .step-desc {
+    margin-left: 0;
+  }
+  .option-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .wizard-nav .btn-prev,
+  .wizard-nav .btn-next,
+  .wizard-nav .btn-submit {
+    padding: 12px 24px;
+  }
+  .step-label {
+    font-size: 9px;
+  }
+  /* 입력폼 텍스트 클리핑 방지 — 폰트·패딩 축소 */
+  .form-group input[type="text"],
+  .form-group input[type="email"],
+  .form-group input[type="tel"],
+  .form-group textarea {
+    font-size: 13px;
+    padding: 10px 10px;
+  }
+  .email-row {
+    grid-template-columns: 1.3fr 12px 1fr 1.2fr;
+    gap: 4px;
+  }
+  .email-row .at {
+    font-size: 13px;
+  }
+  .email-row select {
+    font-size: 11px;
+    padding: 10px 4px;
+  }
+  .phone-row {
+    grid-template-columns: 1fr 10px 1fr 10px 1fr;
+  }
+  .phone-row .dash {
+    font-size: 14px;
+  }
+  .address-row {
+    grid-template-columns: 90px 1fr auto;
+    gap: 6px;
+  }
+  .btn-address {
+    padding: 0 12px;
+    font-size: 11px;
+    height: 38px;
+  }
+}
+
+/* 푸터 하단 여백 제거 */
+.wizard-wrap + .footer,
+.wizard-wrap ~ .footer {
+  margin-top: 0;
+  padding-bottom: 40px;
+}

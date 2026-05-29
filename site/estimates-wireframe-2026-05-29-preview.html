@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>견적문의 간소화 — PC / 모바일 비교 (2026-05-29)</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+        background: #2b2824;
+        color: #e8e4dc;
+        padding: 28px 24px 60px;
+      }
+      h1 {
+        font-size: 18px;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 4px;
+        letter-spacing: 0.5px;
+      }
+      .sub {
+        text-align: center;
+        font-size: 12.5px;
+        color: #9a948a;
+        margin-bottom: 28px;
+      }
+      .stage {
+        display: flex;
+        gap: 40px;
+        justify-content: center;
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+      .device {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .device .tag {
+        font-size: 13px;
+        font-weight: 700;
+        margin-bottom: 12px;
+        color: #cfc8bc;
+        letter-spacing: 1px;
+      }
+      .device .tag span {
+        color: #8a847a;
+        font-weight: 400;
+      }
+
+      /* PC frame */
+      .pc {
+        width: 1024px;
+        max-width: 100%;
+      }
+      .pc iframe {
+        width: 1024px;
+        height: 1180px;
+        border: none;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+      }
+
+      /* Mobile frame (iPhone-ish) */
+      .mobile .bezel {
+        width: 390px;
+        padding: 14px;
+        background: #111;
+        border-radius: 44px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+      }
+      .mobile iframe {
+        width: 362px;
+        height: 1080px;
+        border: none;
+        background: #fff;
+        border-radius: 30px;
+        display: block;
+      }
+
+      @media (max-width: 1480px) {
+        .pc {
+          width: 860px;
+        }
+        .pc iframe {
+          width: 860px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>견적문의 간소화 — 와이어프레임 비교</h1>
+    <p class="sub">
+      2026-05-29 · 위자드 폐지 → 한 페이지 · 좌: PC(1024px) / 우: 모바일(390px,
+      바텀시트)
+    </p>
+    <div class="stage">
+      <div class="device pc">
+        <div class="tag">PC <span>· 1024px</span></div>
+        <iframe src="estimates-wireframe-2026-05-29.html" title="PC"></iframe>
+      </div>
+      <div class="device mobile">
+        <div class="tag">MOBILE <span>· 390px · 바텀시트</span></div>
+        <div class="bezel">
+          <iframe
+            src="estimates-wireframe-2026-05-29.html"
+            title="Mobile"
+          ></iframe>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

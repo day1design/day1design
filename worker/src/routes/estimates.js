@@ -219,6 +219,28 @@ function internalEstimateEmailHtml(env, details) {
     env.ADMIN_ESTIMATES_URL || "https://admin.day1design.co.kr/estimates",
   ).trim();
   const campaign = attribution.campaign || "direct / estimate_form";
+  // 값이 있는 항목만 렌더 — 간소화 폼은 공간유형·첨부를 수집하지 않으므로 빈 셀 노출 방지.
+  // (옛 데이터/파일 첨부 케이스는 값이 있으면 그대로 표시되어 하위호환 유지)
+  const projectCells = [
+    ["면적", htmlValue(fields.space_size), false],
+    ["예산", htmlValue(fields.budget), true],
+    ["희망일정", htmlValue(fields.schedule), false],
+    ["지점", htmlValue(fields.branch), false],
+  ];
+  if (fields.space_type)
+    projectCells.unshift(["공간유형", htmlValue(fields.space_type), false]);
+  if (conceptCount || planCount)
+    projectCells.push([
+      "첨부",
+      `컨셉 ${conceptCount} / 도면 ${planCount}`,
+      false,
+    ]);
+  const cellWidth = `${Math.floor(100 / projectCells.length)}%`;
+  const projectCellsHtml = projectCells
+    .map(([label, value, accent]) =>
+      emailGridCell(label, value, cellWidth, accent),
+    )
+    .join("\n        ");
   const body = `
     ${emailSectionLabel("Client")}
     <p style="margin:0 0 18px 0;line-height:1.4;">
@@ -232,11 +254,7 @@ function internalEstimateEmailHtml(env, details) {
     ${emailSectionLabel("Project")}
     <table width="100%" cellpadding="0" cellspacing="1" style="background:#f0f0f0;border-radius:2px;margin-bottom:16px;">
       <tr>
-        ${emailGridCell("공간유형", htmlValue(fields.space_type), "20%")}
-        ${emailGridCell("면적", htmlValue(fields.space_size), "20%")}
-        ${emailGridCell("예산", htmlValue(fields.budget), "20%", true)}
-        ${emailGridCell("시공예정일", htmlValue(fields.schedule), "20%")}
-        ${emailGridCell("첨부", `컨셉 ${conceptCount} / 도면 ${planCount}`, "20%")}
+        ${projectCellsHtml}
       </tr>
     </table>
 
@@ -491,17 +509,16 @@ async function submitEstimate(request, env, ctx, services) {
     return jsonError(429, "Please try again");
   }
 
-  // 기본 검증
+  // 기본 검증 — 간소화 폼 필수: 이름·연락처·평형대·현장주소·희망일정·지점·가용예산 + 개인정보 동의
+  // (이메일·공간유형·문의경로는 폼에서 제거되어 선택값. 이메일은 입력 시에만 형식 검증)
   const errors = [];
   if (!fields.name || fields.name.length > 50) errors.push("name");
   if (!isValidPhone(fields.phone || "")) errors.push("phone");
-  if (!isValidEmail(fields.email || "")) errors.push("email");
+  if (fields.email && !isValidEmail(fields.email)) errors.push("email");
   if (fields.privacy_agreed !== "true") errors.push("privacy_agreed");
-  if (!fields.space_type) errors.push("space_type");
   if (!fields.space_size) errors.push("space_size");
   if (!fields.address) errors.push("address");
   if (!fields.schedule) errors.push("schedule");
-  if (!fields.referral) errors.push("referral");
   if (!fields.branch) errors.push("branch");
   if (!fields.budget) errors.push("budget");
   if ((fields.detail || "").length > 2000) errors.push("detail-too-long");
@@ -544,7 +561,7 @@ async function submitEstimate(request, env, ctx, services) {
   const record = await services.estimates.create({
     Name: fields.name,
     Phone: fields.phone,
-    Email: fields.email,
+    Email: fields.email || "",
     SpaceType: fields.space_type || "",
     SpaceSize: fields.space_size || "",
     Postcode: fields.postcode || "",
@@ -574,56 +591,76 @@ async function submitEstimate(request, env, ctx, services) {
   });
   fields.detail = detail;
 
-  const notificationText =
-    `[day1design/estimates] 새 상담신청\n` +
-    `이름: ${escapeHtml(fields.name)}\n` +
-    `연락처: ${escapeHtml(fields.phone)}\n` +
-    `이메일: ${escapeHtml(fields.email)}\n` +
-    `유형/평수: ${escapeHtml(fields.space_type)} / ${escapeHtml(fields.space_size)}\n` +
-    `지점: ${escapeHtml(fields.branch)}\n` +
-    `가용예산: ${escapeHtml(fields.budget)}\n` +
-    `출처: ${escapeHtml(attribution.platform)}${attribution.campaign ? ` / ${escapeHtml(attribution.campaign)}` : ""}\n` +
-    `파일: 컨셉 ${conceptUrls.length} / 평면도 ${planUrls.length}`;
+  const addressLine = compactJoin([fields.address, fields.address_detail]);
+  const notificationLines = [
+    `[day1design/estimates] 새 상담신청`,
+    `이름: ${escapeHtml(fields.name)}`,
+    `연락처: ${escapeHtml(fields.phone)}`,
+  ];
+  if (fields.email)
+    notificationLines.push(`이메일: ${escapeHtml(fields.email)}`);
+  notificationLines.push(
+    `평형대: ${escapeHtml(fields.space_size)}`,
+    `지점: ${escapeHtml(fields.branch)}`,
+    `가용예산: ${escapeHtml(fields.budget)}`,
+    `희망일정: ${escapeHtml(fields.schedule)}`,
+  );
+  if (addressLine) notificationLines.push(`주소: ${escapeHtml(addressLine)}`);
+  notificationLines.push(
+    `출처: ${escapeHtml(attribution.platform)}${attribution.campaign ? ` / ${escapeHtml(attribution.campaign)}` : ""}`,
+  );
+  if (conceptUrls.length || planUrls.length) {
+    notificationLines.push(
+      `파일: 컨셉 ${conceptUrls.length} / 평면도 ${planUrls.length}`,
+    );
+  }
+  const notificationText = notificationLines.join("\n");
 
   // 알림 발송 실패가 접수 저장 성공을 막지 않도록 waitUntil으로 분리
-  ctx.waitUntil(
-    Promise.allSettled([
-      notifyTelegram(env, notificationText),
-      notifyEmail(env, {
-        subject: "[DAYONE] 새 상담신청",
-        text: notificationText,
-        html: internalEstimateEmailHtml(env, {
-          fields,
-          attribution,
-          conceptCount: conceptUrls.length,
-          planCount: planUrls.length,
-          submittedAt,
-        }),
+  const notifyTasks = [
+    notifyTelegram(env, notificationText),
+    notifyEmail(env, {
+      subject: "[DAYONE] 새 상담신청",
+      text: notificationText,
+      html: internalEstimateEmailHtml(env, {
+        fields,
+        attribution,
+        conceptCount: conceptUrls.length,
+        planCount: planUrls.length,
+        submittedAt,
       }),
+    }),
+  ];
+  // 고객 접수확인 메일은 이메일을 입력한 경우에만 (간소화 폼은 이메일 미수집)
+  if (fields.email) {
+    notifyTasks.push(
       sendEmail(env, {
         to: fields.email,
         subject: "[DAYONE DESIGN] 견적문의가 접수되었습니다",
         text: customerReceiptText(fields),
         html: customerReceiptHtml(env, fields, submittedAt),
       }),
-      // NCP SENS LMS — env/발신번호 미설정 시 sens.js 가 자동 skip
-      sendNcpSens(env, {
-        to: fields.phone,
-        subject: HOMEPAGE_CUSTOMER_SUBJECT,
-        content: HOMEPAGE_CUSTOMER_NOTICE,
-      }).then((r) => {
-        if (!r.ok && !r.skipped) {
-          return notifyTelegram(
-            env,
-            `[day1design/estimates] SENS 발송 실패\n` +
-              `phone: ${escapeHtml(fields.phone)}\n` +
-              `status: ${r.status || "-"}\n` +
-              `body: ${escapeHtml((r.body || "").slice(0, 200))}`,
-          );
-        }
-      }),
-    ]),
+    );
+  }
+  notifyTasks.push(
+    // NCP SENS LMS — env/발신번호 미설정 시 sens.js 가 자동 skip
+    sendNcpSens(env, {
+      to: fields.phone,
+      subject: HOMEPAGE_CUSTOMER_SUBJECT,
+      content: HOMEPAGE_CUSTOMER_NOTICE,
+    }).then((r) => {
+      if (!r.ok && !r.skipped) {
+        return notifyTelegram(
+          env,
+          `[day1design/estimates] SENS 발송 실패\n` +
+            `phone: ${escapeHtml(fields.phone)}\n` +
+            `status: ${r.status || "-"}\n` +
+            `body: ${escapeHtml((r.body || "").slice(0, 200))}`,
+        );
+      }
+    }),
   );
+  ctx.waitUntil(Promise.allSettled(notifyTasks));
 
   // 관리자 목록 캐시 무효화
   await edgeCacheDeleteMany(

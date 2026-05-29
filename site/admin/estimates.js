@@ -667,11 +667,19 @@ async function openDetail(id) {
         <h3>접수 정보</h3>
         <dl class="detail-dl">
           <dt>연락처</dt><dd>${escapeHtml(r.Phone || "—")}</dd>
-          <dt>이메일</dt><dd>${escapeHtml(r.Email || "—")}</dd>
-          <dt>공간</dt><dd>${escapeHtml(r.SpaceType || "—")} ${r.SpaceSize ? "· " + escapeHtml(r.SpaceSize) : ""}</dd>
-          <dt>주소/지역</dt><dd>${escapeHtml(r.Postcode || "")} ${escapeHtml(r.Address || "")} ${escapeHtml(r.AddressDetail || "")}</dd>
-          <dt>일정</dt><dd>${escapeHtml(r.Schedule || "—")}</dd>
-          <dt>경로</dt><dd>${escapeHtml(r.Referral || "—")}</dd>
+          ${r.Email ? `<dt>이메일</dt><dd>${escapeHtml(r.Email)}</dd>` : ""}
+          ${
+            [r.SpaceType, r.SpaceSize].filter(Boolean).length
+              ? `<dt>공간</dt><dd>${escapeHtml([r.SpaceType, r.SpaceSize].filter(Boolean).join(" · "))}</dd>`
+              : ""
+          }
+          ${
+            [r.Postcode, r.Address, r.AddressDetail].filter(Boolean).length
+              ? `<dt>주소/지역</dt><dd>${escapeHtml([r.Postcode, r.Address, r.AddressDetail].filter(Boolean).join(" "))}</dd>`
+              : ""
+          }
+          ${r.Schedule ? `<dt>일정</dt><dd>${escapeHtml(r.Schedule)}</dd>` : ""}
+          ${r.Referral ? `<dt>경로</dt><dd>${escapeHtml(r.Referral)}</dd>` : ""}
           ${
             (r.Source || "").toLowerCase() === "meta"
               ? `
@@ -680,10 +688,18 @@ async function openDetail(id) {
         `
               : ""
           }
-          <dt>상세내용</dt><dd><div class="detail-note">${escapeHtml(r.Detail || "—")}</div></dd>
-          <dt>컨셉파일</dt><dd>${filesList(r.ConceptFiles)}</dd>
-          <dt>평면도</dt><dd>${filesList(r.FloorPlans)}</dd>
-          <dt>지점</dt><dd>${escapeHtml(r.Branch || "—")}</dd>
+          ${r.Detail ? `<dt>상세내용</dt><dd><div class="detail-note">${escapeHtml(r.Detail)}</div></dd>` : ""}
+          ${
+            Array.isArray(r.ConceptFiles) && r.ConceptFiles.length
+              ? `<dt>컨셉파일</dt><dd>${filesList(r.ConceptFiles)}</dd>`
+              : ""
+          }
+          ${
+            Array.isArray(r.FloorPlans) && r.FloorPlans.length
+              ? `<dt>평면도</dt><dd>${filesList(r.FloorPlans)}</dd>`
+              : ""
+          }
+          ${r.Branch ? `<dt>지점</dt><dd>${escapeHtml(r.Branch)}</dd>` : ""}
         </dl>
       </section>
 

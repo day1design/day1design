@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>견적문의 간소화 와이어프레임 (2026-05-29) — 데이원디자인</title>
+    <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+    <style>
+      /* ===== Design Tokens (day1design) ===== */
+      :root {
+        --beige: #5a5448;
+        --text: #3c3733;
+        --heading: #212121;
+        --light: #999;
+        --cream: #f1ede4;
+        --divider: #e0dcd4;
+        --field-bg: #fafaf8;
+        --err: #c5371a;
+        --font-kr:
+          "S-Core Dream", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: var(--font-kr);
+        color: var(--text);
+        background: #fff;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 56px 20px 96px;
+      }
+
+      /* ===== Process Steps ===== */
+      .process {
+        text-align: center;
+        margin-bottom: 56px;
+      }
+      .process .title {
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--heading);
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+      }
+      .process .eyebrow {
+        font-size: 15px;
+        color: var(--beige);
+        letter-spacing: 1px;
+        margin-bottom: 40px;
+      }
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        position: relative;
+      }
+      .step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .step .num {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        background: var(--beige);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: -14px;
+        position: relative;
+        z-index: 2;
+      }
+      .step .bubble {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        max-width: 120px;
+        border-radius: 50%;
+        background: var(--cream);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text);
+        padding: 10px;
+        line-height: 1.35;
+        word-break: keep-all;
+      }
+
+      /* ===== Form Card ===== */
+      .form-card {
+        background: #fff;
+        border: 1px solid var(--divider);
+        border-radius: 12px;
+        padding: 36px 36px 40px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+      }
+      .field {
+        margin-bottom: 22px;
+      }
+      .field:last-of-type {
+        margin-bottom: 0;
+      }
+      .field > label.lbl,
+      .field > span.lbl {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--heading);
+        margin-bottom: 8px;
+      }
+      .lbl .req {
+        color: var(--err);
+        margin-left: 3px;
+        font-weight: 700;
+      }
+      input[type="text"],
+      input[type="tel"],
+      textarea {
+        width: 100%;
+        padding: 13px 14px;
+        border: 1px solid var(--divider);
+        background: var(--field-bg);
+        border-radius: 6px;
+        font-size: 14.5px;
+        font-family: inherit;
+        color: var(--text);
+        transition: 0.2s;
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: #b3aea4;
+      }
+      input:focus,
+      textarea:focus {
+        outline: none;
+        border-color: var(--beige);
+        background: #fff;
+      }
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+      .field.invalid input,
+      .field.invalid textarea,
+      .field.invalid .select-btn {
+        border-color: var(--err);
+        background: #fff7f3;
+      }
+
+      /* Address */
+      .addr-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .btn-addr {
+        padding: 0 20px;
+        background: var(--beige);
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        font-size: 13.5px;
+        cursor: pointer;
+        white-space: nowrap;
+        font-family: inherit;
+      }
+      .btn-addr:hover {
+        opacity: 0.88;
+      }
+      .addr-row + input {
+        margin-bottom: 8px;
+      }
+
+      /* Custom Select (dropdown PC / bottom sheet mobile) */
+      .select-btn {
+        width: 100%;
+        padding: 13px 14px;
+        border: 1px solid var(--divider);
+        background: var(--field-bg);
+        border-radius: 6px;
+        font-size: 14.5px;
+        font-family: inherit;
+        color: #b3aea4;
+        text-align: left;
+        cursor: pointer;
+        position: relative;
+        transition: 0.2s;
+      }
+      .select-btn.has-value {
+        color: var(--text);
+      }
+      .select-btn::after {
+        content: "";
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        width: 8px;
+        height: 8px;
+        border-right: 1.5px solid var(--light);
+        border-bottom: 1.5px solid var(--light);
+        transform: translateY(-65%) rotate(45deg);
+      }
+      .select-btn:focus {
+        outline: none;
+        border-color: var(--beige);
+      }
+
+      /* Dropdown panel (PC) */
+      .select-panel {
+        position: absolute;
+        z-index: 50;
+        background: #fff;
+        border: 1px solid var(--divider);
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        overflow: hidden;
+        display: none;
+      }
+      .select-panel.open {
+        display: block;
+      }
+      .select-panel .opt {
+        padding: 13px 16px;
+        font-size: 14.5px;
+        cursor: pointer;
+        color: var(--text);
+      }
+      .select-panel .opt:hover,
+      .select-panel .opt.sel {
+        background: var(--cream);
+        color: var(--beige);
+        font-weight: 600;
+      }
+
+      /* Bottom sheet (mobile) */
+      .sheet-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 100;
+        display: none;
+        opacity: 0;
+        transition: opacity 0.25s;
+      }
+      .sheet-backdrop.open {
+        display: block;
+        opacity: 1;
+      }
+      .sheet {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #fff;
+        border-radius: 18px 18px 0 0;
+        z-index: 101;
+        transform: translateY(100%);
+        transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+        padding: 8px 0 max(20px, env(safe-area-inset-bottom));
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+      .sheet.open {
+        transform: translateY(0);
+      }
+      .sheet .grip {
+        width: 40px;
+        height: 4px;
+        background: var(--divider);
+        border-radius: 2px;
+        margin: 8px auto 6px;
+      }
+      .sheet .sheet-title {
+        text-align: center;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--heading);
+        padding: 8px 20px 14px;
+        border-bottom: 1px solid var(--divider);
+      }
+      .sheet .opt {
+        padding: 17px 24px;
+        font-size: 16px;
+        cursor: pointer;
+        color: var(--text);
+        border-bottom: 1px solid #f3f1ec;
+      }
+      .sheet .opt.sel {
+        color: var(--beige);
+        font-weight: 700;
+        background: var(--cream);
+      }
+
+      /* Privacy */
+      .privacy {
+        margin-top: 26px;
+        padding-top: 22px;
+        border-top: 1px solid var(--divider);
+      }
+      .privacy label {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 13.5px;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .privacy input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--beige);
+        flex-shrink: 0;
+        cursor: pointer;
+      }
+      .privacy .req {
+        color: var(--err);
+      }
+      .privacy a {
+        color: var(--beige);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .privacy.invalid label {
+        color: var(--err);
+      }
+
+      /* Submit */
+      .submit-area {
+        margin-top: 28px;
+      }
+      .btn-submit {
+        width: 100%;
+        padding: 17px;
+        background: var(--beige);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: 0.2s;
+      }
+      .btn-submit:hover {
+        opacity: 0.9;
+      }
+      .err-msg {
+        display: none;
+        color: var(--err);
+        font-size: 13px;
+        text-align: center;
+        margin-top: 12px;
+        line-height: 1.5;
+      }
+
+      /* Complete */
+      .complete {
+        display: none;
+        text-align: center;
+        padding: 70px 20px;
+      }
+      .complete .check {
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        background: var(--beige);
+        color: #fff;
+        font-size: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 24px;
+      }
+      .complete h2 {
+        font-size: 22px;
+        color: var(--heading);
+        margin-bottom: 12px;
+      }
+      .complete p {
+        font-size: 14.5px;
+        color: var(--light);
+      }
+
+      /* ===== Mobile ===== */
+      @media (max-width: 600px) {
+        .wrap {
+          padding: 40px 16px 80px;
+        }
+        .process .title {
+          font-size: 21px;
+          margin-bottom: 6px;
+        }
+        .process .eyebrow {
+          font-size: 13.5px;
+          margin-bottom: 28px;
+        }
+        .steps {
+          gap: 8px;
+        }
+        .step .bubble {
+          font-size: 10.5px;
+          padding: 5px;
+          letter-spacing: -0.4px;
+          line-height: 1.3;
+          word-break: keep-all;
+        }
+        .step .num {
+          width: 24px;
+          height: 24px;
+          font-size: 12px;
+          margin-bottom: -12px;
+        }
+        .form-card {
+          padding: 26px 18px 30px;
+          border-radius: 10px;
+        }
+        /* PC 드롭다운 패널 숨김 → 바텀시트 사용 */
+        .select-panel {
+          display: none !important;
+        }
+      }
+      /* PC: 바텀시트 미사용 */
+      @media (min-width: 601px) {
+        .sheet,
+        .sheet-backdrop {
+          display: none !important;
+        }
+      }
+
+      /* wireframe banner */
+      .wf-note {
+        max-width: 680px;
+        margin: 0 auto 0;
+        padding: 12px 20px;
+        background: #fff8e6;
+        border-bottom: 1px solid #f0e2b8;
+        font-size: 12.5px;
+        color: #8a6d1a;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wf-note">
+      ⓘ 와이어프레임 (2026-05-29) · 스타일 확정용 · 평형대/지점 클릭 시
+      PC=드롭다운, 모바일(≤600px)=바텀시트
+    </div>
+
+    <div class="wrap">
+      <!-- Process -->
+      <div class="process">
+        <h1 class="title">&lt;견적문의&gt;</h1>
+        <p class="eyebrow">데이원과 함께하기</p>
+        <div class="steps">
+          <div class="step">
+            <div class="num">1</div>
+            <div class="bubble">견적 문의</div>
+          </div>
+          <div class="step">
+            <div class="num">2</div>
+            <div class="bubble">방문 상담</div>
+          </div>
+          <div class="step">
+            <div class="num">3</div>
+            <div class="bubble">실측 및<br />디자인 미팅</div>
+          </div>
+          <div class="step">
+            <div class="num">4</div>
+            <div class="bubble">공사 시작</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Form -->
+      <form class="form-card" id="estForm" onsubmit="return false;">
+        <div class="field" data-field="name">
+          <label class="lbl" for="name">이름 <span class="req">*</span></label>
+          <input
+            type="text"
+            id="name"
+            name="name"
+            placeholder="이름을 입력해주세요"
+          />
+        </div>
+
+        <div class="field" data-field="phone">
+          <label class="lbl" for="phone"
+            >연락처 <span class="req">*</span></label
+          >
+          <input
+            type="tel"
+            id="phone"
+            name="phone"
+            placeholder="연락 가능한 번호를 입력해주세요"
+            inputmode="numeric"
+          />
+        </div>
+
+        <div class="field" data-field="address">
+          <span class="lbl">상세주소 <span class="req">*</span></span>
+          <div class="addr-row">
+            <input
+              type="text"
+              id="postcode"
+              name="postcode"
+              placeholder="우편번호"
+              readonly
+            />
+            <button type="button" class="btn-addr" id="btnAddr">
+              주소 검색
+            </button>
+          </div>
+          <input
+            type="text"
+            id="address"
+            name="address"
+            placeholder="주소"
+            readonly
+          />
+          <input
+            type="text"
+            id="addressDetail"
+            name="address_detail"
+            placeholder="상세주소를 입력해주세요"
+          />
+        </div>
+
+        <div class="field" data-field="space_size">
+          <span class="lbl">평형대 <span class="req">*</span></span>
+          <button
+            type="button"
+            class="select-btn"
+            data-select="space_size"
+            data-title="평형대 선택"
+          >
+            평형대를 선택해주세요
+          </button>
+        </div>
+
+        <div class="field" data-field="budget">
+          <label class="lbl" for="budget"
+            >가용 예산 <span class="req">*</span></label
+          >
+          <input
+            type="text"
+            id="budget"
+            name="budget"
+            placeholder="프로젝트 방향 설정을 위한 대략적인 예산을 기입해주세요"
+          />
+        </div>
+
+        <div class="field" data-field="schedule">
+          <label class="lbl" for="schedule"
+            >희망 일정 <span class="req">*</span></label
+          >
+          <input
+            type="text"
+            id="schedule"
+            name="schedule"
+            placeholder="예) 2026년 8월 / 협의 가능"
+          />
+        </div>
+
+        <div class="field" data-field="branch">
+          <span class="lbl">방문 상담 지점 <span class="req">*</span></span>
+          <button
+            type="button"
+            class="select-btn"
+            data-select="branch"
+            data-title="방문 상담 지점 선택"
+          >
+            지점을 선택해주세요
+          </button>
+        </div>
+
+        <div class="field" data-field="detail">
+          <label class="lbl" for="detail">상세 내용</label>
+          <textarea
+            id="detail"
+            name="detail"
+            placeholder="원하는 스타일, 공사 범위 등 구체적인 내용을 기입해주세요&#10;Ex) 전체공사, 우드&화이트 컨셉 ..."
+          ></textarea>
+        </div>
+
+        <!-- Privacy: 체크박스 + 약관 링크 -->
+        <div class="privacy" data-field="privacy">
+          <label>
+            <input type="checkbox" id="privacy" name="privacy" />
+            <span>
+              <span class="req">[필수]</span>
+              <a href="pages/privacy.html" target="_blank" rel="noopener"
+                >개인정보 수집·이용</a
+              >에 동의합니다.
+            </span>
+          </label>
+        </div>
+
+        <div class="submit-area">
+          <button type="button" class="btn-submit" id="btnSubmit">
+            견적문의 접수
+          </button>
+          <p class="err-msg" id="errMsg"></p>
+        </div>
+      </form>
+
+      <!-- Complete -->
+      <div class="complete" id="complete">
+        <div class="check">✓</div>
+        <h2>문의가 접수되었습니다</h2>
+        <p>담당 매니저가 확인 후 빠른 시간 내에 연락드리겠습니다.</p>
+      </div>
+    </div>
+
+    <!-- Bottom sheet (mobile) -->
+    <div class="sheet-backdrop" id="sheetBackdrop"></div>
+    <div class="sheet" id="sheet">
+      <div class="grip"></div>
+      <div class="sheet-title" id="sheetTitle"></div>
+      <div id="sheetOpts"></div>
+    </div>
+
+    <script>
+      // ===== Select options =====
+      const SELECT_OPTIONS = {
+        space_size: ["20~30평", "30~40평", "40~50평", "50평 이상"],
+        branch: ["강남점", "판교점", "지점 무관"],
+      };
+      const selections = {};
+
+      // ===== Daum Postcode =====
+      document.getElementById("btnAddr").addEventListener("click", () => {
+        new daum.Postcode({
+          oncomplete: (data) => {
+            document.getElementById("postcode").value = data.zonecode;
+            document.getElementById("address").value =
+              data.roadAddress || data.jibunAddress;
+            document.getElementById("addressDetail").focus();
+            clearInvalid("address");
+          },
+        }).open();
+      });
+
+      // ===== Custom select (PC dropdown / mobile bottom sheet) =====
+      function isMobile() {
+        return window.matchMedia("(max-width: 600px)").matches;
+      }
+      function setSelectValue(name, value) {
+        selections[name] = value;
+        document
+          .querySelectorAll(`.select-btn[data-select="${name}"]`)
+          .forEach((b) => {
+            b.textContent = value;
+            b.classList.add("has-value");
+          });
+        clearInvalid(name);
+      }
+
+      // PC dropdown
+      let openPanel = null;
+      function closePanel() {
+        if (openPanel) {
+          openPanel.remove();
+          openPanel = null;
+        }
+      }
+      document.addEventListener("click", (e) => {
+        if (
+          openPanel &&
+          !openPanel.contains(e.target) &&
+          !e.target.classList.contains("select-btn")
+        )
+          closePanel();
+      });
+
+      function openDropdown(btn, name) {
+        closePanel();
+        const panel = document.createElement("div");
+        panel.className = "select-panel open";
+        SELECT_OPTIONS[name].forEach((v) => {
+          const o = document.createElement("div");
+          o.className = "opt" + (selections[name] === v ? " sel" : "");
+          o.textContent = v;
+          o.addEventListener("click", () => {
+            setSelectValue(name, v);
+            closePanel();
+          });
+          panel.appendChild(o);
+        });
+        const r = btn.getBoundingClientRect();
+        panel.style.top = window.scrollY + r.bottom + 6 + "px";
+        panel.style.left = window.scrollX + r.left + "px";
+        panel.style.width = r.width + "px";
+        document.body.appendChild(panel);
+        openPanel = panel;
+      }
+
+      // Mobile bottom sheet
+      const sheet = document.getElementById("sheet");
+      const backdrop = document.getElementById("sheetBackdrop");
+      const sheetTitle = document.getElementById("sheetTitle");
+      const sheetOpts = document.getElementById("sheetOpts");
+      function openSheet(name, title) {
+        sheetTitle.textContent = title;
+        sheetOpts.innerHTML = "";
+        SELECT_OPTIONS[name].forEach((v) => {
+          const o = document.createElement("div");
+          o.className = "opt" + (selections[name] === v ? " sel" : "");
+          o.textContent = v;
+          o.addEventListener("click", () => {
+            setSelectValue(name, v);
+            closeSheet();
+          });
+          sheetOpts.appendChild(o);
+        });
+        backdrop.classList.add("open");
+        requestAnimationFrame(() => sheet.classList.add("open"));
+      }
+      function closeSheet() {
+        sheet.classList.remove("open");
+        backdrop.classList.remove("open");
+      }
+      backdrop.addEventListener("click", closeSheet);
+
+      document.querySelectorAll(".select-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const name = btn.dataset.select;
+          if (isMobile()) openSheet(name, btn.dataset.title);
+          else openDropdown(btn, name);
+        });
+      });
+
+      // ===== Validation =====
+      const REQUIRED = [
+        {
+          f: "name",
+          get: () => document.getElementById("name").value.trim(),
+          label: "이름",
+        },
+        {
+          f: "phone",
+          get: () => document.getElementById("phone").value.trim(),
+          label: "연락처",
+        },
+        {
+          f: "address",
+          get: () => document.getElementById("address").value.trim(),
+          label: "상세주소",
+        },
+        { f: "space_size", get: () => selections.space_size, label: "평형대" },
+        {
+          f: "budget",
+          get: () => document.getElementById("budget").value.trim(),
+          label: "가용 예산",
+        },
+        {
+          f: "schedule",
+          get: () => document.getElementById("schedule").value.trim(),
+          label: "희망 일정",
+        },
+        { f: "branch", get: () => selections.branch, label: "방문 상담 지점" },
+        {
+          f: "privacy",
+          get: () => document.getElementById("privacy").checked,
+          label: "개인정보 동의",
+        },
+      ];
+      function clearInvalid(field) {
+        const el = document.querySelector(`[data-field="${field}"]`);
+        if (el) el.classList.remove("invalid");
+        document.getElementById("errMsg").style.display = "none";
+      }
+      document.getElementById("estForm").addEventListener("input", (e) => {
+        const grp = e.target.closest("[data-field]");
+        if (grp) clearInvalid(grp.dataset.field);
+      });
+
+      document.getElementById("btnSubmit").addEventListener("click", () => {
+        const missing = REQUIRED.filter((r) => !r.get());
+        document
+          .querySelectorAll("[data-field]")
+          .forEach((el) => el.classList.remove("invalid"));
+        if (missing.length) {
+          missing.forEach((r) => {
+            const el = document.querySelector(`[data-field="${r.f}"]`);
+            if (el) el.classList.add("invalid");
+          });
+          const errMsg = document.getElementById("errMsg");
+          errMsg.textContent =
+            "필수 항목을 입력해주세요: " +
+            missing.map((r) => r.label).join(", ");
+          errMsg.style.display = "block";
+          const first = document.querySelector(
+            `[data-field="${missing[0].f}"]`,
+          );
+          if (first)
+            first.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+        // (와이어프레임) 전송 생략 → 완료 화면
+        document.getElementById("estForm").style.display = "none";
+        document.querySelector(".process").style.display = "none";
+        document.getElementById("complete").style.display = "block";
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    </script>
+  </body>
+</html>
