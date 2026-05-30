@@ -34,4 +34,4 @@ Disallow: /motion-loading-concepts.html$
 Disallow: /review_row3.html$
 Disallow: /review-portfolio.html$
 
-Sitemap: https://day1design.vercel.app/sitemap.xml
+Sitemap: https://day1design.co.kr/sitemap.xml
