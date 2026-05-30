@@ -4,6 +4,18 @@
   "trailingSlash": false,
   "redirects": [
     {
+      "source": "/",
+      "has": [{ "type": "host", "value": "day1design.vercel.app" }],
+      "destination": "https://day1design.co.kr/",
+      "permanent": true
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "www.day1design.co.kr" }],
+      "destination": "https://day1design.co.kr/",
+      "permanent": true
+    },
+    {
       "source": "/:path*",
       "has": [{ "type": "host", "value": "day1design.vercel.app" }],
       "destination": "https://day1design.co.kr/:path*",
