@@ -68,6 +68,142 @@
       "has": [{ "type": "host", "value": "www.day1design.co.kr" }],
       "destination": "/",
       "permanent": false
+    },
+    {
+      "source": "/PORTFOLIO",
+      "destination": "/pages/portfolio",
+      "permanent": true
+    },
+    {
+      "source": "/PORTFOLIO/:path*",
+      "destination": "/pages/portfolio",
+      "permanent": true
+    },
+    {
+      "source": "/HOUSE",
+      "destination": "/pages/portfolio",
+      "permanent": true
+    },
+    {
+      "source": "/HOUSE/:path*",
+      "destination": "/pages/portfolio",
+      "permanent": true
+    },
+    {
+      "source": "/OFFICE",
+      "destination": "/pages/portfolio",
+      "permanent": true
+    },
+    {
+      "source": "/OFFICE/:path*",
+      "destination": "/pages/portfolio",
+      "permanent": true
+    },
+    {
+      "source": "/ABOUT",
+      "destination": "/pages/about",
+      "permanent": true
+    },
+    {
+      "source": "/ABOUT/:path*",
+      "destination": "/pages/about",
+      "permanent": true
+    },
+    {
+      "source": "/56",
+      "destination": "/pages/project-flow",
+      "permanent": true
+    },
+    {
+      "source": "/56/:path*",
+      "destination": "/pages/project-flow",
+      "permanent": true
+    },
+    {
+      "source": "/57",
+      "destination": "/pages/about",
+      "permanent": true
+    },
+    {
+      "source": "/57/:path*",
+      "destination": "/pages/about",
+      "permanent": true
+    },
+    {
+      "source": "/ESTIMATES",
+      "destination": "/pages/estimates",
+      "permanent": true
+    },
+    {
+      "source": "/ESTIMATES/:path*",
+      "destination": "/pages/estimates",
+      "permanent": true
+    },
+    {
+      "source": "/COMMUNITY",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail",
+      "permanent": true
+    },
+    {
+      "source": "/COMMUNITY/:path*",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail",
+      "permanent": true
+    },
+    {
+      "source": "/COMMUNITY",
+      "destination": "/pages/community",
+      "permanent": true
+    },
+    {
+      "source": "/COMMUNITY/:path*",
+      "destination": "/pages/community",
+      "permanent": true
+    },
+    {
+      "source": "/Residential",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail",
+      "permanent": true
+    },
+    {
+      "source": "/Residential/:path*",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail",
+      "permanent": true
+    },
+    {
+      "source": "/Residential",
+      "destination": "/pages/community",
+      "permanent": true
+    },
+    {
+      "source": "/Residential/:path*",
+      "destination": "/pages/community",
+      "permanent": true
+    },
+    {
+      "source": "/Commercial",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail",
+      "permanent": true
+    },
+    {
+      "source": "/Commercial/:path*",
+      "has": [{ "type": "query", "key": "idx" }],
+      "destination": "/pages/community-detail",
+      "permanent": true
+    },
+    {
+      "source": "/Commercial",
+      "destination": "/pages/community",
+      "permanent": true
+    },
+    {
+      "source": "/Commercial/:path*",
+      "destination": "/pages/community",
+      "permanent": true
     }
   ],
   "rewrites": [
@@ -94,116 +230,6 @@
     {
       "source": "/r/:slug",
       "destination": "https://day1design-api.day1design-co.workers.dev/r/:slug"
-    },
-    {
-      "source": "/PORTFOLIO",
-      "destination": "/pages/portfolio"
-    },
-    {
-      "source": "/PORTFOLIO/:path*",
-      "destination": "/pages/portfolio"
-    },
-    {
-      "source": "/HOUSE",
-      "destination": "/pages/portfolio"
-    },
-    {
-      "source": "/HOUSE/:path*",
-      "destination": "/pages/portfolio"
-    },
-    {
-      "source": "/OFFICE",
-      "destination": "/pages/portfolio"
-    },
-    {
-      "source": "/OFFICE/:path*",
-      "destination": "/pages/portfolio"
-    },
-    {
-      "source": "/ABOUT",
-      "destination": "/pages/about"
-    },
-    {
-      "source": "/ABOUT/:path*",
-      "destination": "/pages/about"
-    },
-    {
-      "source": "/56",
-      "destination": "/pages/project-flow"
-    },
-    {
-      "source": "/56/:path*",
-      "destination": "/pages/project-flow"
-    },
-    {
-      "source": "/57",
-      "destination": "/pages/about"
-    },
-    {
-      "source": "/57/:path*",
-      "destination": "/pages/about"
-    },
-    {
-      "source": "/ESTIMATES",
-      "destination": "/pages/estimates"
-    },
-    {
-      "source": "/ESTIMATES/:path*",
-      "destination": "/pages/estimates"
-    },
-    {
-      "source": "/COMMUNITY",
-      "has": [{ "type": "query", "key": "idx" }],
-      "destination": "/pages/community-detail"
-    },
-    {
-      "source": "/COMMUNITY/:path*",
-      "has": [{ "type": "query", "key": "idx" }],
-      "destination": "/pages/community-detail"
-    },
-    {
-      "source": "/COMMUNITY",
-      "destination": "/pages/community"
-    },
-    {
-      "source": "/COMMUNITY/:path*",
-      "destination": "/pages/community"
-    },
-    {
-      "source": "/Residential",
-      "has": [{ "type": "query", "key": "idx" }],
-      "destination": "/pages/community-detail"
-    },
-    {
-      "source": "/Residential/:path*",
-      "has": [{ "type": "query", "key": "idx" }],
-      "destination": "/pages/community-detail"
-    },
-    {
-      "source": "/Residential",
-      "destination": "/pages/community"
-    },
-    {
-      "source": "/Residential/:path*",
-      "destination": "/pages/community"
-    },
-    {
-      "source": "/Commercial",
-      "has": [{ "type": "query", "key": "idx" }],
-      "destination": "/pages/community-detail"
-    },
-    {
-      "source": "/Commercial/:path*",
-      "has": [{ "type": "query", "key": "idx" }],
-      "destination": "/pages/community-detail"
-    },
-    {
-      "source": "/Commercial",
-      "destination": "/pages/community"
-    },
-    {
-      "source": "/Commercial/:path*",
-      "destination": "/pages/community"
     }
   ],
   "headers": [
