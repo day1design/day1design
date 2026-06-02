@@ -8,3 +8,7 @@ window.DAY1_API_BASE = "https://day1design-api.day1design-co.workers.dev";
 // 활성. 비어 있으면 GA4 측정 자체가 안 됨.
 // Property 537274300 · 스트림 14863296006 (https://day1design.co.kr) 측정 ID.
 window.DAY1_GA4_ID = "G-F6TGWLBL7T";
+
+// Meta Pixel(데이터세트) ID — common.js 가 15~16자리 숫자 검증 후 fbq 활성.
+// 데이터세트 "day1design-web-260602" (day1design_marketing 포트폴리오, 광고계정 986916453663066).
+window.DAY1_META_PIXEL_ID = "977283848476177";

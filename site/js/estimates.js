@@ -186,6 +186,10 @@
     if (proc) proc.style.display = "none";
     document.getElementById("estComplete").style.display = "block";
     window.scrollTo({ top: 0, behavior: "smooth" });
+    // 전환 추적: GA4 generate_lead + Meta Pixel Lead (common.js day1Track 매핑)
+    if (typeof window.day1Track === "function") {
+      window.day1Track("generate_lead", { method: "estimate_form" });
+    }
     submitInBackground(payload);
   });
 

@@ -4,6 +4,16 @@
   const enabled = /^G-[A-Z0-9]+$/i.test(tagId);
   const ATTRIBUTION_KEY = "day1_attribution";
 
+  // Meta Pixel(데이터세트) — 15~16자리 숫자 ID 검증 후 활성. day1Track 이 GA4 와
+  // 함께 아래 매핑된 표준 이벤트를 fbq 로도 전송한다.
+  const pixelId = String(window.DAY1_META_PIXEL_ID || "").trim();
+  const pixelEnabled = /^\d{15,16}$/.test(pixelId);
+  const META_EVENT_MAP = {
+    generate_lead: "Lead",
+    phone_click: "Contact",
+    email_click: "Contact",
+  };
+
   function cleanParams(params = {}) {
     return Object.fromEntries(
       Object.entries(params).filter(
@@ -98,17 +108,56 @@
 
   window.day1Track = function day1Track(eventName, params = {}) {
     const name = String(eventName || "").trim();
-    if (!name || !enabled || typeof window.gtag !== "function") return;
-    window.gtag(
-      "event",
-      name,
-      cleanParams({
-        traffic_source_platform: attribution.source,
-        traffic_source_campaign: attribution.campaign,
-        ...params,
-      }),
-    );
+    if (!name) return;
+    // GA4
+    if (enabled && typeof window.gtag === "function") {
+      window.gtag(
+        "event",
+        name,
+        cleanParams({
+          traffic_source_platform: attribution.source,
+          traffic_source_campaign: attribution.campaign,
+          ...params,
+        }),
+      );
+    }
+    // Meta Pixel — 매핑된 표준 이벤트만 전송 (Lead/Contact 등)
+    const metaEvent = META_EVENT_MAP[name];
+    if (pixelEnabled && metaEvent && typeof window.fbq === "function") {
+      window.fbq("track", metaEvent);
+    }
   };
+
+  // ===== Meta Pixel (fbq) 로더 — GA4 활성 여부와 독립 =====
+  if (pixelEnabled) {
+    /* eslint-disable */
+    !(function (f, b, e, v, n, t, s) {
+      if (f.fbq) return;
+      n = f.fbq = function () {
+        n.callMethod
+          ? n.callMethod.apply(n, arguments)
+          : n.queue.push(arguments);
+      };
+      if (!f._fbq) f._fbq = n;
+      n.push = n;
+      n.loaded = !0;
+      n.version = "2.0";
+      n.queue = [];
+      t = b.createElement(e);
+      t.async = !0;
+      t.src = v;
+      s = b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t, s);
+    })(
+      window,
+      document,
+      "script",
+      "https://connect.facebook.net/en_US/fbevents.js",
+    );
+    /* eslint-enable */
+    window.fbq("init", pixelId);
+    window.fbq("track", "PageView");
+  }
 
   if (!enabled) return;
 
