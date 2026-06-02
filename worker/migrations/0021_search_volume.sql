@@ -18,5 +18,4 @@ CREATE INDEX IF NOT EXISTS idx_search_volume_kw ON search_volume(keyword, month)
 
 -- ── 백필 시드 (collector 검증분, 2026-05 확정값) ──
 INSERT OR IGNORE INTO search_volume (keyword, month, pc, mobile, total, collected_at) VALUES
-('데이원디자인','2026-05', 200, 270, 470, '2026-06-02T00:00:00Z'),
-('day1design','2026-05',     0,   0,   0, '2026-06-02T00:00:00Z');
+('데이원디자인','2026-05', 200, 270, 470, '2026-06-02T00:00:00Z');

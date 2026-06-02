@@ -178,11 +178,40 @@
       )
       .join("");
 
+    // 후버 없이 항상 보이는 값 라벨 + 포인트 마커
+    const clampTop = (yy) => Math.max(yy, pad.t + 9);
+    const totalLabels = rows
+      .map(
+        (r, i) =>
+          `<text x="${cx(i)}" y="${clampTop(y(r.total) - 6)}" text-anchor="middle" font-size="10" font-weight="700" fill="${NAVY}">${fmt(r.total)}</text>`,
+      )
+      .join("");
+    const dots = (key, color) =>
+      rows
+        .map(
+          (r, i) =>
+            `<circle cx="${cx(i)}" cy="${y(r[key])}" r="2.6" fill="${color}"/>`,
+        )
+        .join("");
+    const seriesLabels = (key, color, dy) =>
+      rows
+        .map((r, i) =>
+          r[key]
+            ? `<text x="${cx(i)}" y="${clampTop(y(r[key]) + dy)}" text-anchor="middle" font-size="8" fill="${color}">${fmt(r[key])}</text>`
+            : "",
+        )
+        .join("");
+
     return `<svg viewBox="0 0 ${W} ${H}" class="st-chart-svg" preserveAspectRatio="xMidYMid meet">
       ${grid}
       ${bars}
       <polyline points="${line("pc")}" fill="none" stroke="${SKY}" stroke-width="2"/>
       <polyline points="${line("mobile")}" fill="none" stroke="${ORANGE}" stroke-width="2"/>
+      ${dots("pc", SKY)}
+      ${dots("mobile", ORANGE)}
+      ${seriesLabels("mobile", ORANGE, -6)}
+      ${seriesLabels("pc", SKY, 13)}
+      ${totalLabels}
       ${xlabels}
     </svg>`;
   }

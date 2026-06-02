@@ -14,6 +14,11 @@ import { notifyTelegram } from "../lib/telegram.js";
 
 const YM_RE = /^\d{4}-\d{2}$/;
 
+// day1design 전용 키워드만 적재 허용. 비즈액터스쿨 등 타 프로젝트 키워드나
+// 인코딩 깨진 키워드(U+FFFD)는 서버에서 차단 — collector 오설정·인코딩 사고
+// 시에도 day1design D1 에 이물질 유입 0 보장.
+const ALLOWED_KEYWORDS = new Set(["데이원디자인"]);
+
 export async function handleSearchVolume(request, env, ctx) {
   const method = request.method;
 
@@ -81,8 +86,18 @@ async function listSearchVolume(request, env) {
     0,
   );
 
-  const where = keyword ? "WHERE keyword = ?" : "";
-  const params = keyword ? [keyword] : [];
+  // 표시단 이중 방어: 항상 day1design 허용 키워드로만 한정 — 직접 D1 유입이
+  // 있어도 타 키워드(비즈액터스쿨 등)는 대시보드에 절대 노출 안 됨.
+  const allowed = [...ALLOWED_KEYWORDS];
+  const allowedPh = allowed.map(() => "?").join(",");
+  let where, params;
+  if (keyword && ALLOWED_KEYWORDS.has(keyword)) {
+    where = "WHERE keyword = ?";
+    params = [keyword];
+  } else {
+    where = `WHERE keyword IN (${allowedPh})`;
+    params = allowed;
+  }
 
   const countRow = await env.DB.prepare(
     `SELECT COUNT(*) AS c FROM search_volume ${where}`,
@@ -98,8 +113,10 @@ async function listSearchVolume(request, env) {
     .bind(...params, limit, offset)
     .all();
   const kwRes = await env.DB.prepare(
-    `SELECT DISTINCT keyword FROM search_volume ORDER BY keyword ASC`,
-  ).all();
+    `SELECT DISTINCT keyword FROM search_volume WHERE keyword IN (${allowedPh}) ORDER BY keyword ASC`,
+  )
+    .bind(...allowed)
+    .all();
 
   return jsonOk({
     items: itemsRes.results || [],
@@ -116,7 +133,7 @@ async function upsertSearchVolume(env, rows) {
       continue;
     }
     const kw = r.keyword.trim().slice(0, 100);
-    if (!kw) continue;
+    if (!kw || !ALLOWED_KEYWORDS.has(kw)) continue;
     const pc = Math.max(0, Math.round(Number(r.pc) || 0));
     const mo = Math.max(0, Math.round(Number(r.mobile) || 0));
     stmts.push(
