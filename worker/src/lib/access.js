@@ -111,6 +111,14 @@ export function classifyAccess(request, opts = {}) {
     };
   }
 
+  // 픽셀 이벤트: 공개 비콘 POST(main) / 어드민 집계 GET(admin)
+  if (path === "/api/pixel-events") {
+    return { role: method === "POST" ? "main" : "unknown", method, path };
+  }
+  if (path.startsWith("/api/admin/pixel-events")) {
+    return { role: "admin", method, path };
+  }
+
   if (path.startsWith("/api/audit")) {
     return { role: "admin", method, path };
   }

@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>픽셀 이벤트 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260602-pixel-data" />
+    <style>
+      .px-intro {
+        color: #64748b;
+        font-size: 0.875rem;
+        margin: 0 0 1rem;
+      }
+      .px-error {
+        background: #fff1f2;
+        border: 1px solid #fecdd3;
+        color: #be123c;
+        border-radius: 0.625rem;
+        padding: 0.75rem 1rem;
+        font-size: 0.875rem;
+        margin-bottom: 1rem;
+      }
+      .px-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1.25rem;
+      }
+      @media (min-width: 768px) {
+        .px-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .px-grid-6 {
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+        }
+      }
+      .px-up {
+        color: #059669;
+      }
+      .px-chart-wrap {
+        width: 100%;
+        overflow-x: auto;
+      }
+      .px-chart-svg {
+        width: 100%;
+        min-width: 560px;
+        height: auto;
+        display: block;
+      }
+      .px-legend {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        margin-top: 0.5rem;
+        font-size: 0.75rem;
+        color: #64748b;
+      }
+      .px-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+      .px-sw {
+        width: 0.75rem;
+        height: 0.75rem;
+        border-radius: 2px;
+        display: inline-block;
+      }
+      .px-bar-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.8125rem;
+      }
+      .px-bar-label {
+        width: 130px;
+        flex: none;
+        color: #475569;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .px-bar-track {
+        flex: 1;
+        background: #f1f5f9;
+        border-radius: 4px;
+        height: 18px;
+        position: relative;
+      }
+      .px-bar-fill {
+        background: #1e3a8a;
+        height: 18px;
+        border-radius: 4px;
+      }
+      .px-bar-val {
+        width: 84px;
+        flex: none;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: #0f172a;
+      }
+      .px-two {
+        display: grid;
+        gap: 0.75rem;
+      }
+      @media (min-width: 768px) {
+        .px-two {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .px-chip {
+        display: inline-block;
+        font-size: 0.7rem;
+        padding: 0.05rem 0.4rem;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #3730a3;
+      }
+      .px-chip.both {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .px-chip.capi {
+        background: #fef9c3;
+        color: #854d0e;
+      }
+    </style>
+    <script>
+      window.ADMIN_PAGE = { title: "픽셀 이벤트", nav: "pixel-events" };
+    </script>
+  </head>
+  <body class="admin-body">
+    <aside class="admin-sidebar" id="adminSidebar"></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <p class="px-intro">
+          Meta 픽셀 기준 상호작용(PageView·ViewContent·Contact·CTA·Lead)을 D1에
+          영속 기록. 광고별 귀속은 추적 URL(마케팅 슬러그)·UTM 기준.
+        </p>
+
+        <div class="seg" role="tablist" aria-label="기간" id="pxRange">
+          <button type="button" class="seg-btn" data-days="7">7일</button>
+          <button type="button" class="seg-btn active" data-days="30">
+            30일
+          </button>
+          <button type="button" class="seg-btn" data-days="90">90일</button>
+          <button type="button" class="seg-btn" data-days="365">전체</button>
+        </div>
+
+        <div
+          id="pxError"
+          class="px-error"
+          style="margin-top: 1rem"
+          hidden
+        ></div>
+
+        <div id="pxBody" hidden style="margin-top: 1rem">
+          <!-- KPI -->
+          <section class="kpi-grid px-grid px-grid-6">
+            <article class="kpi-card">
+              <div class="kpi-label">총 이벤트</div>
+              <div class="kpi-value" id="pxTotal">—</div>
+            </article>
+            <article class="kpi-card">
+              <div class="kpi-label">PageView</div>
+              <div class="kpi-value" id="pxPv">—</div>
+            </article>
+            <article class="kpi-card">
+              <div class="kpi-label">ViewContent</div>
+              <div class="kpi-value" id="pxVc">—</div>
+            </article>
+            <article class="kpi-card">
+              <div class="kpi-label">Contact/CTA</div>
+              <div class="kpi-value" id="pxCt">—</div>
+            </article>
+            <article class="kpi-card">
+              <div class="kpi-label">Lead(전환)</div>
+              <div class="kpi-value px-up" id="pxLead">—</div>
+              <div class="kpi-sub" id="pxCr"></div>
+            </article>
+            <article class="kpi-card">
+              <div class="kpi-label">중복제거율</div>
+              <div class="kpi-value" id="pxDedup">—</div>
+              <div class="kpi-sub">event_id 매칭</div>
+            </article>
+          </section>
+
+          <!-- 일별 추이 -->
+          <section class="mads-section">
+            <div class="mads-section-head">
+              <div class="mads-section-title">일별 이벤트 추이</div>
+              <div class="mads-section-sub">유형별 스택</div>
+            </div>
+            <div class="panel">
+              <div class="px-chart-wrap" id="pxChart"></div>
+              <div class="px-legend">
+                <span class="px-legend-item"
+                  ><span class="px-sw" style="background: #60a5fa"></span
+                  >PageView</span
+                >
+                <span class="px-legend-item"
+                  ><span class="px-sw" style="background: #f59e0b"></span
+                  >상호작용</span
+                >
+                <span class="px-legend-item"
+                  ><span class="px-sw" style="background: #10b981"></span
+                  >Lead</span
+                >
+              </div>
+            </div>
+          </section>
+
+          <!-- 퍼널 + 소스 -->
+          <div class="px-two">
+            <section class="mads-section">
+              <div class="mads-section-head">
+                <div class="mads-section-title">전환 퍼널</div>
+              </div>
+              <div class="panel" id="pxFunnel"></div>
+            </section>
+            <section class="mads-section">
+              <div class="mads-section-head">
+                <div class="mads-section-title">소스별 이벤트</div>
+              </div>
+              <div class="panel" id="pxSource"></div>
+            </section>
+          </div>
+
+          <!-- 광고별 -->
+          <section class="mads-section">
+            <div class="mads-section-head">
+              <div class="mads-section-title">광고/캠페인별 상호작용</div>
+              <div class="mads-section-sub">UTM·추적URL 기준 · Lead 포함</div>
+            </div>
+            <div class="panel" id="pxAds">
+              <div class="empty-state">
+                광고 파라미터가 붙은 유입이 쌓이면 표시됩니다.
+              </div>
+            </div>
+          </section>
+
+          <!-- 최근 상호작용 -->
+          <section class="mads-section">
+            <div class="mads-section-head">
+              <div class="mads-section-title">최근 상호작용</div>
+              <div class="mads-section-sub">최신 200건</div>
+            </div>
+            <div class="panel">
+              <div class="table-wrap">
+                <table class="top-table">
+                  <thead>
+                    <tr>
+                      <th>시각</th>
+                      <th>이벤트</th>
+                      <th>채널</th>
+                      <th>경로</th>
+                      <th>소스</th>
+                      <th>광고/캠페인</th>
+                      <th>상태</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pxRows">
+                    <tr>
+                      <td colspan="7" class="empty-state">불러오는 중...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script defer src="config.js?v=20260602-pixel-data"></script>
+    <script defer src="admin.js?v=20260602-pixel-data"></script>
+    <script defer src="pixel-events.js?v=20260602-pixel-data"></script>
+  </body>
+</html>

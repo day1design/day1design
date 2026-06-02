@@ -20,6 +20,10 @@ import {
 } from "./routes/marketing.js";
 import { handleMetaAds, runScheduledSync } from "./routes/meta-ads.js";
 import { handleSearchVolume } from "./routes/search-volume.js";
+import {
+  handlePixelEvents,
+  handlePixelEventsAdmin,
+} from "./routes/pixel-events.js";
 import { cors, preflight } from "./lib/cors.js";
 import { jsonError } from "./lib/response.js";
 import { notifyTelegram } from "./lib/telegram.js";
@@ -182,6 +186,10 @@ async function handleApi(request, env, ctx, path) {
     res = await handleMetaAds(request, env, ctx);
   } else if (path.startsWith("/api/admin/search-volume")) {
     res = await handleSearchVolume(request, env, ctx);
+  } else if (path === "/api/pixel-events") {
+    res = await handlePixelEvents(request, env, ctx);
+  } else if (path.startsWith("/api/admin/pixel-events")) {
+    res = await handlePixelEventsAdmin(request, env);
   } else {
     res = jsonError(404, "Not Found");
   }

@@ -12,6 +12,7 @@
     generate_lead: "Lead",
     phone_click: "Contact",
     email_click: "Contact",
+    estimate_cta_click: "InitiateCheckout",
   };
 
   function cleanParams(params = {}) {
@@ -62,6 +63,11 @@
     const utmSource = params.get("utm_source") || "";
     const utmMedium = params.get("utm_medium") || "";
     const campaign = params.get("utm_campaign") || "";
+    // 광고별 식별: utm_content(소재/adset) · utm_term(광고) · utm_id(ad.id) · fbclid
+    const utmContent = params.get("utm_content") || "";
+    const utmTerm = params.get("utm_term") || "";
+    const adId = params.get("utm_id") || params.get("ad_id") || "";
+    const fbclid = params.get("fbclid") || "";
     const clickSource =
       (params.has("fbclid") && "fbclid") ||
       (params.has("gclid") && "gclid") ||
@@ -78,7 +84,7 @@
     const raw = [utmSource, clickSource, referrerHost, utmMedium]
       .filter(Boolean)
       .join(" ");
-    if (!raw && !campaign) {
+    if (!raw && !campaign && !adId && !fbclid) {
       return (
         readStoredAttribution() || {
           source: "homepage",
@@ -86,6 +92,10 @@
           campaign: "",
           medium: "",
           referrerHost: "",
+          adset: "",
+          ad: "",
+          adId: "",
+          fbclid: "",
         }
       );
     }
@@ -96,6 +106,10 @@
       campaign,
       medium: utmMedium,
       referrerHost,
+      adset: utmContent,
+      ad: utmTerm,
+      adId,
+      fbclid,
     };
     writeStoredAttribution(attribution);
     return attribution;
@@ -105,6 +119,41 @@
   window.day1Attribution = function day1Attribution() {
     return { ...attribution };
   };
+
+  // pixel_events(D1) 적재용 비콘 — fbq 와 별개로 우리 Worker 에 상호작용 기록.
+  function pixelSessionId() {
+    try {
+      return String(
+        JSON.parse(localStorage.getItem("_d1_hm_sid") || "null")?.id || "",
+      );
+    } catch {
+      return "";
+    }
+  }
+  function pixelBeacon(metaName, gaName, eventId) {
+    try {
+      const base = String(window.DAY1_API_BASE || "").replace(/\/$/, "");
+      if (!base || typeof navigator.sendBeacon !== "function") return;
+      const payload = JSON.stringify({
+        event_name: metaName,
+        ga4_name: gaName || "",
+        event_id: eventId || "",
+        page_path: location.pathname,
+        source: attribution.source,
+        session_id: pixelSessionId(),
+        campaign: attribution.campaign || "",
+        adset: attribution.adset || "",
+        ad: attribution.ad || "",
+        ad_id: attribution.adId || "",
+        fbclid: attribution.fbclid || "",
+      });
+      navigator.sendBeacon(
+        base + "/api/pixel-events",
+        new Blob([payload], { type: "text/plain;charset=UTF-8" }),
+      );
+    } catch {}
+  }
+  window.day1PixelBeacon = pixelBeacon;
 
   window.day1Track = function day1Track(eventName, params = {}, metaOpts = {}) {
     const name = String(eventName || "").trim();
@@ -130,6 +179,10 @@
       } else {
         window.fbq("track", metaEvent);
       }
+    }
+    // pixel_events 적재 — Lead 는 서버 CAPI 가 channel=both 로 기록하므로 제외(중복방지)
+    if (metaEvent && metaEvent !== "Lead") {
+      pixelBeacon(metaEvent, name, metaOpts && metaOpts.eventID);
     }
   };
 
@@ -162,6 +215,15 @@
     /* eslint-enable */
     window.fbq("init", pixelId);
     window.fbq("track", "PageView");
+  }
+
+  // ===== pixel_events(D1) 적재 — PageView 전 페이지 + 견적페이지 ViewContent =====
+  pixelBeacon("PageView", "page_view");
+  if (/\/estimates(\/|$)/.test(location.pathname)) {
+    pixelBeacon("ViewContent", "view_estimate");
+    if (pixelEnabled && typeof window.fbq === "function") {
+      window.fbq("track", "ViewContent");
+    }
   }
 
   if (!enabled) return;

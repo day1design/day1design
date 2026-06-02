@@ -258,6 +258,13 @@ const MENU = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><path d="M8 11l2 2 3-4"/></svg>',
   },
   {
+    nav: "pixel-events",
+    href: "pixel-events",
+    label: "픽셀 이벤트",
+    shortLabel: "픽셀",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>',
+  },
+  {
     nav: "marketing-links",
     href: "marketing-links",
     label: "마케팅 슬러그",

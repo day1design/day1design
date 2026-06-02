@@ -8,8 +8,31 @@
 // 픽셀ID: env.META_PIXEL_ID (wrangler.toml vars). 테스트: env.META_CAPI_TEST_CODE.
 
 import { notifyTelegram } from "./telegram.js";
+import { logPixelEvent } from "../routes/pixel-events.js";
 
 const API_VERSION = "v21.0";
+
+// Lead 1건을 pixel_events 에 기록 (브라우저 픽셀도 같은 event_id 로 발사 → channel=both)
+function logLead(env, info, capiStatus, matched) {
+  return logPixelEvent(env, {
+    event_name: "Lead",
+    ga4_name: "generate_lead",
+    channel: capiStatus === "skipped" ? "pixel" : "both",
+    event_id: info.eventId || "",
+    page_path: info.pagePath || "/estimates",
+    source: info.source || "",
+    session_id: info.sessionId || "",
+    campaign: info.campaign || "",
+    adset: info.adset || "",
+    ad: info.ad || "",
+    ad_id: info.adId || "",
+    fbclid: info.fbclid || "",
+    capi_status: capiStatus,
+    matched_fields: matched || "",
+    ip: info.ip || "",
+    ua: info.ua || "",
+  });
+}
 
 async function sha256Hex(input) {
   const data = new TextEncoder().encode(input);
@@ -43,7 +66,11 @@ function normPhone(v) {
 export async function sendMetaCapiLead(env, ctx, info = {}) {
   const pixelId = String(env.META_PIXEL_ID || "").trim();
   const token = String(env.META_CAPI_TOKEN || "").trim();
-  if (!pixelId || !token) return { skipped: true };
+  if (!pixelId || !token) {
+    // 토큰 미설정이어도 브라우저 픽셀 Lead 는 발사됨 → pixel 채널로 기록
+    await logLead(env, info, "skipped", "");
+    return { skipped: true };
+  }
 
   const userData = {};
   const em = normEmail(info.email);
@@ -54,6 +81,7 @@ export async function sendMetaCapiLead(env, ctx, info = {}) {
   if (info.ua) userData.client_user_agent = info.ua;
   if (info.fbp) userData.fbp = info.fbp;
   if (info.fbc) userData.fbc = info.fbc;
+  const matched = Object.keys(userData).join(",");
 
   const event = {
     event_name: "Lead",
@@ -77,14 +105,17 @@ export async function sendMetaCapiLead(env, ctx, info = {}) {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      await logLead(env, info, "failed", matched);
       await notifyTelegram(
         env,
         `[day1design/meta-capi] Lead 전송 실패 ${res.status}\n${body.slice(0, 200)}`,
       );
       return { ok: false, status: res.status };
     }
+    await logLead(env, info, "sent", matched);
     return { ok: true };
   } catch (e) {
+    await logLead(env, info, "failed", matched);
     await notifyTelegram(
       env,
       `[day1design/meta-capi] 예외\n${(e?.message || "").slice(0, 200)}`,

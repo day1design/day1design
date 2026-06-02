@@ -662,6 +662,7 @@ async function submitEstimate(request, env, ctx, services) {
     }),
   );
   // Meta CAPI — 브라우저 픽셀과 동일 event_id(_fb_event_id)로 Lead 재전송(중복제거)
+  // + pixel_events 에 Lead 1건 기록(광고별 귀속 포함)
   notifyTasks.push(
     sendMetaCapiLead(env, ctx, {
       eventId: fields._fb_event_id,
@@ -671,6 +672,14 @@ async function submitEstimate(request, env, ctx, services) {
       ua: request.headers.get("user-agent") || "",
       fbp: fields._fbp,
       fbc: fields._fbc,
+      source: attribution.source,
+      sessionId,
+      pagePath: "/estimates",
+      campaign: fields._fb_campaign || fields.campaign || "",
+      adset: fields._fb_adset || "",
+      ad: fields._fb_ad || "",
+      adId: fields._fb_adid || "",
+      fbclid: fields._fbclid || "",
     }),
   );
 

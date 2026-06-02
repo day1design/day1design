@@ -253,6 +253,12 @@
       (window.crypto && crypto.randomUUID && crypto.randomUUID()) ||
       `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+    // 광고별 귀속(common.js 어트리뷰션): 캠페인/소재/광고/ad_id/fbclid
+    const att =
+      (typeof window.day1Attribution === "function" &&
+        window.day1Attribution()) ||
+      {};
+
     const fields = {
       submittedAt: new Date().toISOString(),
       name: val("name"),
@@ -279,6 +285,13 @@
       _fb_event_id: eventId,
       _fbp: fbCookie("_fbp"),
       _fbc: fbCookie("_fbc"),
+      // 광고별 귀속 (pixel_events Lead 기록용)
+      _fb_source: att.source || "",
+      _fb_campaign: att.campaign || "",
+      _fb_adset: att.adset || "",
+      _fb_ad: att.ad || "",
+      _fb_adid: att.adId || "",
+      _fbclid: att.fbclid || "",
       // 봇 트랩
       _hp: val("website"),
       _ts: String(window._estLoadTs || ""),
