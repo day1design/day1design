@@ -1,7 +1,7 @@
 -- 0022: Meta 픽셀 기준 상호작용 이벤트 로그 (pixel_events)
 -- 브라우저 비콘(common.js sendBeacon) + 서버 CAPI Lead 결과를 영속화.
 -- 어드민 "픽셀 이벤트" 메뉴에서 KPI·일별추이·퍼널·소스·광고별·최근로그로 시각화.
--- 보존: PageView 포함 전량 기록 → cron 매일 90일 초과분 롤링 삭제.
+-- 보존: PageView 포함 전량 기록 → D1 영구 저장(롤링 삭제 없음, 외부 비공개 내부분석용).
 -- 광고별: 광고 URL 동적 파라미터(utm_campaign/content/term + utm_id={{ad.id}}, fbclid) 캡처.
 
 CREATE TABLE IF NOT EXISTS pixel_events (

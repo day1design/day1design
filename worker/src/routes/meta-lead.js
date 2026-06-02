@@ -9,6 +9,7 @@ import { escapeHtml } from "../lib/security.js";
 import { createServices } from "../lib/services.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import { edgeCacheDeleteMany } from "../lib/edge-cache.js";
+import { sendMetaCapiLead } from "../lib/meta-capi.js";
 
 const MAX_BODY_CHARS = 65536;
 
@@ -155,8 +156,7 @@ export async function handleMetaLead(
   const scheduledDate = String(body.scheduledDate || "")
     .trim()
     .slice(0, 100); // 시공예정일
-  const budget = String(body.budget || "")
-    .trim(); // Meta 폼의 예산/문의내용 원문은 저장용으로 보존
+  const budget = String(body.budget || "").trim(); // Meta 폼의 예산/문의내용 원문은 저장용으로 보존
   const platform = normalizePlatform(body.platform);
   const campaign = String(body.campaign || "")
     .trim()
@@ -219,9 +219,20 @@ export async function handleMetaLead(
     saveError = e.message || "D1 create failed";
   }
 
-  // 12) 백그라운드: 텔레그램 + 캐시 무효화
+  // 12) 백그라운드: 텔레그램 + 캐시 무효화 + Meta CAPI(데이터세트 적재)
   ctx.waitUntil(
     (async () => {
+      // Meta 인스턴트폼 리드 → CAPI Lead. 사이트 미방문이라 전화 해시 매칭(action_source=system_generated).
+      await sendMetaCapiLead(env, ctx, {
+        actionSource: "system_generated",
+        gaName: "lead_form",
+        channel: "capi",
+        eventId: `meta-lead:${phoneDigits}:${timestamp || ""}`,
+        phone: phoneDigits,
+        source: "meta",
+        campaign,
+        pagePath: "",
+      });
       if (recordId) {
         await edgeCacheDeleteMany(
           ["estimates:list:all", "estimates:list:접수대기"],

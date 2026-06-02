@@ -12,12 +12,14 @@ import { logPixelEvent } from "../routes/pixel-events.js";
 
 const API_VERSION = "v21.0";
 
-// Lead 1건을 pixel_events 에 기록 (브라우저 픽셀도 같은 event_id 로 발사 → channel=both)
+// Lead 1건을 pixel_events 에 기록.
+// 홈페이지(웹) Lead: 브라우저 픽셀도 같은 event_id 발사 → channel=both.
+// Meta 인스턴트폼 Lead: 사이트 미방문(브라우저 픽셀 없음) → channel=capi (info.channel 지정).
 function logLead(env, info, capiStatus, matched) {
   return logPixelEvent(env, {
     event_name: "Lead",
-    ga4_name: "generate_lead",
-    channel: capiStatus === "skipped" ? "pixel" : "both",
+    ga4_name: info.gaName || "generate_lead",
+    channel: info.channel || (capiStatus === "skipped" ? "pixel" : "both"),
     event_id: info.eventId || "",
     page_path: info.pagePath || "/estimates",
     source: info.source || "",
@@ -83,13 +85,18 @@ export async function sendMetaCapiLead(env, ctx, info = {}) {
   if (info.fbc) userData.fbc = info.fbc;
   const matched = Object.keys(userData).join(",");
 
+  const actionSource = info.actionSource || "website";
   const event = {
     event_name: "Lead",
     event_time: Math.floor(Date.now() / 1000),
-    action_source: "website",
-    event_source_url: info.sourceUrl || "https://day1design.co.kr/estimates",
+    action_source: actionSource,
     user_data: userData,
   };
+  // event_source_url 은 action_source=website 일 때만 필수(인스턴트폼=system_generated 은 생략)
+  if (actionSource === "website") {
+    event.event_source_url =
+      info.sourceUrl || "https://day1design.co.kr/estimates";
+  }
   if (info.eventId) event.event_id = info.eventId;
 
   const payload = { data: [event] };
