@@ -106,7 +106,7 @@
     return { ...attribution };
   };
 
-  window.day1Track = function day1Track(eventName, params = {}) {
+  window.day1Track = function day1Track(eventName, params = {}, metaOpts = {}) {
     const name = String(eventName || "").trim();
     if (!name) return;
     // GA4
@@ -121,10 +121,15 @@
         }),
       );
     }
-    // Meta Pixel — 매핑된 표준 이벤트만 전송 (Lead/Contact 등)
+    // Meta Pixel — 매핑된 표준 이벤트만 전송 (Lead/Contact 등).
+    // eventID 전달 시 서버 CAPI 와 중복제거(deduplication).
     const metaEvent = META_EVENT_MAP[name];
     if (pixelEnabled && metaEvent && typeof window.fbq === "function") {
-      window.fbq("track", metaEvent);
+      if (metaOpts && metaOpts.eventID) {
+        window.fbq("track", metaEvent, {}, { eventID: metaOpts.eventID });
+      } else {
+        window.fbq("track", metaEvent);
+      }
     }
   };
 

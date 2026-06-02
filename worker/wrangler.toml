@@ -32,6 +32,8 @@ R2_PUBLIC_BASE = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
 ADMIN_USERNAME = "admin"
 GA4_PROPERTY_ID = "537274300"
 GSC_SITE_URL = "sc-domain:day1design.co.kr"
+# Meta Pixel/CAPI 데이터세트 ID (day1design-web-260602). CAPI 토큰은 secret 으로 주입.
+META_PIXEL_ID = "977283848476177"
 
 [[routes]]
 pattern = "day1design.co.kr/*"
@@ -72,6 +74,7 @@ zone_name = "day1design.co.kr"
 #   printf "%s" "986916453663066" | wrangler secret put META_AD_ACCOUNT_ID
 #   printf "%s" "8717156602:AAFD..." | wrangler secret put META_RATE_TELEGRAM_BOT_TOKEN
 #   printf "%s" "-1003958023969" | wrangler secret put META_RATE_TELEGRAM_CHAT_ID
+#   printf "%s" "EAAxxx..." | wrangler secret put META_CAPI_TOKEN   # Events Manager→데이터세트→설정→전환 API→액세스 토큰
 # 로컬 개발은 worker/.dev.vars 파일에 동일 키로 저장
 
 # Cron Triggers

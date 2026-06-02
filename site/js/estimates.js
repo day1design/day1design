@@ -186,9 +186,13 @@
     if (proc) proc.style.display = "none";
     document.getElementById("estComplete").style.display = "block";
     window.scrollTo({ top: 0, behavior: "smooth" });
-    // 전환 추적: GA4 generate_lead + Meta Pixel Lead (common.js day1Track 매핑)
+    // 전환 추적: GA4 generate_lead + Meta Pixel Lead (eventID 로 서버 CAPI 와 중복제거)
     if (typeof window.day1Track === "function") {
-      window.day1Track("generate_lead", { method: "estimate_form" });
+      window.day1Track(
+        "generate_lead",
+        { method: "estimate_form" },
+        { eventID: payload.fields._fb_event_id },
+      );
     }
     submitInBackground(payload);
   });
@@ -234,6 +238,21 @@
 
     const attribution = readMarketingAttribution();
 
+    // Meta CAPI 중복제거용: event_id(브라우저 픽셀+서버 공유) + fbp/fbc 쿠키
+    const fbCookie = (name) => {
+      try {
+        const m = document.cookie
+          .split(/;\s*/)
+          .find((p) => p.startsWith(name + "="));
+        return m ? decodeURIComponent(m.slice(name.length + 1)) : "";
+      } catch {
+        return "";
+      }
+    };
+    const eventId =
+      (window.crypto && crypto.randomUUID && crypto.randomUUID()) ||
+      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
     const fields = {
       submittedAt: new Date().toISOString(),
       name: val("name"),
@@ -256,6 +275,10 @@
       utm_campaign: attribution.utm_campaign,
       campaign: attribution.label,
       session_id: sessionId,
+      // Meta CAPI 중복제거 (서버가 동일 event_id 로 Lead 재전송)
+      _fb_event_id: eventId,
+      _fbp: fbCookie("_fbp"),
+      _fbc: fbCookie("_fbc"),
       // 봇 트랩
       _hp: val("website"),
       _ts: String(window._estLoadTs || ""),

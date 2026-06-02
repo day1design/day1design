@@ -17,6 +17,7 @@ import {
   isImageUpload,
 } from "../lib/upload-policy.js";
 import { notifyTelegram } from "../lib/telegram.js";
+import { sendMetaCapiLead } from "../lib/meta-capi.js";
 import { notifyEmail, sendEmail } from "../lib/email.js";
 import {
   sendNcpSens,
@@ -660,6 +661,19 @@ async function submitEstimate(request, env, ctx, services) {
       }
     }),
   );
+  // Meta CAPI — 브라우저 픽셀과 동일 event_id(_fb_event_id)로 Lead 재전송(중복제거)
+  notifyTasks.push(
+    sendMetaCapiLead(env, ctx, {
+      eventId: fields._fb_event_id,
+      email: fields.email,
+      phone: fields.phone,
+      ip,
+      ua: request.headers.get("user-agent") || "",
+      fbp: fields._fbp,
+      fbc: fields._fbc,
+    }),
+  );
+
   ctx.waitUntil(Promise.allSettled(notifyTasks));
 
   // 관리자 목록 캐시 무효화
