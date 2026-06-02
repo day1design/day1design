@@ -251,6 +251,13 @@ const MENU = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 10v11"/><path d="M19 10v11"/><path d="M9 21V14h6v7"/><path d="M5 10l7-7 7 7"/></svg>',
   },
   {
+    nav: "search-trends",
+    href: "search-trends",
+    label: "검색 트렌드",
+    shortLabel: "검색",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><path d="M8 11l2 2 3-4"/></svg>',
+  },
+  {
     nav: "marketing-links",
     href: "marketing-links",
     label: "마케팅 슬러그",

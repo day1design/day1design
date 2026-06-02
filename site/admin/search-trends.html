@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>검색 트렌드 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260602-search" />
+    <link rel="stylesheet" href="search-trends.css?v=20260602-search" />
+    <script>
+      window.ADMIN_PAGE = { title: "검색 트렌드", nav: "search-trends" };
+    </script>
+  </head>
+  <body class="admin-body">
+    <aside class="admin-sidebar" id="adminSidebar"></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <p class="st-intro">
+          네이버 검색광고 월별 실조회수(실측). 매월 2일 자동 수집.
+        </p>
+
+        <!-- 키워드 탭 -->
+        <div class="seg" role="tablist" aria-label="키워드" id="stKeywordTabs">
+          <div class="empty-state">불러오는 중...</div>
+        </div>
+
+        <div id="stError" class="st-error" hidden></div>
+
+        <div id="stBody" hidden>
+          <!-- KPI -->
+          <section class="kpi-grid st-kpi-grid">
+            <article class="kpi-card">
+              <div class="kpi-label">최근월 실조회수</div>
+              <div class="kpi-value" id="stKpiLast">—</div>
+              <div class="kpi-sub" id="stKpiLastSub"></div>
+            </article>
+            <article class="kpi-card">
+              <div class="kpi-label">전월 대비</div>
+              <div class="kpi-value" id="stKpiMom">—</div>
+              <div class="kpi-sub">최근월 vs 직전월</div>
+            </article>
+            <article class="kpi-card">
+              <div class="kpi-label">역대 최다 월</div>
+              <div class="kpi-value" id="stKpiPeak">—</div>
+              <div class="kpi-sub" id="stKpiPeakSub"></div>
+            </article>
+            <article class="kpi-card">
+              <div class="kpi-label">모바일 비중(최근월)</div>
+              <div class="kpi-value" id="stKpiMob">—</div>
+              <div class="kpi-sub" id="stKpiMobSub"></div>
+            </article>
+          </section>
+
+          <!-- 월별 추이 차트 -->
+          <section class="mads-section">
+            <div class="mads-section-head">
+              <div class="mads-section-title">월별 추이</div>
+              <div class="mads-section-sub">합계 막대 · PC/모바일 라인</div>
+            </div>
+            <div class="panel">
+              <div class="st-chart-wrap" id="stChart"></div>
+              <div class="st-legend">
+                <span class="st-legend-item"
+                  ><span class="st-swatch" style="background: #1e3a8a"></span
+                  >합계</span
+                >
+                <span class="st-legend-item"
+                  ><span class="st-swatch" style="background: #60a5fa"></span
+                  >PC</span
+                >
+                <span class="st-legend-item"
+                  ><span class="st-swatch" style="background: #f59e0b"></span
+                  >모바일</span
+                >
+              </div>
+            </div>
+          </section>
+
+          <!-- 월별 상세 -->
+          <section class="mads-section">
+            <div class="mads-section-head">
+              <div class="mads-section-title">월별 상세</div>
+              <div class="mads-section-sub">최신순</div>
+            </div>
+            <div class="panel">
+              <div class="table-wrap">
+                <table class="top-table st-table">
+                  <thead>
+                    <tr>
+                      <th>월</th>
+                      <th style="text-align: right">PC</th>
+                      <th style="text-align: right">모바일</th>
+                      <th style="text-align: right">합계</th>
+                      <th style="text-align: right">모바일%</th>
+                      <th style="text-align: right">전월대비</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stTableBody">
+                    <tr>
+                      <td colspan="6" class="empty-state">—</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div id="stEmpty" class="empty-state" hidden>
+          데이터가 아직 없습니다.
+        </div>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script defer src="config.js?v=20260602-search"></script>
+    <script defer src="admin.js?v=20260602-search"></script>
+    <script defer src="search-trends.js?v=20260602-search"></script>
+  </body>
+</html>

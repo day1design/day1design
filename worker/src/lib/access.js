@@ -100,6 +100,17 @@ export function classifyAccess(request, opts = {}) {
     return { role: "admin", method, path };
   }
 
+  // 검색 트렌드: GET 은 어드민(브라우저), POST 는 맥미니 collector(server-to-server).
+  // POST 는 Origin 없는 서버 호출이라 integration 으로 origin 검사 우회 →
+  // 라우트에서 SEARCH_VOLUME_TOKEN 으로 자체 인증.
+  if (path.startsWith("/api/admin/search-volume")) {
+    return {
+      role: method === "POST" ? "integration" : "admin",
+      method,
+      path,
+    };
+  }
+
   if (path.startsWith("/api/audit")) {
     return { role: "admin", method, path };
   }

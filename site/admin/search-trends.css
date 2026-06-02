@@ -1,0 +1,78 @@
+/* 검색 트렌드 페이지 전용 스타일 */
+
+.st-intro {
+  color: #64748b;
+  font-size: 0.875rem;
+  margin: 0 0 1rem;
+}
+
+.st-error {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #be123c;
+  border-radius: 0.625rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+/* 키워드 탭 — meta-ads seg/seg-btn 재사용, 아래 여백만 추가 */
+#stKeywordTabs {
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.st-kpi-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 1.25rem;
+}
+@media (min-width: 768px) {
+  .st-kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.st-up {
+  color: #059669;
+}
+.st-down {
+  color: #e11d48;
+}
+.st-muted {
+  color: #94a3b8;
+}
+
+.st-chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.st-chart-svg {
+  width: 100%;
+  min-width: 520px;
+  height: auto;
+  display: block;
+}
+
+.st-legend {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+.st-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.st-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.st-table {
+  font-variant-numeric: tabular-nums;
+}
