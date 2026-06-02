@@ -142,7 +142,7 @@
   function trendChart(rows) {
     const W = 820;
     const H = 280;
-    const pad = { l: 36, r: 12, t: 12, b: 28 };
+    const pad = { l: 36, r: 12, t: 30, b: 28 };
     const plotW = W - pad.l - pad.r;
     const plotH = H - pad.t - pad.b;
     const max = Math.max(1, ...rows.map((r) => r.total));
@@ -180,10 +180,11 @@
 
     // 후버 없이 항상 보이는 값 라벨 + 포인트 마커
     const clampTop = (yy) => Math.max(yy, pad.t + 9);
+    // 합계 라벨은 막대 '밖(위)'에 — 막대 top 위 7px, svg 상단 가드만 적용.
     const totalLabels = rows
       .map(
         (r, i) =>
-          `<text x="${cx(i)}" y="${clampTop(y(r.total) - 6)}" text-anchor="middle" font-size="10" font-weight="700" fill="${NAVY}">${fmt(r.total)}</text>`,
+          `<text x="${cx(i)}" y="${Math.max(y(r.total) - 7, 12)}" text-anchor="middle" font-size="10" font-weight="700" fill="${NAVY}">${fmt(r.total)}</text>`,
       )
       .join("");
     const dots = (key, color) =>
