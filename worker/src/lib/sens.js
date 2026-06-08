@@ -152,7 +152,7 @@ export const HOMEPAGE_CUSTOMER_NOTICE = [
   "[데이원 사무실 주소]",
   "강남본점 : 강남구 논현로 562 역삼동 동극빌딩 2층 (건물 뒤 기계식 주차 가능 -무료)",
   "판교점 : 성남시 분당구 판교공원로1길 22-1, 1층",
-  "https://naver.me/5t7P4VEz",
+  "https://naver.me/FpwVn9Ta",
   "",
   "***홈페이지 안내***",
   "https://day1design.co.kr/",
