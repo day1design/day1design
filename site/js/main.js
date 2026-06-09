@@ -785,7 +785,13 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
     const API_BASE =
       (typeof window !== "undefined" && window.DAY1_API_BASE) || "";
     let data = null;
-    if (API_BASE) {
+    // <head>에서 선제 시작한 히어로 fetch 재사용 (중복 요청 방지 + 첫 이미지 preload)
+    if (typeof window !== "undefined" && window.__heroPromise) {
+      try {
+        data = await window.__heroPromise;
+      } catch {}
+    }
+    if (!data && API_BASE) {
       try {
         // cache buster + Worker TTL 5초 → admin 변경이 다음 페이지 로드 즉시 반영
         const r = await fetch(`${API_BASE}/api/hero/slides?ts=${Date.now()}`);

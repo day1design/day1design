@@ -84,6 +84,48 @@
       href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
       crossorigin
     />
+    <!-- 히어로 LCP 최적화: 익명 이미지 연결 워밍 + 슬라이드 API/이미지 조기 로드 -->
+    <link
+      rel="preconnect"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+    />
+    <link
+      rel="preconnect"
+      href="https://day1design-api.day1design-co.workers.dev"
+      crossorigin
+    />
+    <script>
+      // defer 스크립트가 모두 실행되길 기다리지 않고, 히어로 슬라이드 API를
+      // 문서 파싱 초반에 곧바로 호출한다. 응답이 오면 첫 슬라이드(LCP) 이미지를
+      // 동적 preload 하여 JS 렌더 전에 다운로드를 시작시킨다. 결과는
+      // window.__heroPromise 로 보관 → main.js 가 재사용(중복 요청 방지).
+      (function () {
+        var API = "https://day1design-api.day1design-co.workers.dev";
+        try {
+          window.__heroPromise = fetch(API + "/api/hero/slides")
+            .then(function (r) {
+              return r.ok ? r.json() : null;
+            })
+            .then(function (d) {
+              var img = d && d.slides && d.slides[0] && d.slides[0].image;
+              if (img) {
+                var l = document.createElement("link");
+                l.rel = "preload";
+                l.as = "image";
+                l.href = img;
+                l.setAttribute("fetchpriority", "high");
+                document.head.appendChild(l);
+              }
+              return d;
+            })
+            .catch(function () {
+              return null;
+            });
+        } catch (e) {
+          window.__heroPromise = null;
+        }
+      })();
+    </script>
     <!-- 핵심 폰트 preload (body 400 / heading 700) -->
     <link
       rel="preload"
@@ -525,6 +567,6 @@
     <script src="js/config.js?v=20260602-pixel"></script>
     <script src="js/tracker.js?v=20260520" defer></script>
     <script src="js/common.js?v=20260602-pixel-data" defer></script>
-    <script src="js/main.js?v=20260609-modal-history" defer></script>
+    <script src="js/main.js?v=20260609-hero-lcp" defer></script>
   </body>
 </html>
