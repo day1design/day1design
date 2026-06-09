@@ -351,7 +351,7 @@ function openOfficeLightbox(index) {
   let lb = document.getElementById("lightbox");
   if (!lb) createLightbox();
   lbShow();
-  document.getElementById("lightbox").classList.add("open");
+  markLightboxOpen();
 }
 
 // Filter tabs (HOUSE / OFFICE)
@@ -436,7 +436,14 @@ if (grid) {
   }
 }
 
-// Modal
+// Modal + 오버레이 히스토리 (뒤로가기로 모달/라이트박스만 닫기)
+// 모달·라이트박스를 계층 스택으로 다룬다. 각 레이어를 열 때 history 엔트리를
+// 1개 push하고, 닫기 액션은 history.back()만 호출한다. 실제 DOM 닫기는 오직
+// popstate에서만 수행해 "뒤로가기 시 페이지 이탈" 대신 오버레이만 닫히게 한다.
+// URL은 세 번째 인자를 생략(현재 path+query 그대로 유지)해 색인에 영향 없음.
+let modalOpen = false;
+let lightboxOpen = false;
+
 function openProjectModal(proj) {
   modalTitle.textContent = proj.name;
   modalGrid.innerHTML = "";
@@ -462,27 +469,49 @@ function openProjectModal(proj) {
   });
   modal.classList.add("open");
   document.body.style.overflow = "hidden";
+  if (modalOpen) {
+    // 이미 열린 상태에서 다른 프로젝트로 교체 → 엔트리 추가 없이 현재 상태만 교체
+    history.replaceState({ d1Overlay: "modal" }, "");
+    return;
+  }
+  modalOpen = true;
+  history.pushState({ d1Overlay: "modal" }, "");
 }
 
-function closeProjectModal() {
+// DOM만 닫기 (popstate 전용 — history는 건드리지 않음)
+function closeProjectModalOnly() {
   modal.classList.remove("open");
   document.body.style.overflow = "";
+  modalOpen = false;
 }
 
-if (modalClose) modalClose.addEventListener("click", closeProjectModal);
+// 닫기 요청 (버튼/배경/ESC) → 히스토리가 있으면 back으로 위임
+function requestCloseProjectModal() {
+  if (modalOpen) {
+    history.back();
+    return;
+  }
+  closeProjectModalOnly();
+}
+
+if (modalClose) modalClose.addEventListener("click", requestCloseProjectModal);
 if (modal)
   modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeProjectModal();
+    if (e.target === modal) requestCloseProjectModal();
   });
 document.addEventListener("keydown", (e) => {
-  const lb = document.getElementById("lightbox");
-  const lbOpen = lb && lb.classList.contains("open");
   if (e.key === "Escape") {
-    if (lbOpen) closeLightbox();
-    else closeProjectModal();
+    if (lightboxOpen) closeLightbox();
+    else if (modalOpen) requestCloseProjectModal();
   }
-  if (lbOpen && e.key === "ArrowRight") lbNav(1);
-  if (lbOpen && e.key === "ArrowLeft") lbNav(-1);
+  if (lightboxOpen && e.key === "ArrowRight") lbNav(1);
+  if (lightboxOpen && e.key === "ArrowLeft") lbNav(-1);
+});
+
+// 뒤로가기 → 열린 오버레이 중 최상단(라이트박스 > 모달)만 닫는다
+window.addEventListener("popstate", () => {
+  if (lightboxOpen) closeLightboxOnly();
+  else if (modalOpen) closeProjectModalOnly();
 });
 
 // Lightbox 뷰어 (원본 동일 UI)
@@ -530,7 +559,7 @@ function openLightbox(src) {
   lbZoom = 1;
   if (!document.getElementById("lightbox")) createLightbox();
   lbShow();
-  document.getElementById("lightbox").classList.add("open");
+  markLightboxOpen();
 }
 
 function lbShow() {
@@ -564,9 +593,29 @@ function lbFitToggle() {
   lbSetZoom(lbZoom <= 1 ? 2 : 1);
 }
 
-function closeLightbox() {
+// 라이트박스 오픈 + 히스토리 엔트리 1개 push (모달 위 레이어)
+function markLightboxOpen() {
+  document.getElementById("lightbox").classList.add("open");
+  if (!lightboxOpen) {
+    lightboxOpen = true;
+    history.pushState({ d1Overlay: "lightbox" }, "");
+  }
+}
+
+// DOM만 닫기 (popstate 전용)
+function closeLightboxOnly() {
   const lb = document.getElementById("lightbox");
   if (lb) lb.classList.remove("open");
+  lightboxOpen = false;
+}
+
+// 닫기 요청 (버튼/배경/ESC) → 히스토리가 있으면 back으로 위임
+function closeLightbox() {
+  if (lightboxOpen) {
+    history.back();
+    return;
+  }
+  closeLightboxOnly();
 }
 
 // ========== BRAND FILM VIDEO (lazy autoplay) ==========
