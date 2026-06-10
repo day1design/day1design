@@ -14,8 +14,16 @@ const projectData = [
     name: "판교 봇들마을 4단지 29py",
     folder: "판교-봇들마을-4단지-29py",
     count: 23,
+    thumbAfter:
+      "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/04_after.webp",
   },
-  { name: "목동 우성2차 42py", folder: "목동-우성2차-42py", count: 46 },
+  {
+    name: "목동 우성2차 42py",
+    folder: "목동-우성2차-42py",
+    count: 46,
+    thumbAfter:
+      "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/05_after.webp",
+  },
   {
     name: "마북동 블루밍구성센트럴 59py",
     folder: "마북동-블루밍구성센트럴-59py",
@@ -57,7 +65,13 @@ const projectData = [
     folder: "동천마을-현대홈타운-37py",
     count: 10,
   },
-  { name: "신반포 2차 34py", folder: "신반포-2차-34py", count: 8 },
+  {
+    name: "신반포 2차 34py",
+    folder: "신반포-2차-34py",
+    count: 8,
+    thumbAfter:
+      "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/15_after.webp",
+  },
   { name: "잠실리센츠 33py", folder: "잠실리센츠-33py", count: 16 },
   {
     name: "용인 대지마을 중앙하이츠빌 68py",
@@ -91,7 +105,13 @@ const projectData = [
     folder: "분당-백현마을-6단지-34py",
     count: 15,
   },
-  { name: "서울숲 푸르지오 41py", folder: "서울숲-푸르지오-41py", count: 34 },
+  {
+    name: "서울숲 푸르지오 41py",
+    folder: "서울숲-푸르지오-41py",
+    count: 34,
+    thumbAfter:
+      "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/25_after.webp",
+  },
   { name: "부천 아이파크 34py", folder: "부천-아이파크-34py", count: 13 },
   {
     name: "송도 힐스테이트 더스카이 34py",
@@ -104,7 +124,13 @@ const projectData = [
     count: 38,
   },
   { name: "송파 위례 24단지 25py", folder: "송파-위례-24단지-25py", count: 66 },
-  { name: "성남 센트럴타운 33py", folder: "성남-센트럴타운-33py", count: 6 },
+  {
+    name: "성남 센트럴타운 33py",
+    folder: "성남-센트럴타운-33py",
+    count: 6,
+    thumbAfter:
+      "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/portfolio-thumbs/30_after.webp",
+  },
   {
     name: "서울역 센트럴자이 34py",
     folder: "서울역-센트럴자이-34py",
@@ -158,11 +184,13 @@ let houseVisible = HOUSE_INITIAL;
 
 const R2_BASE = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev";
 
-// 이미지 로드 실패 시 사용할 빈 placeholder (회색 svg, 1.6:1)
+// 이미지 로드 실패 시 사용할 중립 스켈레톤 (텍스트 없음, 1.6:1).
+// "이미지 준비 중" 같은 문구는 프로덕션에 노출되면 안 되므로 텍스트를 두지 않는다.
+// 어떤 데이터 드리프트·전송 실패에도 사용자에게는 옅은 단색 박스만 보인다.
 const IMG_PLACEHOLDER =
   "data:image/svg+xml;charset=UTF-8," +
   encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 10" preserveAspectRatio="xMidYMid slice"><rect width="16" height="10" fill="#eef0f2"/><text x="8" y="5.6" text-anchor="middle" font-family="system-ui,sans-serif" font-size="0.9" fill="#9ca3af">이미지 준비 중</text></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 10" preserveAspectRatio="xMidYMid slice"><rect width="16" height="10" fill="#eef0f2"/></svg>',
   );
 
 function buildHouseCards() {
@@ -173,10 +201,15 @@ function buildHouseCards() {
   for (let i = 0; i < TOTAL_PROJECTS; i++) {
     const proj = projectData[i];
     if (!sizeMatch(getPy(proj.folder), currentSize)) continue;
+    // 썸네일 우선순위: admin 표지 → 업로드 이미지[0] → 폴더 표지(001.webp) → placeholder.
+    // 폴더 fallback 덕분에 API 동기화 전 최초 렌더에서도 실제 이미지를 즉시 노출
+    // (옛 사고: 하드코딩 데이터에 thumbAfter 없어 "이미지 준비 중" 이 깜빡임).
     const thumbUrl =
       proj.thumbAfter ||
       (Array.isArray(proj.images) && proj.images[0]) ||
-      IMG_PLACEHOLDER;
+      (proj.folder
+        ? `${R2_BASE}/images/portfolio/${proj.folder}/001.webp`
+        : IMG_PLACEHOLDER);
     // 우선순위: 본인 상세이미지가 있으면 본인 것 사용.
     // 본인 이미지 없고 rightFolder(상세 이미지 참조 원본글) 가 지정돼 있으면
     // 원본글의 상세이미지(images/count/folder)를 그대로 가져옴.
@@ -267,6 +300,14 @@ function renderHouse(size) {
     // 이미지 로드 실패 시 placeholder로 교체 (R2 fallback 누락 파일 회피)
     const imgEl = card.querySelector(".img-after");
     if (imgEl) {
+      // 로드 완료 시 스켈레톤 배경 제거 (사진 위에 색 비칠 여지 0).
+      // 캐시 히트로 이미 complete 인 경우도 즉시 처리.
+      const markLoaded = () => card.classList.add("is-loaded");
+      if (imgEl.complete && imgEl.naturalWidth > 0) {
+        markLoaded();
+      } else {
+        imgEl.addEventListener("load", markLoaded, { once: true });
+      }
       imgEl.addEventListener(
         "error",
         () => {
@@ -278,6 +319,28 @@ function renderHouse(size) {
         { once: true },
       );
     }
+    // 모달 첫 이미지 prefetch — hover/touch 시 미리 캐시에 올려 클릭 시 즉시 표시.
+    // (모달 클릭 후 첫 장이 늦게 뜨던 지연 완화)
+    let _prefetched = false;
+    const prefetchModalFirst = () => {
+      if (_prefetched) return;
+      _prefetched = true;
+      const first =
+        (Array.isArray(modalProj.images) && modalProj.images[0]) ||
+        (modalProj.folder
+          ? `${R2_BASE}/images/portfolio/${modalProj.folder}/001.webp`
+          : "");
+      if (first) {
+        const pre = new Image();
+        pre.decoding = "async";
+        pre.src = first;
+      }
+    };
+    card.addEventListener("mouseenter", prefetchModalFirst, { once: true });
+    card.addEventListener("touchstart", prefetchModalFirst, {
+      once: true,
+      passive: true,
+    });
     card.addEventListener("click", () => openProjectModal(modalProj));
     grid.appendChild(card);
   }
@@ -460,7 +523,15 @@ function openProjectModal(proj) {
     const img = document.createElement("img");
     img.src = src;
     img.alt = `${proj.name} ${i + 1}`;
-    img.loading = "lazy";
+    // 모달 첫 화면(상위 3장)은 즉시 로드 — lazy 면 모달을 열어도 빈 화면이 지연됨.
+    // 나머지는 스크롤 시 lazy 로드.
+    if (i < 3) {
+      img.decoding = "async";
+      img.setAttribute("fetchpriority", "high");
+    } else {
+      img.loading = "lazy";
+      img.decoding = "async";
+    }
     img.onerror = function () {
       this.remove();
     };

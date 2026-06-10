@@ -245,6 +245,13 @@
   overflow: hidden;
   aspect-ratio: 16/10;
   cursor: pointer;
+  /* 사진 로드 전 찰나에만 보이는 중립 스켈레톤 배경 (글자 없음).
+     이미지 로드 완료(.is-loaded) 시 배경 속성 자체를 제거 — 사진 위에 색이
+     비칠 여지 0. 로드 전/실패 시에만 옅은 회색 박스. */
+  background-color: #eef0f2;
+}
+.project-card.is-loaded {
+  background-color: transparent;
 }
 .project-card .img-after {
   width: 100%;
