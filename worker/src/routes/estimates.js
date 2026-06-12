@@ -1,6 +1,6 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import {
-  checkBotTrap,
+  botSignals,
   clientIP,
   escapeHtml,
   hasUrl,
@@ -29,6 +29,12 @@ import {
   edgeCachePut,
   edgeCacheDeleteMany,
 } from "../lib/edge-cache.js";
+import {
+  archiveAttemptToR2,
+  looksHuman,
+  notifyBlockedAttempt,
+  recordRejectToD1,
+} from "../lib/estimate-archive.js";
 
 const CACHE_TTL = 30;
 const ESTIMATE_RATE_LIMIT_PER_HOUR = 60;
@@ -348,6 +354,28 @@ function estimateRateLimitAllowlist(env) {
   );
 }
 
+// 테스트 화이트리스트 — IP/이름(substring)/전화 중 하나라도 일치하면 true.
+// 효과: 봇트랩 timing(3초 미만) 우회만. 허니팟/검증/저장/알림은 일반 고객과 동일.
+// 목적: 운영팀이 실제 고객 흐름과 동일한 경로로 반복 테스트.
+function isWhitelistedRequest(env, { ip, name, phone }) {
+  if (ip && estimateRateLimitAllowlist(env).has(ip)) return true;
+  const names = String(env.ESTIMATE_ALLOWLIST_NAMES || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const normName = String(name || "").trim();
+  if (normName && names.some((n) => normName.includes(n))) return true;
+  const normPhone = String(phone || "").replace(/\D/g, "");
+  const phones = new Set(
+    String(env.ESTIMATE_ALLOWLIST_PHONES || "")
+      .split(",")
+      .map((s) => s.replace(/\D/g, "").trim())
+      .filter(Boolean),
+  );
+  if (normPhone && phones.has(normPhone)) return true;
+  return false;
+}
+
 export async function handleEstimates(
   request,
   env,
@@ -466,6 +494,12 @@ async function deleteEstimate(env, id, ctx, services) {
 
 async function submitEstimate(request, env, ctx, services) {
   const ip = clientIP(request);
+  const ua = request.headers.get("user-agent") || "";
+  // formData 파싱 실패 대비 raw body 백업 (body 소비 전에 clone)
+  let rawBackup = "";
+  try {
+    rawBackup = await request.clone().text();
+  } catch {}
 
   if (!estimateRateLimitAllowlist(env).has(ip)) {
     const rl = await rateLimit(
@@ -479,6 +513,14 @@ async function submitEstimate(request, env, ctx, services) {
           `[day1design/estimates] rate-limit 초과\nIP: ${ip} (${rl.count}회)`,
         ),
       );
+      // 안전망: rate-limit 거부도 R2 보관 (명백한 스팸이라 D1/텔레그램 경고는 제외)
+      await archiveAttemptToR2(env, ctx, {
+        ip,
+        ua,
+        outcome: "rate_limited",
+        error: `count=${rl.count}`,
+        rawText: rawBackup,
+      });
       return jsonError(429, "Too many requests");
     }
   }
@@ -487,6 +529,20 @@ async function submitEstimate(request, env, ctx, services) {
   try {
     form = await request.formData();
   } catch (e) {
+    // 안전망: 파싱 실패도 raw 원문 R2 보관 + 텔레그램
+    await archiveAttemptToR2(env, ctx, {
+      ip,
+      ua,
+      outcome: "parse_failed",
+      error: e?.message || "parse",
+      rawText: rawBackup,
+    });
+    ctx.waitUntil(
+      notifyTelegram(
+        env,
+        `[day1design/estimates] formData 파싱 실패\nIP: ${ip}\n${(e?.message || "").slice(0, 200)}`,
+      ),
+    );
     return jsonError(400, "Invalid form data");
   }
 
@@ -504,10 +560,56 @@ async function submitEstimate(request, env, ctx, services) {
   fields.branch = sanitizeText(fields.branch || "", 50);
   fields.budget = sanitizeText(fields.budget || "", 80);
 
-  const trap = checkBotTrap(fields);
-  if (!trap.valid) {
-    if (trap.fakeOk) return jsonOk({ queued: true }); // 봇 기만
+  // 화이트리스트(테스트 우회) — 봇트랩 timing(3초)만 우회, 알림/검증/저장은 동일
+  const isTesterBypass = isWhitelistedRequest(env, {
+    ip,
+    name: fields.name,
+    phone: fields.phone,
+  });
+
+  // ★봇 트랩 — 복합신호 판정. 브라우저 자동완성이 허니팟을 채운 '정상고객'은
+  // 버리지 않고 일반 접수와 동일하게 살린다(고객 리드 보존). 진짜 봇만 드롭한다.
+  const sig = botSignals(fields);
+  const phoneOk = isValidPhone(fields.phone || "");
+  const nameOk = !!(fields.name && fields.name.trim().length >= 2);
+  const urlInjected = hasUrl(fields.detail) || hasUrl(fields.name);
+  const humanShape =
+    looksHuman({ name: fields.name, phone: fields.phone }) && phoneOk;
+
+  // 허니팟이 비었는데 초고속(_ts<3s) 제출 — 봇 패턴(테스터는 우회).
+  if (!sig.honeypotFilled && sig.tooFast && !isTesterBypass) {
+    await archiveAttemptToR2(env, ctx, {
+      ip,
+      ua,
+      fields,
+      outcome: "bot_too_fast",
+      error: "ts<3s",
+      rawText: rawBackup,
+    });
     return jsonError(429, "Please try again");
+  }
+
+  // 허니팟이 채워진 경우 — 복합신호로 '진짜 봇' vs '자동완성 오탐' 구분.
+  let autofillHoneypot = false;
+  if (sig.honeypotFilled) {
+    // 진짜 봇 신호: 초고속 제출 / URL 삽입 / 이름·연락처 둘 다 형식 깨짐.
+    const realBot = sig.tooFast || urlInjected || (!phoneOk && !nameOk);
+    if (realBot || !humanShape) {
+      // 명백한 봇 → 조용히 드롭(가짜 200) + R2 보관(D1 미저장, 접수관리 오염 방지).
+      await archiveAttemptToR2(env, ctx, {
+        ip,
+        ua,
+        fields,
+        outcome: "honeypot_bot",
+        error: `hp${sig.tooFast ? "+fast" : ""}${urlInjected ? "+url" : ""}${
+          !phoneOk && !nameOk ? "+broken" : ""
+        }`,
+        rawText: rawBackup,
+      });
+      return jsonOk({ queued: true }); // 봇 기만
+    }
+    // 사람 + 타이밍 정상 + 형식 정상 → 자동완성 오탐. 정상 접수로 그대로 진행.
+    autofillHoneypot = true;
   }
 
   // 기본 검증 — 간소화 폼 필수: 이름·연락처·평형대·현장주소·희망일정·지점·가용예산 + 개인정보 동의
@@ -524,9 +626,49 @@ async function submitEstimate(request, env, ctx, services) {
   if (!fields.budget) errors.push("budget");
   if ((fields.detail || "").length > 2000) errors.push("detail-too-long");
   if (hasUrl(fields.detail) || hasUrl(fields.name)) errors.push("url-detected");
-  if (errors.length) return jsonError(400, "Validation failed", { errors });
+  if (errors.length) {
+    // ★누락 0: 검증 실패도 (1) R2 원문 (2) D1 Status='오류' 레코드 (3) 사람이면 텔레그램.
+    // 2026-05 사고(budget 누락 silent drop) 재발 방지 — 거부건도 추적/복구 가능해야 한다.
+    await archiveAttemptToR2(env, ctx, {
+      ip,
+      ua,
+      fields,
+      outcome: "validation_failed",
+      error: errors.join(","),
+      rawText: rawBackup,
+    });
+    await recordRejectToD1(services, ctx, {
+      name: fields.name,
+      phone: fields.phone,
+      email: fields.email,
+      fields,
+      ip,
+      outcome: "validation_failed",
+      error: errors.join(","),
+    });
+    if (looksHuman({ name: fields.name, phone: fields.phone })) {
+      await notifyBlockedAttempt(env, ctx, {
+        ip,
+        ua,
+        reasonCode: `validation_failed(${errors.join(",")})`,
+        name: fields.name,
+        phone: fields.phone,
+      });
+    }
+    return jsonError(400, "Validation failed", { errors });
+  }
   const attribution = normalizeEstimateAttribution(fields);
   const detail = detailWithBudget(fields.detail, fields.budget);
+
+  // ★검증 통과 시점에 R2 원문 보관 — 이후 업로드/D1 실패에 대비.
+  // 자동완성 허니팟 오탐 건은 'accepted_autofill' 로 구분 보관(접수는 정상).
+  await archiveAttemptToR2(env, ctx, {
+    ip,
+    ua,
+    fields,
+    outcome: autofillHoneypot ? "accepted_autofill" : "accepted",
+    rawText: rawBackup,
+  });
 
   // 파일 업로드 (R2)
   const folder = `estimates/${datePrefix()}-${randomId()}`;
@@ -550,6 +692,20 @@ async function submitEstimate(request, env, ctx, services) {
       { allowDocuments: true },
     );
   } catch (e) {
+    await archiveAttemptToR2(env, ctx, {
+      ip,
+      ua,
+      fields,
+      outcome: "upload_failed",
+      error: e?.message || "",
+      rawText: rawBackup,
+    });
+    ctx.waitUntil(
+      notifyTelegram(
+        env,
+        `[day1design/estimates] 파일 업로드 실패\nIP: ${ip}\n${(e?.message || "").slice(0, 200)}`,
+      ),
+    );
     if (e.status) return jsonError(e.status, e.message);
     throw e;
   }
@@ -559,7 +715,9 @@ async function submitEstimate(request, env, ctx, services) {
   // First-touch 출처: 자체 트래커 SessionId로 D1 HeatmapEvents의 최초 page_view 조회
   const sessionId = sanitizeText(fields.session_id, 64);
   const firstTouch = await fetchFirstTouch(env, sessionId);
-  const record = await services.estimates.create({
+  // ★성공(200)은 D1 저장 확정 후에만 반환. throw 시 1회 재시도 → 그래도 실패면
+  // R2 d1_failed 보관 + 텔레그램 + 500(재시도 유도). 가짜 성공 절대 금지.
+  const createPayload = {
     Name: fields.name,
     Phone: fields.phone,
     Email: fields.email || "",
@@ -589,8 +747,43 @@ async function submitEstimate(request, env, ctx, services) {
     FirstUtmSource: firstTouch.utmSource,
     FirstUtmMedium: firstTouch.utmMedium,
     FirstUtmCampaign: firstTouch.utmCampaign,
-  });
+  };
+  let record;
+  try {
+    record = await services.estimates.create(createPayload);
+  } catch (dbErr1) {
+    try {
+      record = await services.estimates.create(createPayload); // 1회 재시도
+    } catch (dbErr2) {
+      await archiveAttemptToR2(env, ctx, {
+        ip,
+        ua,
+        fields: { ...fields, conceptUrls, planUrls },
+        outcome: "d1_failed",
+        error: (dbErr2 && dbErr2.message) || (dbErr1 && dbErr1.message) || "",
+        rawText: rawBackup,
+      });
+      ctx.waitUntil(
+        notifyTelegram(
+          env,
+          `[day1design/estimates] D1 저장 실패 (R2에 복구가능)\nIP: ${ip}\nName: ${(fields.name || "").slice(0, 40)}\nPhone: ${(fields.phone || "").slice(0, 20)}\n${((dbErr2 && dbErr2.message) || "").slice(0, 200)}`,
+        ),
+      );
+      return jsonError(500, "Save failed, please retry");
+    }
+  }
   fields.detail = detail;
+
+  // ★자동완성 허니팟 오탐 → 정상 접수 처리됨. 운영 인지용 1줄만 발송(접수는 정상).
+  if (autofillHoneypot) {
+    const hpPhone = String(fields.phone || "").replace(/\D/g, "");
+    ctx.waitUntil(
+      notifyTelegram(
+        env,
+        `[day1design/estimates] 자동완성 허니팟 감지→정상접수 처리\nIP: ${ip}\n이름: ${(fields.name || "").slice(0, 40)}\n연락처: ****${hpPhone.length >= 4 ? hpPhone.slice(-4) : ""}`,
+      ),
+    );
+  }
 
   const addressLine = compactJoin([fields.address, fields.address_detail]);
   const notificationLines = [

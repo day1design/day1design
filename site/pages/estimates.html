@@ -386,11 +386,18 @@
           ></textarea>
         </div>
 
-        <!-- Honeypot (봇 트랩) -->
+        <!-- Honeypot (봇 트랩) — 필드명은 브라우저 자동완성이 매칭하지 않는
+             중립 토큰(_hp_field). 'website/url/email/organization/address' 등
+             자동완성 자석 이름 금지(자동완성이 채우면 정상고객 오탐 발생). -->
         <div class="hp-field" aria-hidden="true">
           <label
             >이 칸은 비워두세요
-            <input type="text" name="website" tabindex="-1" autocomplete="off"
+            <input
+              type="text"
+              name="_hp_field"
+              tabindex="-1"
+              autocomplete="off"
+              aria-hidden="true"
           /></label>
         </div>
 

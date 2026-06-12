@@ -292,8 +292,8 @@
       _fb_ad: att.ad || "",
       _fb_adid: att.adId || "",
       _fbclid: att.fbclid || "",
-      // 봇 트랩
-      _hp: val("website"),
+      // 봇 트랩 — 중립 필드명(_hp_field)에서 읽어 _hp 로 전송. (자동완성 자석 'website' 제거)
+      _hp: val("_hp_field"),
       _ts: String(window._estLoadTs || ""),
     };
 

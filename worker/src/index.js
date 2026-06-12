@@ -30,6 +30,7 @@ import { notifyTelegram } from "./lib/telegram.js";
 import { createServices } from "./lib/services.js";
 import { accessDenied, authorizeRequest } from "./lib/access.js";
 import { queueAudit } from "./lib/audit-log.js";
+import { captureRejectedSubmission } from "./lib/estimate-archive.js";
 
 const API_HOST = "api.day1design.co.kr";
 const WORKERS_DEV_HOST = "day1design-api.day1design-co.workers.dev";
@@ -125,7 +126,22 @@ async function handleApi(request, env, ctx, path) {
   let res;
   const services = createServices(env);
   const access = authorizeRequest(request, env);
-  if (!access.ok) return cors(accessDenied(access), request, env);
+  if (!access.ok) {
+    // ★보강A: 공개 견적폼 POST 가 origin 가드(인앱 웹뷰 등)에서 막히면 흔적 보존.
+    // 라우트 핸들러 진입 전이라 submitEstimate 내부 안전망이 못 잡는 구간 → 여기서 캡처.
+    if (
+      request.method === "POST" &&
+      (path === "/api/estimates" || path === "/api/estimates/")
+    ) {
+      ctx.waitUntil(
+        captureRejectedSubmission(request, env, services, ctx, {
+          outcome: "origin_denied",
+          error: access.code || "origin",
+        }),
+      );
+    }
+    return cors(accessDenied(access), request, env);
+  }
 
   if (path === "/" || path === "/api" || path === "/api/") {
     res = new Response(JSON.stringify({ ok: true }), {

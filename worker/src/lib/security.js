@@ -35,6 +35,20 @@ export function checkBotTrap(fields) {
   return { valid: true };
 }
 
+/**
+ * 봇 신호 분리 — 허니팟/제출속도를 단독 boolean 으로 노출(복합신호 판정용).
+ * 자동완성이 허니팟을 채운 정상고객을 '버리지 않고 살리기' 위해, 허니팟 채워짐과
+ * 타이밍·기타 신호를 호출부가 조합해 봇 여부를 종합 판단한다.
+ *   { honeypotFilled, tooFast, ts }
+ */
+export function botSignals(fields) {
+  const hp = fields._hp ?? fields.website ?? "";
+  const honeypotFilled = String(hp).trim() !== "";
+  const ts = Number(fields._ts || 0);
+  const tooFast = ts > 0 && Date.now() - ts < MIN_SUBMIT_TIME_MS;
+  return { honeypotFilled, tooFast, ts };
+}
+
 /** IP 기반 Rate Limit (Cache API 사용) */
 export async function rateLimit(ip, limit = RATE_LIMIT_PER_HOUR) {
   const cache = caches.default;

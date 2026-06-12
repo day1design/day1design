@@ -34,6 +34,11 @@ GA4_PROPERTY_ID = "537274300"
 GSC_SITE_URL = "sc-domain:day1design.co.kr"
 # Meta Pixel/CAPI 데이터세트 ID (day1design-web-260602). CAPI 토큰은 secret 으로 주입.
 META_PIXEL_ID = "977283848476177"
+# 견적 접수 테스트 화이트리스트 (운영팀 반복 테스트용). 효과: rate-limit + 봇트랩
+# timing(3초) 우회만. 허니팟/검증/저장/알림은 일반 고객과 100% 동일. 콤마구분, 빈값이면 미적용.
+ESTIMATE_RATE_LIMIT_ALLOWLIST = ""
+ESTIMATE_ALLOWLIST_NAMES = ""
+ESTIMATE_ALLOWLIST_PHONES = ""
 
 [[routes]]
 pattern = "day1design.co.kr/*"
