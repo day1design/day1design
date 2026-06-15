@@ -81,6 +81,7 @@ const SCHEMA = {
     "Views",
     "Excerpt",
     "BodyText",
+    "BodyHtml",
     "Images",
     "ContentBlocks",
   ],

@@ -1460,6 +1460,162 @@
   flex-wrap: wrap;
 }
 
+/* ========== COMMUNITY EDIT (WYSIWYG) ========== */
+.cm-edit {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.cm-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  border-top: 1px solid var(--c-border-soft);
+}
+.cm-row:first-of-type {
+  border-top: none;
+}
+.cm-row-top .cm-lbl {
+  align-items: flex-start;
+  padding-top: 18px;
+}
+.cm-lbl {
+  display: flex;
+  align-items: center;
+  background: #f7f8fa;
+  border-right: 1px solid var(--c-border-soft);
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+.cm-val {
+  padding: 14px 16px;
+  min-width: 0;
+}
+.cm-val input[type="text"],
+.cm-val input[type="date"],
+.cm-val textarea,
+.cm-select {
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--c-surface);
+  color: var(--c-text);
+}
+.cm-val input[type="text"],
+.cm-val textarea {
+  width: 100%;
+}
+.cm-val textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+.cm-val input:focus,
+.cm-val textarea:focus,
+.cm-select:focus {
+  outline: none;
+  border-color: var(--c-brand);
+}
+.cm-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.cm-select {
+  cursor: pointer;
+}
+.cm-custom {
+  max-width: 320px;
+}
+.cm-date {
+  max-width: 200px;
+}
+.cm-hint {
+  font-size: 12px;
+  color: var(--c-text-muted);
+  margin-top: 8px;
+}
+.cm-edit .hidden {
+  display: none;
+}
+.cm-notice {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--c-text-sub);
+  background: #f9fafb;
+  border: 1px solid var(--c-border-soft);
+  border-radius: 6px;
+  padding: 11px 13px;
+  margin-bottom: 12px;
+}
+.cm-notice-warn {
+  color: var(--c-danger);
+}
+
+/* Quill 오버라이드 */
+#toolbar.ql-toolbar {
+  border-color: var(--c-border);
+  border-radius: 6px 6px 0 0;
+  background: #fafbfc;
+}
+#editor.ql-container {
+  border-color: var(--c-border);
+  border-radius: 0 0 6px 6px;
+  font-family: inherit;
+  font-size: 15px;
+}
+#editor .ql-editor {
+  min-height: 360px;
+  line-height: 1.8;
+}
+#editor .ql-editor img {
+  max-width: 100%;
+  height: auto;
+}
+/* 폰트 picker 라벨 (커스텀 화이트리스트) */
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="malgun"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="malgun"]::before {
+  content: "맑은 고딕";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="notosans"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="notosans"]::before {
+  content: "본고딕";
+  font-family: "Noto Sans KR", sans-serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="nanum"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="nanum"]::before {
+  content: "나눔명조";
+  font-family: "Nanum Myeongjo", serif;
+}
+.ql-font-malgun {
+  font-family: "Malgun Gothic", "맑은 고딕", sans-serif;
+}
+.ql-font-notosans {
+  font-family: "Noto Sans KR", sans-serif;
+}
+.ql-font-nanum {
+  font-family: "Nanum Myeongjo", serif;
+}
+/* 사이즈 picker 라벨 px 표기 */
+.ql-snow .ql-picker.ql-size .ql-picker-label::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item::before {
+  content: attr(data-value) !important;
+}
+@media (max-width: 640px) {
+  .cm-row {
+    grid-template-columns: 1fr;
+  }
+  .cm-lbl {
+    border-right: none;
+    border-bottom: 1px solid var(--c-border-soft);
+  }
+}
+
 /* ========== ESTIMATES DETAIL ========== */
 .est-quick-stats {
   display: grid;

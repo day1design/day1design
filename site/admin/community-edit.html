@@ -6,10 +6,19 @@
     <title>게시글 편집 · DAYONE ADMIN</title>
     <meta name="robots" content="noindex,nofollow" />
     <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
-    <link rel="preconnect" href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev" crossorigin />
+    <link
+      rel="preconnect"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+      crossorigin
+    />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
+    <!-- Quill 2.0 (WYSIWYG) — 공개 상세페이지와 동일 버전 고정 -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css"
+    />
+    <link rel="stylesheet" href="admin.css?v=20260615-quill" />
     <script>
       window.ADMIN_PAGE = { title: "게시글 편집", nav: "community" };
     </script>
@@ -36,103 +45,171 @@
           </div>
         </div>
 
-        <form id="metaForm" class="meta-form">
+        <form id="metaForm" class="cm-edit">
           <input type="hidden" name="idx" />
-          <div class="field">
-            <label>제목 <span class="req">*</span></label>
-            <input type="text" name="title" required />
-          </div>
-          <div class="field-inline">
-            <div class="field">
-              <label>카테고리</label>
-              <input
-                type="text"
-                name="category"
-                placeholder="주거-디자인제안"
-              />
-            </div>
-            <div class="field">
-              <label>작성일</label>
-              <input type="date" name="date" />
-            </div>
-            <div class="field">
-              <label>게시판</label>
-              <select name="board">
+
+          <!-- 카테고리 -->
+          <div class="cm-row">
+            <div class="cm-lbl">카테고리</div>
+            <div class="cm-val cm-inline">
+              <select name="board" class="cm-select">
                 <option value="Residential">주거</option>
                 <option value="Commercial">상업</option>
               </select>
+              <select id="categorySelect" class="cm-select">
+                <option value="디자인제안">디자인제안</option>
+                <option value="포트폴리오">포트폴리오</option>
+                <option value="상업공간">상업공간</option>
+                <option value="__custom">+ 직접 입력</option>
+              </select>
+              <input
+                type="text"
+                name="category"
+                id="categoryCustom"
+                class="cm-custom hidden"
+                placeholder="카테고리 직접 입력 (예: 주거-디자인제안)"
+              />
             </div>
           </div>
-          <div class="field">
-            <label>썸네일</label>
-            <div class="thumb-upload">
-              <div class="thumb-preview empty" id="thumbPreview"></div>
-              <div class="thumb-actions">
-                <input type="file" id="thumbFile" accept="image/*" hidden />
-                <button type="button" class="btn btn-ghost" id="btnPickThumb">
-                  📤 이미지 업로드
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost"
-                  id="btnClearThumb"
-                  hidden
-                >
-                  제거
-                </button>
+
+          <!-- 제목 -->
+          <div class="cm-row">
+            <div class="cm-lbl">제목 <span class="req">*</span></div>
+            <div class="cm-val">
+              <input
+                type="text"
+                name="title"
+                placeholder="제목을 입력하세요"
+                required
+              />
+            </div>
+          </div>
+
+          <!-- 작성일 -->
+          <div class="cm-row">
+            <div class="cm-lbl">작성일</div>
+            <div class="cm-val cm-inline">
+              <input type="date" name="date" class="cm-date" />
+              <span class="cm-hint">목록 정렬·SEO 발행일로 사용됩니다.</span>
+            </div>
+          </div>
+
+          <!-- 썸네일 -->
+          <div class="cm-row">
+            <div class="cm-lbl">썸네일</div>
+            <div class="cm-val">
+              <div class="thumb-upload">
+                <div class="thumb-preview empty" id="thumbPreview"></div>
+                <div class="thumb-actions">
+                  <input type="file" id="thumbFile" accept="image/*" hidden />
+                  <button type="button" class="btn btn-ghost" id="btnPickThumb">
+                    📤 이미지 업로드
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    id="btnClearThumb"
+                    hidden
+                  >
+                    제거
+                  </button>
+                </div>
               </div>
+              <p class="cm-hint">
+                비우면 본문 첫 이미지를 자동으로 썸네일로 사용합니다.
+              </p>
+              <input type="hidden" name="thumb" />
             </div>
-            <input type="hidden" name="thumb" />
           </div>
-          <div class="field">
-            <label>요약 (목록 카드용)</label>
-            <textarea
-              name="excerpt"
-              rows="2"
-              maxlength="300"
-              placeholder="비우면 본문 앞 80자 자동 생성"
-            ></textarea>
+
+          <!-- 본문 (WYSIWYG) -->
+          <div class="cm-row cm-row-top">
+            <div class="cm-lbl">본문</div>
+            <div class="cm-val">
+              <div class="cm-notice">
+                본문에 사진·동영상을 자유롭게 배치할 수 있습니다. 업로드한
+                이미지는 자동으로 최적화되어 안전하게 저장됩니다.<br />
+                <span class="cm-notice-warn"
+                  >타사 저작물·출처가 불분명한 이미지/영상은 등록을
+                  삼가주세요.</span
+                >
+              </div>
+
+              <div id="toolbar">
+                <span class="ql-formats">
+                  <select class="ql-font">
+                    <option value="malgun" selected></option>
+                    <option value="notosans"></option>
+                    <option value="nanum"></option>
+                  </select>
+                  <select class="ql-size">
+                    <option value="13px"></option>
+                    <option value="15px" selected></option>
+                    <option value="18px"></option>
+                    <option value="24px"></option>
+                    <option value="32px"></option>
+                  </select>
+                  <select class="ql-header">
+                    <option value="2">제목</option>
+                    <option value="3">소제목</option>
+                    <option selected>본문</option>
+                  </select>
+                </span>
+                <span class="ql-formats">
+                  <button class="ql-bold"></button>
+                  <button class="ql-italic"></button>
+                  <button class="ql-underline"></button>
+                  <button class="ql-strike"></button>
+                </span>
+                <span class="ql-formats">
+                  <select class="ql-color"></select>
+                  <select class="ql-background"></select>
+                </span>
+                <span class="ql-formats">
+                  <button class="ql-align" value=""></button>
+                  <button class="ql-align" value="center"></button>
+                  <button class="ql-align" value="right"></button>
+                  <button class="ql-align" value="justify"></button>
+                </span>
+                <span class="ql-formats">
+                  <button class="ql-list" value="ordered"></button>
+                  <button class="ql-list" value="bullet"></button>
+                  <button class="ql-indent" value="-1"></button>
+                  <button class="ql-indent" value="+1"></button>
+                </span>
+                <span class="ql-formats">
+                  <button class="ql-blockquote"></button>
+                  <button class="ql-link"></button>
+                  <button class="ql-image"></button>
+                  <button class="ql-video"></button>
+                </span>
+                <span class="ql-formats">
+                  <button class="ql-clean"></button>
+                </span>
+              </div>
+              <div id="editor"></div>
+            </div>
+          </div>
+
+          <!-- 요약 -->
+          <div class="cm-row cm-row-top">
+            <div class="cm-lbl">요약</div>
+            <div class="cm-val">
+              <textarea
+                name="excerpt"
+                rows="2"
+                maxlength="300"
+                placeholder="목록 카드에 보일 한 줄 소개 (비우면 본문 앞 80자 자동 생성)"
+              ></textarea>
+            </div>
           </div>
         </form>
-
-        <div class="block-editor">
-          <h3 class="be-title">본문 블록</h3>
-          <p class="admin-sub" style="margin-bottom: 12px">
-            블록 순서가 곧 본문 순서입니다. 필요한 블록을 추가해 배치하세요.
-          </p>
-          <details class="block-guide">
-            <summary>📘 블록 사용 가이드</summary>
-            <ul>
-              <li><strong>텍스트 블록</strong> — 본문 글을 작성합니다.</li>
-              <li>
-                <strong>이미지 블록</strong> — 사진을 추가합니다. 1장이면 전체
-                너비로, 여러 장이면 2·3·4열 배치 중 선택할 수 있습니다.
-              </li>
-              <li>
-                <strong>블록 순서 바꾸기</strong> — 각 블록의 ↑↓ 버튼으로
-                이동합니다.
-              </li>
-              <li>
-                <strong>블록 내부 이미지 순서</strong> — 썸네일을 드래그해서
-                교체하세요.
-              </li>
-            </ul>
-          </details>
-          <div class="blocks-list" id="blocksList"></div>
-          <div class="blocks-add">
-            <button type="button" class="btn btn-ghost" id="btnAddText">
-              + 텍스트 블록
-            </button>
-            <button type="button" class="btn btn-ghost" id="btnAddImage">
-              + 이미지 블록
-            </button>
-          </div>
-        </div>
       </main>
     </div>
     <div class="toast" id="toast"></div>
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
     <script defer src="config.js"></script>
-    <script defer src="admin.js?v=20260602-pixel-data"></script>
-    <script defer src="community-edit.js"></script>
+    <script defer src="admin.js?v=20260615-quill"></script>
+    <script defer src="community-edit.js?v=20260615-quill"></script>
   </body>
 </html>

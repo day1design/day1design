@@ -437,3 +437,80 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ========== WYSIWYG(HTML) 본문 렌더링 ========== */
+/* .ql-editor 클래스로 Quill 의 리스트/정렬/들여쓰기 CSS 를 그대로 적용받되,
+   에디터용 기본값(패딩·높이·pre-wrap)은 기사 레이아웃에 맞게 덮어쓴다. */
+.detail-html.ql-editor {
+  padding: 0;
+  height: auto;
+  overflow: visible;
+  white-space: normal;
+  font-size: 15px;
+  line-height: 1.95;
+  color: #555;
+  letter-spacing: 0.2px;
+}
+.detail-html p {
+  margin: 0 0 16px;
+}
+.detail-html h1,
+.detail-html h2 {
+  font-size: 22px;
+  font-weight: 400;
+  color: #3c3733;
+  line-height: 1.45;
+  margin: 38px 0 14px;
+  letter-spacing: 0.5px;
+}
+.detail-html h3 {
+  font-size: 18px;
+  font-weight: 500;
+  color: #3c3733;
+  line-height: 1.5;
+  margin: 28px 0 12px;
+}
+.detail-html strong {
+  font-weight: 700;
+  color: #3c3733;
+}
+.detail-html a {
+  color: #8a7560;
+  text-decoration: underline;
+}
+.detail-html img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 18px auto;
+  border-radius: 4px;
+}
+.detail-html blockquote {
+  border-left: 3px solid #d8d2c8;
+  margin: 18px 0;
+  padding: 6px 0 6px 18px;
+  color: #777;
+}
+.detail-html ul,
+.detail-html ol {
+  margin: 0 0 16px;
+}
+.detail-html .ql-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  display: block;
+  margin: 18px 0;
+  border: 0;
+  border-radius: 4px;
+}
+/* 커스텀 폰트 화이트리스트 (admin 에디터와 매칭) */
+.detail-html .ql-font-malgun {
+  font-family: "Malgun Gothic", "맑은 고딕", sans-serif;
+}
+.detail-html .ql-font-notosans {
+  font-family: "Noto Sans KR", sans-serif;
+}
+.detail-html .ql-font-nanum {
+  font-family: "Nanum Myeongjo", serif;
+}

@@ -71,6 +71,12 @@
     <link rel="stylesheet" href="../css/reset.css" />
     <link rel="stylesheet" href="../css/common.css?v=20260520-topnav" />
     <link rel="stylesheet" href="../css/community-detail.css" />
+    <!-- Quill 2.0 본문 렌더링 — admin 에디터와 동일 버전 고정 (리스트/정렬/들여쓰기 동일 표시) -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css"
+    />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function (c, l, a, r, i, t, y) {
@@ -297,6 +303,39 @@
           .filter((p) => p.length > 0);
       }
 
+      // 위지윅 본문(HTML) 정화: script/style/이벤트핸들러/javascript: 제거,
+      // iframe 은 유튜브/비메오 임베드만 허용. <template> 으로 inert 파싱.
+      function sanitizeHtml(html) {
+        const tpl = document.createElement("template");
+        tpl.innerHTML = html || "";
+        const ALLOWED_IFRAME =
+          /^(https?:)?\/\/(www\.)?(youtube\.com\/embed\/|youtube-nocookie\.com\/embed\/|player\.vimeo\.com\/video\/)/i;
+        tpl.content.querySelectorAll("*").forEach((el) => {
+          const tag = el.tagName.toLowerCase();
+          if (tag === "script" || tag === "style") {
+            el.remove();
+            return;
+          }
+          [...el.attributes].forEach((attr) => {
+            const name = attr.name.toLowerCase();
+            const val = attr.value || "";
+            if (name.startsWith("on")) el.removeAttribute(attr.name);
+            else if (
+              (name === "href" || name === "src" || name === "xlink:href") &&
+              /^\s*javascript:/i.test(val)
+            )
+              el.removeAttribute(attr.name);
+          });
+          if (
+            tag === "iframe" &&
+            !ALLOWED_IFRAME.test(el.getAttribute("src") || "")
+          ) {
+            el.remove();
+          }
+        });
+        return tpl.innerHTML;
+      }
+
       const API_BASE = (window.DAY1_API_BASE || "").replace(/\/$/, "");
 
       async function loadPost() {
@@ -456,9 +495,12 @@
         }
         let subtitleNum = 0;
 
-        // Render content blocks (text-image interleaved, original order)
+        // 위지윅(HTML) 본문 우선 → 없으면 기존 블록/본문 폴백 (구글 글 호환)
+        const bodyHtmlRaw = (post.body_html || "").trim();
         const blocks = post.content_blocks || [];
-        if (blocks.length > 0) {
+        if (bodyHtmlRaw) {
+          mainHtml += `<div class="detail-html ql-editor">${sanitizeHtml(bodyHtmlRaw)}</div>`;
+        } else if (blocks.length > 0) {
           blocks.forEach((block) => {
             if (block.type === "text") {
               const cleaned = cleanBodyText(block.content);

@@ -15,6 +15,18 @@ function postCacheNs(idx) {
   return `community:post:${idx}`;
 }
 
+// 위지윅 본문(HTML) 안의 <img src="..."> 추출 — orphan 정리용
+function extractHtmlImageUrls(html) {
+  if (!html || typeof html !== "string") return [];
+  const out = [];
+  const re = /<img[^>]+src=["']([^"']+)["']/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    if (m[1]) out.push(m[1]);
+  }
+  return out;
+}
+
 function collectPostUrls(post) {
   if (!post) return [];
   const out = new Set();
@@ -27,6 +39,7 @@ function collectPostUrls(post) {
       if (Array.isArray(b.images)) b.images.forEach((u) => u && out.add(u));
     }
   });
+  extractHtmlImageUrls(post.body_html).forEach((u) => u && out.add(u));
   return [...out];
 }
 
@@ -55,8 +68,7 @@ export async function handleCommunity(
       return jsonError(401, "Unauthorized");
     if (request.method === "PATCH")
       return patchPost(request, env, idx, ctx, services);
-    if (request.method === "DELETE")
-      return deletePost(env, idx, ctx, services);
+    if (request.method === "DELETE") return deletePost(env, idx, ctx, services);
   }
   return jsonError(404, "Not Found");
 }
@@ -89,6 +101,7 @@ function toDetailClient(r) {
     views: f.Views || 0,
     excerpt: f.Excerpt || "",
     body_text: f.BodyText || "",
+    body_html: f.BodyHtml || "",
     images: safeJsonParse(f.Images),
     content_blocks: safeJsonParse(f.ContentBlocks),
   };
@@ -225,6 +238,7 @@ function mapFields(body) {
   if ("views" in body) out.Views = Number(body.views) || 0;
   if ("excerpt" in body) out.Excerpt = body.excerpt;
   if ("body_text" in body) out.BodyText = body.body_text;
+  if ("body_html" in body) out.BodyHtml = body.body_html;
   if ("images" in body) out.Images = JSON.stringify(body.images || []);
   if ("content_blocks" in body)
     out.ContentBlocks = JSON.stringify(body.content_blocks || []);

@@ -1,21 +1,10 @@
-// ========== 커뮤니티 블록 에디터 ==========
+// ========== 커뮤니티 위지윅(WYSIWYG) 에디터 ==========
 const params = new URLSearchParams(location.search);
 const IS_NEW = params.has("new");
 const IDX_PARAM = params.get("idx") || "";
 
 const metaForm = document.getElementById("metaForm");
-const blocksList = document.getElementById("blocksList");
-
-// 통합 블록 모델:
-//   text  → { id, type: "text",  content }
-//   image → { id, type: "image", images: [url...], layout: "grid-2|grid-3|grid-4" }
-let blocks = [];
-let blockSeq = 0;
 let thumbUrl = "";
-
-function newId() {
-  return "b" + ++blockSeq;
-}
 
 function generateIdx() {
   return (
@@ -23,225 +12,68 @@ function generateIdx() {
   );
 }
 
-function addBlock(type, data = {}) {
-  const b = { id: newId(), type };
-  if (type === "text") {
-    b.content = data.content || "";
-  } else if (type === "image") {
-    b.images = Array.isArray(data.images) ? data.images.slice() : [];
-    b.layout = data.layout || "grid-2";
-  }
-  blocks.push(b);
-  renderBlocks();
-}
+// ---------- Quill 초기화 ----------
+// 크기는 inline style 로 출력(공개페이지에서 CSS 없이도 적용),
+// 폰트는 class 로 출력(공개페이지 .ql-font-* 정의와 매칭).
+const SizeStyle = Quill.import("attributors/style/size");
+SizeStyle.whitelist = ["13px", "15px", "18px", "24px", "32px"];
+Quill.register(SizeStyle, true);
+const FontClass = Quill.import("attributors/class/font");
+FontClass.whitelist = ["malgun", "notosans", "nanum"];
+Quill.register(FontClass, true);
 
-function moveBlock(id, dir) {
-  const i = blocks.findIndex((b) => b.id === id);
-  if (i < 0) return;
-  const j = i + dir;
-  if (j < 0 || j >= blocks.length) return;
-  [blocks[i], blocks[j]] = [blocks[j], blocks[i]];
-  renderBlocks();
-}
+const quill = new Quill("#editor", {
+  theme: "snow",
+  placeholder: "내용을 입력하세요…",
+  modules: { toolbar: "#toolbar" },
+});
 
-function removeBlock(id) {
-  const i = blocks.findIndex((b) => b.id === id);
-  if (i < 0) return;
-  if (!confirm(`블록 ${i + 1}을(를) 삭제할까요?`)) return;
-  blocks.splice(i, 1);
-  renderBlocks();
-}
-
-function renderBlocks() {
-  if (!blocks.length) {
-    blocksList.innerHTML =
-      '<div class="empty-state">블록이 없습니다. 아래에서 추가하세요.</div>';
-    return;
-  }
-  blocksList.innerHTML = blocks
-    .map((b, i) => {
-      if (b.type === "text") {
-        return `
-        <div class="block-item" data-id="${b.id}">
-          <div class="block-head">
-            <span class="block-tag">${i + 1}. 텍스트</span>
-            <div class="block-actions">
-              <button class="icon-btn" data-act="up" ${i === 0 ? "disabled" : ""}>↑</button>
-              <button class="icon-btn" data-act="down" ${i === blocks.length - 1 ? "disabled" : ""}>↓</button>
-              <button class="icon-btn danger" data-act="del">✕</button>
-            </div>
-          </div>
-          <textarea class="block-text" rows="5" placeholder="텍스트를 입력하세요...">${adminUtil.escapeHtml(b.content)}</textarea>
-        </div>`;
-      } else if (b.type === "image") {
-        const count = (b.images || []).length;
-        const showLayout = count > 1;
-        const label =
-          count === 0
-            ? "이미지"
-            : count === 1
-              ? "이미지 1장"
-              : `이미지 ${count}장`;
-        return `
-        <div class="block-item" data-id="${b.id}">
-          <div class="block-head">
-            <span class="block-tag">${i + 1}. ${label}</span>
-            <div class="block-actions">
-              <button class="icon-btn" data-act="up" ${i === 0 ? "disabled" : ""}>↑</button>
-              <button class="icon-btn" data-act="down" ${i === blocks.length - 1 ? "disabled" : ""}>↓</button>
-              <button class="icon-btn danger" data-act="del">✕</button>
-            </div>
-          </div>
-          <div class="field block-layout-row" style="margin-bottom:10px; ${showLayout ? "" : "display:none"}">
-            <label style="display:inline-block;margin-right:8px">배치</label>
-            <select class="block-layout">
-              <option value="grid-2" ${b.layout === "grid-2" ? "selected" : ""}>2열 (나란히)</option>
-              <option value="grid-3" ${b.layout === "grid-3" ? "selected" : ""}>3열</option>
-              <option value="grid-4" ${b.layout === "grid-4" ? "selected" : ""}>4열</option>
-            </select>
-            <span class="admin-sub" style="margin-left:8px;font-size:11px">2장 이상일 때 적용됩니다.</span>
-          </div>
-          <div class="gallery-grid block-gallery" data-gallery></div>
-          <input type="file" class="block-files" accept="image/*" multiple hidden />
-          <button type="button" class="btn btn-ghost block-add-images" style="margin-top:8px">
-            ${count ? "+ 이미지 추가" : "📤 이미지 업로드"}
-          </button>
-        </div>`;
-      }
-      return "";
-    })
-    .join("");
-
-  blocksList.querySelectorAll(".block-item").forEach((el) => {
-    const id = el.dataset.id;
-    const b = blocks.find((x) => x.id === id);
-    if (!b) return;
-    el.querySelector('[data-act="up"]').addEventListener("click", () =>
-      moveBlock(id, -1),
-    );
-    el.querySelector('[data-act="down"]').addEventListener("click", () =>
-      moveBlock(id, 1),
-    );
-    el.querySelector('[data-act="del"]').addEventListener("click", () =>
-      removeBlock(id),
-    );
-
-    if (b.type === "text") {
-      el.querySelector(".block-text").addEventListener("input", (e) => {
-        b.content = e.target.value;
+// 이미지 버튼 → R2 업로드(webp 자동 압축) 후 본문에 삽입
+quill.getModule("toolbar").addHandler("image", () => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.onchange = async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const range = quill.getSelection(true);
+    try {
+      adminUtil.toast("이미지 업로드 중...");
+      const res = await adminUtil.uploadImage(file, {
+        folder: "community/posts",
       });
-      return;
+      quill.insertEmbed(range.index, "image", res.url, "user");
+      quill.setSelection(range.index + 1, 0, "user");
+      adminUtil.toast("업로드 완료");
+    } catch (err) {
+      adminUtil.toast("업로드 실패: " + (err.message || err), "error");
     }
+  };
+  input.click();
+});
 
-    if (b.type === "image") {
-      const layoutSel = el.querySelector(".block-layout");
-      const layoutRow = el.querySelector(".block-layout-row");
-      const galleryEl = el.querySelector("[data-gallery]");
-      const addBtn = el.querySelector(".block-add-images");
-      const fileInput = el.querySelector(".block-files");
-
-      layoutSel.addEventListener("change", () => {
-        b.layout = layoutSel.value;
-      });
-
-      function updateLabel() {
-        const tag = el.querySelector(".block-tag");
-        if (!tag) return;
-        const idx = blocks.findIndex((x) => x.id === b.id) + 1;
-        const n = b.images.length;
-        const label =
-          n === 0 ? "이미지" : n === 1 ? "이미지 1장" : `이미지 ${n}장`;
-        tag.textContent = `${idx}. ${label}`;
-      }
-
-      function updateLayoutVisibility() {
-        layoutRow.style.display = b.images.length > 1 ? "" : "none";
-        addBtn.textContent = b.images.length
-          ? "+ 이미지 추가"
-          : "📤 이미지 업로드";
-      }
-
-      function renderGallery() {
-        galleryEl.innerHTML = "";
-        if (!b.images.length) {
-          galleryEl.innerHTML =
-            '<div class="gallery-empty">아직 추가된 이미지가 없습니다.</div>';
-          return;
-        }
-        b.images.forEach((url, j) => {
-          const item = document.createElement("div");
-          item.className = "gallery-item";
-          item.draggable = true;
-          item.dataset.index = String(j);
-          item.style.backgroundImage = `url('${url}')`;
-          item.innerHTML = `
-            <span class="gallery-item-order">${j + 1}</span>
-            <button type="button" class="gallery-item-remove" data-act="del" title="제거">✕</button>
-          `;
-          item
-            .querySelector('[data-act="del"]')
-            .addEventListener("click", (e) => {
-              e.stopPropagation();
-              b.images.splice(j, 1);
-              renderGallery();
-              updateLabel();
-              updateLayoutVisibility();
-            });
-          galleryEl.appendChild(item);
-        });
-      }
-
-      addBtn.addEventListener("click", () => fileInput.click());
-      fileInput.addEventListener("change", async () => {
-        const files = Array.from(fileInput.files || []);
-        if (!files.length) return;
-        adminUtil.toast(`${files.length}개 업로드 중...`);
-        let ok = 0,
-          fail = 0;
-        for (const f of files) {
-          try {
-            const res = await adminUtil.uploadImage(f, {
-              folder: "community/posts",
-            });
-            b.images.push(res.url);
-            renderGallery();
-            updateLabel();
-            updateLayoutVisibility();
-            ok++;
-          } catch {
-            fail++;
-          }
-        }
-        adminUtil.toast(
-          `업로드 완료 (${ok}성공${fail ? " / " + fail + "실패" : ""})`,
-        );
-        fileInput.value = "";
-      });
-
-      adminUtil.initDragSort({
-        container: galleryEl,
-        itemSelector: ".gallery-item",
-        onReorder: (src, dest) => {
-          const moved = b.images.splice(src, 1)[0];
-          b.images.splice(dest, 0, moved);
-          renderGallery();
-        },
-      });
-
-      renderGallery();
-      updateLayoutVisibility();
-    }
-  });
+// 동영상 버튼 → 유튜브/비메오 watch URL 을 embed URL 로 변환
+function toEmbedUrl(raw) {
+  const url = (raw || "").trim();
+  if (!url) return "";
+  let m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/);
+  if (m) return `https://www.youtube.com/embed/${m[1]}`;
+  m = url.match(/youtube\.com\/embed\/([\w-]{11})/);
+  if (m) return `https://www.youtube.com/embed/${m[1]}`;
+  m = url.match(/vimeo\.com\/(\d+)/);
+  if (m) return `https://player.vimeo.com/video/${m[1]}`;
+  return url; // 이미 embed 형식이거나 기타 — 그대로
 }
+quill.getModule("toolbar").addHandler("video", () => {
+  const raw = prompt("유튜브 또는 비메오 영상 주소를 입력하세요");
+  if (!raw) return;
+  const embed = toEmbedUrl(raw);
+  const range = quill.getSelection(true);
+  quill.insertEmbed(range.index, "video", embed, "user");
+  quill.setSelection(range.index + 1, 0, "user");
+});
 
-document
-  .getElementById("btnAddText")
-  .addEventListener("click", () => addBlock("text"));
-document
-  .getElementById("btnAddImage")
-  .addEventListener("click", () => addBlock("image"));
-
-// ========== 썸네일 ==========
+// ---------- 썸네일 ----------
 function renderThumbPreview(url) {
   const el = document.getElementById("thumbPreview");
   const clr = document.getElementById("btnClearThumb");
@@ -282,7 +114,54 @@ document.getElementById("btnClearThumb").addEventListener("click", () => {
   renderThumbPreview("");
 });
 
-// ========== 취소 / 저장 ==========
+// ---------- 카테고리 (드롭다운 + 직접입력) ----------
+const categorySelect = document.getElementById("categorySelect");
+const categoryCustom = document.getElementById("categoryCustom");
+const PRESET_CATEGORIES = ["디자인제안", "포트폴리오", "상업공간"];
+
+function setCategoryUI(value) {
+  const v = (value || "").trim();
+  if (v && !PRESET_CATEGORIES.includes(v)) {
+    categorySelect.value = "__custom";
+    categoryCustom.classList.remove("hidden");
+    categoryCustom.value = v;
+  } else {
+    categorySelect.value = v || "디자인제안";
+    categoryCustom.classList.add("hidden");
+    categoryCustom.value = v || "디자인제안";
+  }
+}
+// metaForm.elements.category 는 categoryCustom(name=category) 가 단일 소스.
+categorySelect.addEventListener("change", () => {
+  if (categorySelect.value === "__custom") {
+    categoryCustom.classList.remove("hidden");
+    categoryCustom.value = "";
+    categoryCustom.focus();
+  } else {
+    categoryCustom.classList.add("hidden");
+    categoryCustom.value = categorySelect.value;
+  }
+});
+
+// ---------- 본문 → 파생 데이터 ----------
+function getBodyHtml() {
+  const html = quill.root.innerHTML.trim();
+  // Quill 빈 상태는 "<p><br></p>" → 빈 문자열 처리
+  if (!html || html === "<p><br></p>" || quill.getText().trim() === "")
+    return "";
+  return html;
+}
+
+function extractImagesFromHtml(html) {
+  if (!html) return [];
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return Array.from(tmp.querySelectorAll("img"))
+    .map((img) => img.getAttribute("src"))
+    .filter(Boolean);
+}
+
+// ---------- 취소 / 저장 ----------
 document.getElementById("btnCancel").addEventListener("click", () => {
   if (confirm("변경사항을 버리고 목록으로 돌아갈까요?"))
     location.href = "community";
@@ -290,43 +169,24 @@ document.getElementById("btnCancel").addEventListener("click", () => {
 
 document.getElementById("btnSave").addEventListener("click", async () => {
   const btn = document.getElementById("btnSave");
-  btn.disabled = true;
   const f = metaForm.elements;
   const title = f.title.value.trim();
   if (!title) {
     adminUtil.toast("제목은 필수입니다", "error");
-    btn.disabled = false;
     return;
   }
+  btn.disabled = true;
+
   const idx = f.idx.value.trim() || generateIdx();
+  const bodyHtml = getBodyHtml();
+  const bodyText = quill
+    .getText()
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const images = extractImagesFromHtml(bodyHtml);
 
-  const cleaned = blocks
-    .map((b) => {
-      if (b.type === "text") {
-        const c = (b.content || "").trim();
-        return c ? { type: "text", content: c } : null;
-      }
-      if (b.type === "image") {
-        const imgs = (b.images || []).filter(Boolean);
-        if (!imgs.length) return null;
-        const layout = /^grid-(2|3|4)$/.test(b.layout || "")
-          ? b.layout
-          : "grid-2";
-        return { type: "image", images: imgs, layout };
-      }
-      return null;
-    })
-    .filter(Boolean);
-
-  const allImages = [];
-  cleaned.forEach((b) => {
-    if (b.type === "image" && Array.isArray(b.images))
-      allImages.push(...b.images);
-  });
-  const bodyText = cleaned
-    .filter((b) => b.type === "text")
-    .map((b) => b.content)
-    .join("\n\n");
+  // 썸네일 미지정 시 본문 첫 이미지 자동 사용
+  const finalThumb = thumbUrl || images[0] || "";
   const excerpt =
     (f.excerpt.value || "").trim() ||
     bodyText.replace(/\s+/g, " ").trim().slice(0, 80);
@@ -334,15 +194,16 @@ document.getElementById("btnSave").addEventListener("click", async () => {
   const payload = {
     idx,
     title,
-    category: f.category.value.trim(),
+    category: (f.category.value || "").trim(),
     date: f.date.value,
     board: f.board.value,
-    thumb: thumbUrl,
+    thumb: finalThumb,
     views: 0,
     excerpt,
     body_text: bodyText,
-    images: allImages,
-    content_blocks: cleaned,
+    body_html: bodyHtml,
+    images,
+    content_blocks: [], // 위지윅 글은 HTML 단일 소스 (공개페이지 HTML 경로 사용)
   };
 
   try {
@@ -364,42 +225,65 @@ document.getElementById("btnSave").addEventListener("click", async () => {
   }
 });
 
-// ========== 초기 로드 ==========
-function normalizeBlock(b) {
-  const obj = { id: newId(), type: b.type };
-  if (b.type === "text") {
-    obj.type = "text";
-    obj.content = b.content || "";
-    return obj;
-  }
-  // 기존 image (단일 src) → images 배열로 승격
-  if (b.type === "image") {
-    obj.type = "image";
-    obj.images = Array.isArray(b.images)
-      ? b.images.slice()
-      : b.src
-        ? [b.src]
-        : [];
-    obj.layout = /^grid-(2|3|4)$/.test(b.layout || "") ? b.layout : "grid-2";
-    return obj;
-  }
-  // 기존 gallery → image 타입으로 통일
-  if (b.type === "gallery") {
-    obj.type = "image";
-    obj.images = Array.isArray(b.images) ? b.images.slice() : [];
-    obj.layout = /^grid-(2|3|4)$/.test(b.layout || "") ? b.layout : "grid-2";
-    return obj;
-  }
-  return null;
+// ---------- 기존 블록(content_blocks) → HTML 변환 (편집 시 마이그) ----------
+function blocksToHtml(blocks) {
+  let html = "";
+  (blocks || []).forEach((b) => {
+    if (!b) return;
+    if (b.type === "text") {
+      const content = (b.content || "").trim();
+      if (!content) return;
+      content.split(/\n{2,}/).forEach((para) => {
+        const safe = adminUtil.escapeHtml(para.trim()).replace(/\n/g, "<br>");
+        if (safe) html += `<p>${safe}</p>`;
+      });
+    } else if (b.type === "image" || b.type === "gallery") {
+      const imgs =
+        Array.isArray(b.images) && b.images.length
+          ? b.images
+          : b.src
+            ? [b.src]
+            : [];
+      imgs.forEach((url) => {
+        if (url) html += `<p><img src="${url}"></p>`;
+      });
+    }
+  });
+  return html;
 }
 
+function textToHtml(text) {
+  if (!text) return "";
+  return text
+    .split(/\n{2,}/)
+    .map((p) => adminUtil.escapeHtml(p.trim()).replace(/\n/g, "<br>"))
+    .filter(Boolean)
+    .map((p) => `<p>${p}</p>`)
+    .join("");
+}
+
+function loadBodyIntoEditor(post) {
+  let html = "";
+  if (post.body_html && post.body_html.trim()) {
+    html = post.body_html;
+  } else if (Array.isArray(post.content_blocks) && post.content_blocks.length) {
+    html = blocksToHtml(post.content_blocks);
+  } else if (post.body_text) {
+    html = textToHtml(post.body_text);
+  }
+  if (html) {
+    quill.clipboard.dangerouslyPasteHTML(html);
+  }
+}
+
+// ---------- 초기 로드 ----------
 (async () => {
   if (IS_NEW) {
     metaForm.elements.idx.value = generateIdx();
     metaForm.elements.board.value = "Residential";
     metaForm.elements.date.value = new Date().toISOString().slice(0, 10);
+    setCategoryUI("디자인제안");
     renderThumbPreview("");
-    renderBlocks();
     return;
   }
   if (!IDX_PARAM) {
@@ -414,14 +298,13 @@ function normalizeBlock(b) {
     const p = d.post || {};
     metaForm.elements.idx.value = p.idx || IDX_PARAM;
     metaForm.elements.title.value = p.title || "";
-    metaForm.elements.category.value = p.category || "";
     metaForm.elements.date.value = (p.date || "").slice(0, 10);
     metaForm.elements.board.value = p.board || "Residential";
     metaForm.elements.excerpt.value = p.excerpt || "";
+    setCategoryUI(p.category || "");
     thumbUrl = p.thumb || "";
     renderThumbPreview(thumbUrl);
-    blocks = (p.content_blocks || []).map(normalizeBlock).filter(Boolean);
-    renderBlocks();
+    loadBodyIntoEditor(p);
   } catch (e) {
     adminUtil.toast("로드 실패: " + e.message, "error");
   }
