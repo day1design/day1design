@@ -24,6 +24,7 @@ import {
   handlePixelEvents,
   handlePixelEventsAdmin,
 } from "./routes/pixel-events.js";
+import { handleWorks } from "./routes/works.js";
 import { cors, preflight } from "./lib/cors.js";
 import { jsonError } from "./lib/response.js";
 import { notifyTelegram } from "./lib/telegram.js";
@@ -206,6 +207,13 @@ async function handleApi(request, env, ctx, path) {
     res = await handlePixelEvents(request, env, ctx);
   } else if (path.startsWith("/api/admin/pixel-events")) {
     res = await handlePixelEventsAdmin(request, env);
+  } else if (
+    path === "/api/whoami" ||
+    path === "/api/clients" ||
+    path === "/api/works" ||
+    path.startsWith("/api/works/")
+  ) {
+    res = await handleWorks(request, env, ctx, services);
   } else {
     res = jsonError(404, "Not Found");
   }

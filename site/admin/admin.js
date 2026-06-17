@@ -278,6 +278,13 @@ const MENU = [
     shortLabel: "로그",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v4H4z"/><path d="M4 12h16v4H4z"/><path d="M4 20h10"/></svg>',
   },
+  {
+    nav: "works",
+    href: "works",
+    label: "업무관리",
+    shortLabel: "업무",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 3h6v3H9z"/><path d="M8.5 12l2 2 4-4"/></svg>',
+  },
 ];
 
 function renderSidebar(currentNav) {

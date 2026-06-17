@@ -123,6 +123,16 @@ export function classifyAccess(request, opts = {}) {
     return { role: "admin", method, path };
   }
 
+  // 업무관리: 어드민 호스트(공유 로그인)에서 사용, 작성권한은 phone4 로 라우트가 구분.
+  if (
+    path === "/api/whoami" ||
+    path === "/api/clients" ||
+    path === "/api/works" ||
+    path.startsWith("/api/works/")
+  ) {
+    return { role: "admin", method, path };
+  }
+
   return { role: "unknown", method, path };
 }
 

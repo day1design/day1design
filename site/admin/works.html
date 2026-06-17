@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>업무관리 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260617-works" />
+    <style>
+      .works-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+      }
+      @media (max-width: 980px) {
+        .works-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .cal-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 6px;
+      }
+      .cal-dow {
+        text-align: center;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--c-text-muted);
+        padding-bottom: 4px;
+      }
+      .cal-cell {
+        aspect-ratio: 1 / 1;
+        border-radius: 8px;
+        padding: 6px;
+        text-align: left;
+        position: relative;
+        border: 1px solid transparent;
+        cursor: pointer;
+        font: inherit;
+      }
+      .cal-cell .d {
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .cal-cell .n {
+        position: absolute;
+        right: 5px;
+        bottom: 4px;
+        font-size: 10px;
+        font-weight: 800;
+        opacity: 0.85;
+      }
+      .cal-cell .issue {
+        position: absolute;
+        right: 5px;
+        top: 5px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #f59e0b;
+      }
+      .cal-cell.sel {
+        outline: 2px solid var(--c-brand);
+        outline-offset: -2px;
+      }
+      /* 데이원디자인 브랜드(토프) 톤 히트맵 농도 */
+      .lv0 {
+        background: #eef0f3;
+      }
+      .lv1 {
+        background: #e0d9cc;
+      }
+      .lv2 {
+        background: #c3b89f;
+        color: #3f3a31;
+      }
+      .lv3 {
+        background: #8a7e68;
+        color: #fff;
+      }
+      .lv4 {
+        background: #5a5448;
+        color: #fff;
+      }
+      .legend {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--c-text-muted);
+      }
+      .legend i {
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        display: inline-block;
+      }
+      .day-cards {
+        overflow-y: auto;
+        max-height: calc(100vh - 230px);
+        padding-right: 4px;
+      }
+      .wcard {
+        background: #fff;
+        border: 1px solid var(--c-border);
+        border-radius: 10px;
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+        margin-bottom: 12px;
+      }
+      .wcard.issue {
+        border-color: #fcd9a3;
+      }
+      .wtype {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 9px;
+        border-radius: 999px;
+      }
+      .t-완료 {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .t-진행 {
+        background: #dbeafe;
+        color: #1d4ed8;
+      }
+      .t-특이사항 {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .thread {
+        border-top: 1px solid var(--c-border-soft);
+        background: #fafbfc;
+        padding: 12px 14px;
+      }
+      .msg {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .msg.client {
+        flex-direction: row-reverse;
+      }
+      .msg .bubble {
+        max-width: 80%;
+        padding: 8px 11px;
+        border-radius: 12px;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .msg.admin .bubble {
+        background: #eef2f8;
+        border-top-left-radius: 3px;
+      }
+      .msg.client .bubble {
+        background: var(--c-brand-soft);
+        border-top-right-radius: 3px;
+      }
+      .msg .who {
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .msg .meta {
+        font-size: 10px;
+        color: var(--c-text-muted);
+        margin-top: 3px;
+      }
+      .auth-box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .auth-chip {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 999px;
+      }
+      .auth-ok {
+        background: var(--c-brand-soft);
+        color: var(--c-brand);
+      }
+      .auth-no {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+    </style>
+    <script>
+      window.ADMIN_PAGE = { title: "업무관리", nav: "works" };
+    </script>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <div class="page-header">
+          <div>
+            <h2>업무관리</h2>
+            <p>
+              폴라애드가 데이원디자인 업무내용·완료·특이사항을 기록하고,
+              데이원디자인(광고주)이 코멘트로 피드백합니다. 작성 시
+              <b>전화번호 뒤 4자리</b>로 작성자가 식별되며(번호 비노출, 명칭으로
+              표기) IP·시각이 기록됩니다.
+            </p>
+          </div>
+        </div>
+
+        <!-- 작성자 인증 + 업체/월 선택 -->
+        <div class="card" style="margin-bottom: 16px">
+          <div
+            class="auth-box"
+            style="justify-content: space-between; gap: 14px"
+          >
+            <div class="auth-box">
+              <label style="font-size: 12px; color: var(--c-text-sub)"
+                >업체</label
+              >
+              <select
+                id="clientSel"
+                style="
+                  padding: 8px 11px;
+                  border: 1px solid var(--c-border);
+                  border-radius: 7px;
+                  font: inherit;
+                "
+              ></select>
+              <label
+                style="
+                  font-size: 12px;
+                  color: var(--c-text-sub);
+                  margin-left: 8px;
+                "
+                >월</label
+              >
+              <input
+                type="month"
+                id="monthSel"
+                value="2026-06"
+                style="
+                  padding: 8px 11px;
+                  border: 1px solid var(--c-border);
+                  border-radius: 7px;
+                  font: inherit;
+                "
+              />
+            </div>
+            <div class="auth-box">
+              <span style="font-size: 12px; color: var(--c-text-sub)"
+                >작성자</span
+              >
+              <button
+                id="authChip"
+                type="button"
+                class="auth-chip auth-no"
+                style="border: 0; cursor: pointer"
+              >
+                미인증 · 번호 입력
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="works-grid">
+          <!-- 캘린더 -->
+          <section class="card" style="margin: 0">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 12px;
+              "
+            >
+              <b id="calLabel" style="font-size: 16px">2026. 06</b>
+              <div class="legend">
+                <span>적음</span>
+                <i class="lv0"></i><i class="lv1"></i><i class="lv2"></i
+                ><i class="lv3"></i><i class="lv4"></i>
+                <span>많음</span>
+                <span style="margin-left: 6px"
+                  ><span
+                    style="
+                      display: inline-block;
+                      width: 7px;
+                      height: 7px;
+                      border-radius: 50%;
+                      background: #f59e0b;
+                    "
+                  ></span>
+                  특이사항</span
+                >
+              </div>
+            </div>
+            <div class="cal-grid" style="margin-bottom: 6px">
+              <div class="cal-dow">일</div>
+              <div class="cal-dow">월</div>
+              <div class="cal-dow">화</div>
+              <div class="cal-dow">수</div>
+              <div class="cal-dow">목</div>
+              <div class="cal-dow">금</div>
+              <div class="cal-dow">토</div>
+            </div>
+            <div class="cal-grid" id="cal"></div>
+            <div
+              id="calSummary"
+              style="
+                margin-top: 14px;
+                font-size: 12px;
+                color: var(--c-text-sub);
+                display: flex;
+                gap: 16px;
+              "
+            ></div>
+          </section>
+
+          <!-- 선택 날짜 업무 -->
+          <section>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 12px;
+              "
+            >
+              <h3
+                id="selDate"
+                style="font-size: 16px; font-weight: 800; margin: 0"
+              >
+                —
+              </h3>
+              <span id="selCount" class="badge">—</span>
+              <button
+                class="btn btn-primary btn-sm"
+                id="btnAddWork"
+                style="margin-left: auto"
+              >
+                + 업무 기록
+              </button>
+            </div>
+            <div class="day-cards" id="dayCards"></div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <!-- 번호 인증 모달 (작성 시 1회) -->
+    <div class="modal" id="authModal" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-panel" style="max-width: 380px">
+        <div class="modal-head">
+          <h2>작성자 확인</h2>
+          <button class="modal-x" type="button" data-close>&times;</button>
+        </div>
+        <div class="modal-body">
+          <p
+            style="font-size: 13px; color: var(--c-text-sub); margin: 0 0 14px"
+          >
+            전화번호 <b>뒤 4자리</b>를 입력하면 작성자(폴라애드/데이원디자인)가
+            자동 확인됩니다. 번호는 화면에 표시되지 않고 기록용으로만
+            저장됩니다.
+          </p>
+          <div class="field" style="margin-bottom: 8px">
+            <label>전화번호 뒤 4자리</label>
+            <input
+              id="authPhone"
+              type="tel"
+              inputmode="numeric"
+              maxlength="4"
+              placeholder="0000"
+              style="letter-spacing: 4px; font-size: 18px; text-align: center"
+            />
+          </div>
+          <div
+            id="authMsg"
+            style="font-size: 12px; min-height: 16px; margin-bottom: 8px"
+          ></div>
+          <div class="form-actions" style="margin-top: 4px">
+            <button class="btn btn-ghost" type="button" data-close>취소</button>
+            <button class="btn btn-primary" type="button" id="authConfirm">
+              확인
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 업무 기록 추가 모달 -->
+    <div class="modal" id="workModal" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-panel">
+        <div class="modal-head">
+          <h2 id="workModalTitle">업무 기록 추가</h2>
+          <button class="modal-x" type="button" data-close>&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="field-inline">
+            <div class="field">
+              <label>유형</label>
+              <select id="wType">
+                <option value="완료">완료사항</option>
+                <option value="진행">진행</option>
+                <option value="특이사항">특이사항</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>날짜</label>
+              <input type="date" id="wDate" />
+            </div>
+            <div class="field">
+              <label>작성</label>
+              <input id="wAuthor" disabled placeholder="번호 인증 필요" />
+            </div>
+          </div>
+          <div class="field">
+            <label>제목 <span class="req">*</span></label>
+            <input
+              type="text"
+              id="wTitle"
+              placeholder="예: 6월 2주차 캠페인 최적화"
+            />
+          </div>
+          <div class="field">
+            <label>내용</label>
+            <textarea
+              id="wBody"
+              placeholder="업무내용 / 완료사항 / 진행 특이사항"
+            ></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-ghost" type="button" data-close>닫기</button>
+            <button class="btn btn-primary" type="button" id="wSave">
+              기록 추가
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script defer src="config.js"></script>
+    <script defer src="admin.js?v=20260602-pixel-data"></script>
+    <script defer src="works.js?v=20260617"></script>
+  </body>
+</html>

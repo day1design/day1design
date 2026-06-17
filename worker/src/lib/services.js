@@ -70,6 +70,9 @@ export function createServices(env = {}) {
   return {
     estimates: createTableRepository(env, "Estimates"),
     estimateMemos: createTableRepository(env, "EstimateMemos"),
+    clients: createTableRepository(env, "Clients"),
+    works: createTableRepository(env, "Works"),
+    workComments: createTableRepository(env, "WorkComments"),
     heroSlides: createTableRepository(env, "HeroSlides"),
     portfolio: createTableRepository(env, "Portfolio"),
     community: createTableRepository(env, "Community"),
