@@ -42,7 +42,7 @@
 .about-hero {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 40px 40px 60px;
+  padding: calc(var(--header-height) + 80px) 40px 60px;
   display: grid;
   grid-template-columns: minmax(420px, 0.98fr) minmax(520px, 1.02fr);
   gap: 56px;
@@ -452,7 +452,7 @@
     font-size: 12px;
   }
   .about-hero {
-    padding: 30px 20px 40px;
+    padding: calc(var(--header-height) + 48px) 20px 40px;
   }
   .hero-title-kr {
     font-size: 24px;
