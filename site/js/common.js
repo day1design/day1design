@@ -342,10 +342,6 @@ if (hamburger) {
 // ========== HEADER DROPDOWN LNB (hover) ==========
 (function injectNavDropdowns() {
   const DROPDOWNS = {
-    "ABOUT US": [
-      { label: "DAYONE IS", href: "about.html" },
-      { label: "PROJECT FLOW", href: "project-flow.html" },
-    ],
     PORTFOLIO: [
       { label: "HOUSE 전체", href: "portfolio.html" },
       { label: "20~30평", href: "portfolio.html?size=20-30" },
@@ -547,10 +543,6 @@ if (hamburger) {
   if (!tabbar) return;
 
   const SUBMENUS = {
-    about: [
-      { label: "DAYONE IS", href: "about.html" },
-      { label: "PROJECT FLOW", href: "project-flow.html" },
-    ],
     portfolio: [
       { label: "HOUSE 전체", href: "portfolio.html" },
       { label: "20~30평", href: "portfolio.html?size=20-30" },
