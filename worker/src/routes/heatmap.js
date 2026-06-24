@@ -1,7 +1,8 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import { clientIP, validateContentType } from "../lib/security.js";
+import { clientIP, validateContentType, escapeHtml } from "../lib/security.js";
 import { generateId } from "../lib/d1.js";
+import { notifyTelegram } from "../lib/telegram.js";
 
 // 히트맵은 빈도가 높아 일반 폼 rate-limit(10/h)보다 관대
 const HEATMAP_RATE_LIMIT_PER_HOUR = 1000;
@@ -89,6 +90,70 @@ function safeReferrerHost(s) {
   }
 }
 
+// ─── 봇 트래픽 판별 (유입통계 오염 차단) ─────────────────────────
+// 사용자 정책: 정상 검색 유입·일반(식별가능) 봇은 살리고, 그 패턴에서
+//   벗어난 "위장 봇"만 차단. 비파괴 태깅(IsBot=1) → 집계에서만 제외.
+// 신호 ① UA 가 봇/헤드리스/HTTP클라이언트 시그니처거나 비어있음
+//      ② 검색엔진 referrer 를 달고 들어왔는데 국가가 KR 이 아님
+//         (국내 전용 사업 특성상 해외發 "검색 유입"은 위조 봇으로 간주)
+const BOT_UA_RE =
+  /bot|crawl|spider|slurp|headless|phantom|puppeteer|playwright|python|curl|wget|axios|node-fetch|go-http|java\/|okhttp|scrapy|httpclient|libwww|lighthouse|semrush|ahrefs|mj12|petalbot|dataprovider/i;
+const SEARCH_REF_RE =
+  /(^|\.)(google|naver|bing|daum|yahoo|yandex|baidu|duckduckgo)\./i;
+
+function isBotUserAgent(userAgent) {
+  const ua = String(userAgent || "").trim();
+  if (!ua) return true; // UA 비어있음 = 봇
+  return BOT_UA_RE.test(ua);
+}
+
+function isSpoofedSearch(referrerHost, country) {
+  const c = String(country || "").toUpperCase();
+  if (!c || c === "KR") return false; // 국가 미상/국내는 정상 취급
+  return SEARCH_REF_RE.test(String(referrerHost || ""));
+}
+
+// 봇 급증 알림 — 1건마다가 아니라 시간당(엣지별) 임계치 초과 시 1회만.
+// Cache API 는 콜로별이라 분산공격 시 콜로당 1회 알림될 수 있음(과알림보다 안전).
+const BOT_BURST_ALERT_THRESHOLD = 50;
+
+async function maybeAlertBotBurst(env, delta, sample) {
+  try {
+    const cache = caches.default;
+    const hourKey = new Date().toISOString().slice(0, 13); // UTC YYYY-MM-DDThh
+    const countKey = `https://bot-burst.heatmap.internal/count/${hourKey}`;
+    const alertKey = `https://bot-burst.heatmap.internal/alert/${hourKey}`;
+
+    const cached = await cache.match(countKey);
+    let count = cached ? parseInt(await cached.text(), 10) || 0 : 0;
+    count += delta;
+    await cache.put(
+      countKey,
+      new Response(String(count), {
+        headers: { "cache-control": "max-age=3600" },
+      }),
+    );
+    if (count < BOT_BURST_ALERT_THRESHOLD) return;
+    if (await cache.match(alertKey)) return; // 이 시간대 이미 알림함
+    await cache.put(
+      alertKey,
+      new Response("1", { headers: { "cache-control": "max-age=3600" } }),
+    );
+
+    const s = sample || {};
+    const msg =
+      `[day1design/heatmap] 🤖 봇 유입 급증 감지·차단\n` +
+      `위장 검색/비정상 봇 트래픽을 집계에서 자동 제외 중입니다.\n\n` +
+      `• 시각(UTC): ${escapeHtml(new Date().toISOString())}\n` +
+      `• 누적 봇 이벤트(이 엣지/시간): ${count}건 (임계 ${BOT_BURST_ALERT_THRESHOLD})\n` +
+      `• 표본 IP: ${escapeHtml(s.ip || "-")} (${escapeHtml(s.country || "-")})\n` +
+      `• 표본 유입: ${escapeHtml(s.referrer || "-")} → ${escapeHtml(s.page || "-")}\n\n` +
+      `유입통계는 IsBot=0 만 집계하므로 실제 수치 영향 없음.\n` +
+      `관리자 › 유입통계에서 정상 수치 확인 가능합니다.`;
+    await notifyTelegram(env, msg);
+  } catch (_) {}
+}
+
 export async function handleHeatmap(request, env, ctx, services) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/heatmap/, "") || "/";
@@ -145,9 +210,12 @@ async function trackEvents(request, env, ctx) {
   const region = safeStr(cf.region, 80);
   const city = safeStr(cf.city, 80);
   const nowIso = new Date().toISOString();
+  const uaBot = isBotUserAgent(request.headers.get("user-agent"));
 
   const stmts = [];
   let accepted = 0;
+  let botCount = 0;
+  let botSample = null;
 
   for (const e of events) {
     const type = e?.type;
@@ -167,12 +235,20 @@ async function trackEvents(request, env, ctx) {
     // page_view는 좌표/스크롤 불필요 (방문 자체만 기록)
 
     const id = generateId();
+    const refHost = safeReferrerHost(e.referrer);
+    const evIsBot = uaBot || isSpoofedSearch(refHost, country) ? 1 : 0;
+    if (evIsBot) {
+      botCount++;
+      if (!botSample) {
+        botSample = { ip, country, referrer: refHost, page };
+      }
+    }
     const sql = `INSERT INTO HeatmapEvents
       (id, Page, EventType, Device, XPct, YPct, ScrollDepthPct,
        PageW, PageH, ViewportW, ViewportH,
        SessionId, IP, Country, Region, City,
-       Referrer, UtmSource, UtmMedium, UtmCampaign, CreatedAt)
-      VALUES (?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?)`;
+       Referrer, UtmSource, UtmMedium, UtmCampaign, CreatedAt, IsBot)
+      VALUES (?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?)`;
     stmts.push(
       env.DB.prepare(sql).bind(
         id,
@@ -191,11 +267,12 @@ async function trackEvents(request, env, ctx) {
         country,
         region,
         city,
-        safeReferrerHost(e.referrer),
+        refHost,
         safeStr(e?.utm?.source, 100),
         safeStr(e?.utm?.medium, 100),
         safeStr(e?.utm?.campaign, 100),
         nowIso,
+        evIsBot,
       ),
     );
     accepted++;
@@ -208,6 +285,12 @@ async function trackEvents(request, env, ctx) {
   } catch (err) {
     return jsonError(500, "DB error", { detail: String(err?.message || err) });
   }
+
+  // 봇 급증 시 관리자 텔레그램 알림 (조용한 감지 금지 — 시간당 임계치 throttle)
+  if (botCount > 0 && ctx?.waitUntil) {
+    ctx.waitUntil(maybeAlertBotBurst(env, botCount, botSample));
+  }
+
   return jsonOk({ accepted });
 }
 
@@ -223,7 +306,7 @@ async function listEvents(request, env) {
     5000,
   );
 
-  const where = [];
+  const where = ["IsBot = 0"];
   const args = [];
   if (page) {
     where.push("Page = ?");
@@ -274,6 +357,7 @@ async function listPages(request, env) {
       COUNT(DISTINCT SessionId) AS UniqueSessions,
       MAX(CreatedAt) AS LastEventAt
     FROM HeatmapEvents
+    WHERE IsBot = 0
     GROUP BY Page
     ORDER BY Clicks DESC, Scrolls DESC
   `;

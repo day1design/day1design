@@ -114,6 +114,7 @@ async function getFunnel(request, env) {
          WHERE EventType = 'page_view'
            AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
            AND SessionId != ''
+           AND IsBot = 0
        )
        SELECT Page, COUNT(*) AS Cnt
        FROM first_event
@@ -134,6 +135,7 @@ async function getFunnel(request, env) {
          WHERE EventType = 'page_view'
            AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
            AND SessionId != ''
+           AND IsBot = 0
        )
        SELECT Page, COUNT(*) AS Cnt
        FROM ordered
@@ -151,7 +153,8 @@ async function getFunnel(request, env) {
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
          AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''`,
+         AND SessionId != ''
+         AND IsBot = 0`,
     )
       .bind(startDate, endDate)
       .first();
@@ -878,7 +881,8 @@ async function fetchLiveTouches(env, range) {
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
          AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''`,
+         AND SessionId != ''
+         AND IsBot = 0`,
     )
       .bind(range.startDate, range.endDate)
       .first();
@@ -917,7 +921,8 @@ async function fetchSelfStats(env, range) {
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
          AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''`,
+         AND SessionId != ''
+         AND IsBot = 0`,
     )
       .bind(startDate, endDate)
       .first();
@@ -933,10 +938,12 @@ async function fetchSelfStats(env, range) {
        WHERE a.EventType = 'page_view'
          AND substr(datetime(a.CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND a.SessionId != ''
+         AND a.IsBot = 0
          AND EXISTS (
            SELECT 1 FROM HeatmapEvents b
            WHERE b.SessionId = a.SessionId
              AND b.EventType = 'page_view'
+             AND b.IsBot = 0
              AND substr(datetime(b.CreatedAt, '+9 hours'), 1, 10) != substr(datetime(a.CreatedAt, '+9 hours'), 1, 10)
          )`,
     )
@@ -955,7 +962,8 @@ async function fetchSelfStats(env, range) {
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
          AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''`,
+         AND SessionId != ''
+         AND IsBot = 0`,
     )
       .bind(startDate, endDate)
       .first();
@@ -973,6 +981,7 @@ async function fetchSelfStats(env, range) {
          FROM HeatmapEvents
          WHERE substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
            AND SessionId != ''
+           AND IsBot = 0
          GROUP BY SessionId, substr(datetime(CreatedAt, '+9 hours'), 1, 10)
          HAVING COUNT(*) > 1
        )`,
@@ -989,6 +998,7 @@ async function fetchSelfStats(env, range) {
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
          AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
+         AND IsBot = 0
        GROUP BY Hour
        ORDER BY Cnt DESC
        LIMIT 1`,
@@ -1010,6 +1020,7 @@ async function fetchSelfStats(env, range) {
        WHERE EventType = 'page_view'
          AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''
+         AND IsBot = 0
        GROUP BY Device`,
     )
       .bind(startDate, endDate)
@@ -1032,6 +1043,7 @@ async function fetchSelfStats(env, range) {
        WHERE EventType = 'page_view'
          AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''
+         AND IsBot = 0
        GROUP BY City, Country
        ORDER BY Cnt DESC
        LIMIT 5`,
@@ -1074,6 +1086,7 @@ async function fetchSelfStats(env, range) {
        WHERE EventType = 'page_view'
          AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''
+         AND IsBot = 0
        GROUP BY src, med, ref`,
     )
       .bind(startDate, endDate)
@@ -1107,6 +1120,7 @@ async function fetchSelfStats(env, range) {
        WHERE EventType = 'page_view'
          AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
          AND SessionId != ''
+         AND IsBot = 0
        GROUP BY d
        ORDER BY d ASC`,
     )
@@ -1392,7 +1406,8 @@ async function collectGoogleSummary(env, range) {
       `SELECT COUNT(DISTINCT SessionId) AS Touches
        FROM HeatmapEvents
        WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?`,
+         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
+         AND IsBot = 0`,
     )
       .bind(range.startDate, range.endDate)
       .first();
