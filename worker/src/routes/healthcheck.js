@@ -70,7 +70,7 @@ export async function handleHealth(
       sort: [{ field: "At", direction: "desc" }],
       limit,
     });
-    return jsonOk({ items: (rows.items || rows).map(eventToJson) });
+    return jsonOk({ items: rows.records.map(eventToJson) });
   }
 
   // 수동 점검 실행
@@ -96,7 +96,7 @@ export async function handleHealth(
       sort: [{ field: "CheckedAt", direction: "desc" }],
       limit: 30,
     });
-    const list = (rows.items || rows).map(parseResults);
+    const list = rows.records.map(parseResults);
     return jsonOk({ latest: list[0] || null, history: list });
   }
 
