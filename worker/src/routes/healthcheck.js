@@ -5,7 +5,7 @@
 // 모두 admin origin + 어드민 로그인(verifyAdmin) 필요.
 
 import { jsonOk, jsonError } from "../lib/response.js";
-import { verifyAdmin } from "../lib/auth.js";
+import { verifyAdmin, timingSafeEqual } from "../lib/auth.js";
 import { createServices } from "../lib/services.js";
 import { runAndReportHealth } from "../lib/healthcheck.js";
 
@@ -50,11 +50,35 @@ export async function handleHealth(
   ctx,
   services = createServices(env),
 ) {
-  if (!(await verifyAdmin(request, env))) return jsonError(401, "Unauthorized");
-
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
+
+  // 점검 실행 — 내부 시크릿(서버-서버) 또는 어드민. 사용자 UI 버튼 없음(cron 자동 + 내부 트리거 전용).
+  if (path === "/api/admin/health/run" && method === "POST") {
+    const provided = request.headers.get("x-health-secret") || "";
+    const expected = env.HEALTHCHECK_RUN_SECRET || "";
+    const internalOk = !!expected && timingSafeEqual(provided, expected);
+    if (!internalOk && !(await verifyAdmin(request, env))) {
+      return jsonError(403, "Forbidden");
+    }
+    const summary = await runAndReportHealth(env, services, {
+      triggeredBy: "manual",
+      alertOnlyOnIssue: false,
+    });
+    return jsonOk({
+      latest: {
+        id: summary.id,
+        checkedAt: summary.checkedAt,
+        overall: summary.overall,
+        triggeredBy: summary.triggeredBy,
+        results: summary.results,
+      },
+    });
+  }
+
+  // 조회(목록/이벤트)는 어드민 로그인 필요
+  if (!(await verifyAdmin(request, env))) return jsonError(401, "Unauthorized");
 
   // 작동로그 피드
   if (path === "/api/admin/health/events" && method === "GET") {
@@ -71,23 +95,6 @@ export async function handleHealth(
       limit,
     });
     return jsonOk({ items: rows.records.map(eventToJson) });
-  }
-
-  // 수동 점검 실행
-  if (path === "/api/admin/health/run" && method === "POST") {
-    const summary = await runAndReportHealth(env, services, {
-      triggeredBy: "manual",
-      alertOnlyOnIssue: false,
-    });
-    return jsonOk({
-      latest: {
-        id: summary.id,
-        checkedAt: summary.checkedAt,
-        overall: summary.overall,
-        triggeredBy: summary.triggeredBy,
-        results: summary.results,
-      },
-    });
   }
 
   // 최신 + 이력

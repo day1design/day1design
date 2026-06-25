@@ -1,6 +1,6 @@
 // ========== 시스템 상태 (헬스 점검 + 실시간 작동로그) ==========
 (function () {
-  const { api, escapeHtml, toast } = window.adminUtil;
+  const { api, escapeHtml } = window.adminUtil;
   const $ = (id) => document.getElementById(id);
 
   const ST = {
@@ -65,7 +65,7 @@
     const bar = $("hcOverall");
     if (!latest) {
       bar.className = "hc-pill st-warn";
-      bar.innerHTML = `<span class="hc-dot"></span> 점검 기록 없음 — '지금 점검'을 눌러주세요`;
+      bar.innerHTML = `<span class="hc-dot"></span> 점검 기록 없음 — 매일 04:00 자동 점검 예정`;
       $("hcMeta").textContent = "";
       $("hcCards").innerHTML =
         `<div class="empty" style="grid-column:1/-1">아직 점검 데이터가 없습니다.</div>`;
@@ -213,30 +213,7 @@
   }
 
   /* ---------- 이벤트 바인딩 ---------- */
-  $("btnRunNow").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    btn.textContent = "점검 중…";
-    try {
-      const r = await api("/api/admin/health/run", {
-        method: "POST",
-        json: {},
-      });
-      if (r && r.latest) {
-        toast("점검 완료 · 텔레그램 리포트 발송", "success");
-        await loadHealth();
-        await loadEvents();
-      } else {
-        toast("점검 실패", "error");
-      }
-    } catch {
-      toast("점검 실행 오류", "error");
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "지금 점검";
-    }
-  });
-
+  // 점검은 매일 04:00 자동 실행(cron). 사용자 수동 실행 버튼 없음.
   document.querySelectorAll("#evFilter button").forEach((b) => {
     b.addEventListener("click", () => {
       evFilter = b.dataset.f;
