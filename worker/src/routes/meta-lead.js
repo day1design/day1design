@@ -12,8 +12,8 @@ import { edgeCacheDeleteMany } from "../lib/edge-cache.js";
 import { sendMetaCapiLead } from "../lib/meta-capi.js";
 import {
   sendNcpSens,
-  META_CUSTOMER_NOTICE,
-  META_CUSTOMER_SUBJECT,
+  buildCustomerSms,
+  CUSTOMER_SMS_SUBJECT,
 } from "../lib/sens.js";
 
 const MAX_BODY_CHARS = 65536;
@@ -257,12 +257,15 @@ export async function handleMetaLead(
             campaign,
           }),
         );
-        // Meta lead 도 홈페이지 직접접수와 동일한 안내 SMS 발송 + SmsLogs 기록
+        // Meta lead 도 홈페이지 직접접수와 동일한 안내 SMS 발송 + SmsLogs 기록.
+        // 플랫폼(instagram/facebook)에 따라 인트로 문구 자동 분기.
+        const smsChannel = platform === "instagram" ? "instagram" : "facebook";
+        const smsBody = buildCustomerSms(smsChannel);
         try {
           const r = await sendNcpSens(env, {
             to: prettyPhone,
-            subject: META_CUSTOMER_SUBJECT,
-            content: META_CUSTOMER_NOTICE,
+            subject: CUSTOMER_SMS_SUBJECT,
+            content: smsBody,
           });
           const status = r.ok ? "sent" : r.skipped ? "skipped" : "failed";
           const detail = r.ok
@@ -275,8 +278,8 @@ export async function handleMetaLead(
               EstimateId: recordId,
               TemplateId: "",
               ToPhone: String(prettyPhone || "").replace(/\D/g, ""),
-              Subject: META_CUSTOMER_SUBJECT,
-              Content: META_CUSTOMER_NOTICE,
+              Subject: CUSTOMER_SMS_SUBJECT,
+              Content: smsBody,
               SmsType: r.type || "LMS",
               Status: status,
               Detail: detail.slice(0, 480),

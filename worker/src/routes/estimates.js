@@ -21,8 +21,8 @@ import { sendMetaCapiLead } from "../lib/meta-capi.js";
 import { notifyEmail, sendEmail } from "../lib/email.js";
 import {
   sendNcpSens,
-  HOMEPAGE_CUSTOMER_NOTICE,
-  HOMEPAGE_CUSTOMER_SUBJECT,
+  buildCustomerSms,
+  CUSTOMER_SMS_SUBJECT,
 } from "../lib/sens.js";
 import {
   edgeCacheGet,
@@ -840,8 +840,8 @@ async function submitEstimate(request, env, ctx, services) {
     // NCP SENS LMS — env/발신번호 미설정 시 sens.js 가 자동 skip
     sendNcpSens(env, {
       to: fields.phone,
-      subject: HOMEPAGE_CUSTOMER_SUBJECT,
-      content: HOMEPAGE_CUSTOMER_NOTICE,
+      subject: CUSTOMER_SMS_SUBJECT,
+      content: buildCustomerSms("homepage"),
     }).then((r) => {
       if (!r.ok && !r.skipped) {
         return notifyTelegram(
