@@ -18,6 +18,22 @@
     metalead: "최근 리드 유입 + 동반 SMS 발송(불일치=누락)",
   };
 
+  // 항목별 단색 SVG 아이콘 (무엇을 점검하는지 직관 표시)
+  const ICON = {
+    intake:
+      '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.5z"/>',
+    ga4: '<path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/>',
+    metadata:
+      '<path d="M3 11l18-5v12L3 14z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+    sens: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    metalead:
+      '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+  };
+  const svgIcon = (k) =>
+    ICON[k]
+      ? `<svg class="hc-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`
+      : "";
+
   const CH = {
     homepage: { label: "홈페이지", cls: "ch-home" },
     instagram: { label: "메타·인스타", cls: "ch-insta" },
@@ -95,7 +111,7 @@
         const st = ST[r.status] || ST.ok;
         return `<div class="hc-card ${r.status === "fail" ? "is-fail" : ""}">
         <div class="hc-card-top">
-          <h3>${escapeHtml(r.label)}</h3>
+          <h3>${svgIcon(r.key)}${escapeHtml(r.label)}</h3>
           <span class="hc-pill ${st.cls}" style="font-size:11px;padding:3px 9px"><span class="hc-dot"></span>${st.label}</span>
         </div>
         <div class="hc-metric">${escapeHtml(r.metric || "")}</div>

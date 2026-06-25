@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
+    <link rel="stylesheet" href="admin.css?v=20260625-gnb" />
     <script>
       window.ADMIN_PAGE = { title: "시스템 상태", nav: "health" };
     </script>
@@ -103,6 +103,19 @@
         font-size: 14px;
         font-weight: 700;
         margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .hc-ico {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        color: var(--c-brand, #5a5448);
+        opacity: 0.9;
+      }
+      .hc-card.is-fail .hc-ico {
+        color: #c5371a;
       }
       .hc-metric {
         margin-top: 8px;
@@ -515,7 +528,7 @@
     </div>
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
-    <script defer src="admin.js?v=20260602-pixel-data"></script>
-    <script defer src="health.js?v=20260625-power2"></script>
+    <script defer src="admin.js?v=20260625-gnb"></script>
+    <script defer src="health.js?v=20260625-gnb"></script>
   </body>
 </html>

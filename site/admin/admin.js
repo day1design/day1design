@@ -388,11 +388,74 @@ function bindShellEvents() {
   document.getElementById("btnLogoutTop")?.addEventListener("click", doLogout);
 }
 
+// 모바일 하단 GNB(핵심 5탭) — 자주 쓰는 4개 + '전체'. 640px 이하에서만 노출(CSS 제어).
+const MOBILE_CORE = ["home", "estimates", "sms", "health"];
+
+function renderMobileNav(currentNav) {
+  if (document.getElementById("adminBotnav")) return; // 1회만 생성
+  const core = MOBILE_CORE.map((n) => MENU.find((m) => m.nav === n)).filter(
+    Boolean,
+  );
+
+  const botnav = document.createElement("nav");
+  botnav.className = "admin-botnav";
+  botnav.id = "adminBotnav";
+  botnav.setAttribute("aria-label", "하단 메뉴");
+  botnav.innerHTML =
+    core
+      .map(
+        (m) =>
+          `<a href="${m.href}" data-nav="${m.nav}" class="botnav-tab${m.nav === currentNav ? " active" : ""}">${m.icon}<span>${m.shortLabel || m.label}</span></a>`,
+      )
+      .join("") +
+    `<button type="button" class="botnav-tab botnav-more" id="botnavMore" aria-label="전체 메뉴">
+       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+       <span>전체</span>
+     </button>`;
+
+  const mask = document.createElement("div");
+  mask.className = "admin-sheet-mask";
+  mask.id = "adminSheetMask";
+
+  const sheet = document.createElement("div");
+  sheet.className = "admin-sheet";
+  sheet.id = "adminSheet";
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-label", "전체 메뉴");
+  sheet.innerHTML =
+    `<div class="sheet-handle"></div><h3>전체 메뉴</h3><div class="sheet-grid">` +
+    MENU.map(
+      (m) =>
+        `<a href="${m.href}" data-nav="${m.nav}" class="sheet-cell${m.nav === currentNav ? " active" : ""}">${m.icon}<span>${m.shortLabel || m.label}</span></a>`,
+    ).join("") +
+    `</div>`;
+
+  document.body.appendChild(botnav);
+  document.body.appendChild(mask);
+  document.body.appendChild(sheet);
+
+  const close = () => {
+    sheet.classList.remove("show");
+    mask.classList.remove("show");
+    document.body.classList.remove("sheet-open");
+  };
+  document.getElementById("botnavMore").addEventListener("click", () => {
+    sheet.classList.add("show");
+    mask.classList.add("show");
+    document.body.classList.add("sheet-open");
+  });
+  mask.addEventListener("click", close);
+  sheet
+    .querySelectorAll(".sheet-cell")
+    .forEach((a) => a.addEventListener("click", close));
+}
+
 function initShell() {
   if (isLoginPage()) return;
   const page = window.ADMIN_PAGE || {};
   renderSidebar(page.nav || "");
   renderTopbar(page.title || "관리자");
+  renderMobileNav(page.nav || "");
   bindShellEvents();
 }
 
