@@ -10,6 +10,11 @@ import { createServices } from "../lib/services.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import { edgeCacheDeleteMany } from "../lib/edge-cache.js";
 import { sendMetaCapiLead } from "../lib/meta-capi.js";
+import {
+  sendNcpSens,
+  META_CUSTOMER_NOTICE,
+  META_CUSTOMER_SUBJECT,
+} from "../lib/sens.js";
 
 const MAX_BODY_CHARS = 65536;
 
@@ -219,7 +224,7 @@ export async function handleMetaLead(
     saveError = e.message || "D1 create failed";
   }
 
-  // 12) 백그라운드: 텔레그램 + 캐시 무효화 + Meta CAPI(데이터세트 적재)
+  // 12) 백그라운드: 텔레그램 + 자동 SMS(LMS) + 캐시 무효화 + Meta CAPI(데이터세트 적재)
   ctx.waitUntil(
     (async () => {
       // Meta 인스턴트폼 리드 → CAPI Lead. 사이트 미방문이라 전화 해시 매칭(action_source=system_generated).
@@ -252,6 +257,45 @@ export async function handleMetaLead(
             campaign,
           }),
         );
+        // Meta lead 도 홈페이지 직접접수와 동일한 안내 SMS 발송 + SmsLogs 기록
+        try {
+          const r = await sendNcpSens(env, {
+            to: prettyPhone,
+            subject: META_CUSTOMER_SUBJECT,
+            content: META_CUSTOMER_NOTICE,
+          });
+          const status = r.ok ? "sent" : r.skipped ? "skipped" : "failed";
+          const detail = r.ok
+            ? `meta-lead status=${r.status || ""}`
+            : r.skipped
+              ? `meta-lead reason=${r.reason || ""}`
+              : `meta-lead status=${r.status || ""} body=${(r.body || "").slice(0, 160)}`;
+          await services.smsLogs
+            .create({
+              EstimateId: recordId,
+              TemplateId: "",
+              ToPhone: String(prettyPhone || "").replace(/\D/g, ""),
+              Subject: META_CUSTOMER_SUBJECT,
+              Content: META_CUSTOMER_NOTICE,
+              SmsType: r.type || "LMS",
+              Status: status,
+              Detail: detail.slice(0, 480),
+              SentAt: new Date().toISOString(),
+              SentBy: "system:meta-lead",
+            })
+            .catch(() => {});
+          if (!r.ok && !r.skipped) {
+            await notifyTelegram(
+              env,
+              `[day1design/meta-lead] LMS 발송 실패\n${escapeHtml(prettyPhone)}\n${detail.slice(0, 200)}`,
+            );
+          }
+        } catch (e) {
+          await notifyTelegram(
+            env,
+            `[day1design/meta-lead] LMS 호출 예외\n${escapeHtml((e?.message || "").slice(0, 200))}`,
+          );
+        }
       } else if (saveError) {
         await notifyTelegram(
           env,
