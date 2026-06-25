@@ -351,6 +351,24 @@
 
     <!-- ========== HERO SLIDER ========== -->
     <section class="hero hero-slider">
+      <!-- 첫 슬라이드 LQIP 즉시 배경: 모바일 콜드 첫 화면에서 main.js의 API 응답
+           대기(~2초+) 동안 배경색만 보이던 문제 방지. CSS 로드 직후 흐림 미리보기를
+           즉시 표시 → main.js가 API 후 원본으로 교체·현상하며 위(z-index:1↑)를 덮음.
+           스타일은 인라인(main.css 캐시와 무관). ⚠ 슬라이드 1번을 바꾸면 이 LQIP 와
+           위쪽 정적 preload URL 도 함께 갱신(둘 다 슬라이드1 기준). -->
+      <div
+        aria-hidden="true"
+        style="
+          position: absolute;
+          inset: 0;
+          z-index: 0;
+          background-image: url(&quot;data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAVACADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwCulyVIEv5irMckUhADjn071l3/ABblgNxU5wO9PsIDKJJGcIdxwp71mmaNG4JY4wWc4FW7Wya6Im529s9qy02x2c4YgszLjGTjGc11GjkHToz9atakPQ4Ujc3NWIwAQBRRWBqXYj0GK1LK6khGEI2/3T0oorSJLP/Z&quot;);
+          background-size: cover;
+          background-position: center;
+          filter: blur(18px);
+          transform: scale(1.06);
+        "
+      ></div>
       <div class="hero-track" id="heroTrack">
         <!-- 슬라이드는 JS가 data/hero-slides.json 기반으로 렌더 -->
       </div>
