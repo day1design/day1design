@@ -25,6 +25,8 @@ import {
   handlePixelEventsAdmin,
 } from "./routes/pixel-events.js";
 import { handleWorks } from "./routes/works.js";
+import { handleHealth } from "./routes/healthcheck.js";
+import { runAndReportHealth } from "./lib/healthcheck.js";
 import { cors, preflight } from "./lib/cors.js";
 import { jsonError } from "./lib/response.js";
 import { notifyTelegram } from "./lib/telegram.js";
@@ -208,6 +210,11 @@ async function handleApi(request, env, ctx, path) {
   } else if (path.startsWith("/api/admin/pixel-events")) {
     res = await handlePixelEventsAdmin(request, env);
   } else if (
+    path === "/api/admin/health" ||
+    path.startsWith("/api/admin/health/")
+  ) {
+    res = await handleHealth(request, env, ctx, services);
+  } else if (
     path === "/api/whoami" ||
     path === "/api/clients" ||
     path === "/api/works" ||
@@ -283,6 +290,7 @@ export default {
   // Cron: 매일 KST 04:00 (= UTC 19:00)
   //   1) Meta 광고 어제 데이터 sync
   //   2) Analytics summary daily snapshot (today/7/30/cur-month) 갱신
+  //   3) 시스템 헬스 점검(5기능) + 전용 채널 텔레그램 다이제스트
   async scheduled(event, env, ctx) {
     ctx.waitUntil(
       (async () => {
@@ -307,6 +315,21 @@ export default {
             {
               botToken: env.TELEGRAM_BOT_TOKEN,
               chatId: env.TELEGRAM_ADMIN_CHAT_ID,
+            },
+          );
+        }
+        try {
+          await runAndReportHealth(env, createServices(env), {
+            triggeredBy: "cron",
+            alertOnlyOnIssue: false,
+          });
+        } catch (e) {
+          await notifyTelegram(
+            env,
+            `[day1design/cron] healthcheck 실패\n${(e?.message || "").slice(0, 200)}`,
+            {
+              botToken: env.HEALTHCHECK_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN,
+              chatId: env.HEALTHCHECK_CHAT_ID || env.TELEGRAM_ADMIN_CHAT_ID,
             },
           );
         }

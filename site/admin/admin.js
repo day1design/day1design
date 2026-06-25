@@ -285,6 +285,13 @@ const MENU = [
     shortLabel: "업무",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 3h6v3H9z"/><path d="M8.5 12l2 2 4-4"/></svg>',
   },
+  {
+    nav: "health",
+    href: "health",
+    label: "시스템 상태",
+    shortLabel: "상태",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2-5 4 11 2-6h6"/></svg>',
+  },
 ];
 
 function renderSidebar(currentNav) {

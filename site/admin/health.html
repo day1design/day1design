@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>시스템 상태 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260520-touch2" />
+    <script>
+      window.ADMIN_PAGE = { title: "시스템 상태", nav: "health" };
+    </script>
+    <style>
+      .hc-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 14px;
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        padding: 14px 18px;
+        margin-bottom: 18px;
+      }
+      .hc-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 700;
+        font-size: 14px;
+        border-radius: 999px;
+        padding: 5px 13px;
+      }
+      .hc-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        display: inline-block;
+      }
+      .st-ok {
+        background: #eafaf0;
+        color: #16a34a;
+      }
+      .st-ok .hc-dot {
+        background: #16a34a;
+      }
+      .st-warn {
+        background: #fff7ea;
+        color: #c87a2a;
+      }
+      .st-warn .hc-dot {
+        background: #f59e0b;
+      }
+      .st-fail {
+        background: #fdecec;
+        color: #c5371a;
+      }
+      .st-fail .hc-dot {
+        background: #dc2626;
+      }
+      .hc-bar-meta {
+        font-size: 13px;
+        color: var(--c-text-sub);
+      }
+      .hc-counts {
+        margin-left: auto;
+        display: flex;
+        gap: 18px;
+        text-align: center;
+      }
+      .hc-counts b {
+        display: block;
+        font-size: 18px;
+      }
+      .hc-counts span {
+        font-size: 11px;
+        color: var(--c-text-sub);
+      }
+      .hc-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 14px;
+        margin-bottom: 22px;
+      }
+      .hc-card {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        padding: 15px;
+      }
+      .hc-card.is-fail {
+        border-color: #f1b4ad;
+      }
+      .hc-card-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .hc-card h3 {
+        font-size: 14px;
+        font-weight: 700;
+        margin: 0;
+      }
+      .hc-metric {
+        margin-top: 8px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .hc-card.is-fail .hc-metric {
+        color: #c5371a;
+      }
+      .hc-crit {
+        margin-top: 5px;
+        font-size: 12px;
+        color: var(--c-text-sub);
+        line-height: 1.45;
+      }
+      .hc-log {
+        margin-top: 10px;
+        background: #1f2937;
+        color: #e5e7eb;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 11px;
+        font-family: ui-monospace, Menlo, monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+        display: none;
+      }
+      .hc-card.show-log .hc-log {
+        display: block;
+      }
+      .hc-logtoggle {
+        margin-top: 9px;
+        font-size: 12px;
+        color: var(--c-brand);
+        font-weight: 600;
+        cursor: pointer;
+        background: none;
+        border: 0;
+        padding: 0;
+      }
+      .panel {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        margin-bottom: 18px;
+      }
+      .panel-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--c-border);
+      }
+      .panel-head h2 {
+        font-size: 15px;
+        font-weight: 700;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .live-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #16a34a;
+      }
+      .ev-filter {
+        display: flex;
+        gap: 4px;
+        font-size: 12px;
+      }
+      .ev-filter button {
+        border: 0;
+        background: none;
+        color: var(--c-text-sub);
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .ev-filter button.active {
+        background: var(--c-brand);
+        color: #fff;
+        font-weight: 700;
+      }
+      .evwrap {
+        overflow-x: auto;
+      }
+      .ev {
+        display: grid;
+        grid-template-columns:
+          112px 92px 70px minmax(120px, 1fr) 90px
+          minmax(210px, auto) 60px;
+        gap: 12px;
+        align-items: center;
+        padding: 9px 16px;
+        border-left: 3px solid transparent;
+        font-size: 13px;
+        white-space: nowrap;
+        min-width: 900px;
+        border-bottom: 1px solid var(--c-border-soft);
+      }
+      .ev > * {
+        min-width: 0;
+      }
+      .ev .cust {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--c-text-sub);
+      }
+      .ev.head {
+        font-size: 11px;
+        color: var(--c-text-muted);
+        font-weight: 700;
+        background: #fafafa;
+      }
+      .ev.row-ok {
+        border-left-color: #16a34a;
+      }
+      .ev.row-warn {
+        border-left-color: #f59e0b;
+      }
+      .ev.row-fail {
+        border-left-color: #dc2626;
+      }
+      .ev .chtag,
+      .ev .step {
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 5px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .ch-home {
+        background: #eef0f3;
+        color: #4b5563;
+      }
+      .ch-insta {
+        background: #fce7f0;
+        color: #be3f72;
+      }
+      .ch-fb {
+        background: #e6effd;
+        color: #2563eb;
+      }
+      .steps {
+        display: flex;
+        gap: 4px;
+        overflow: hidden;
+      }
+      .s-ok {
+        background: #eafaf0;
+        color: #15803d;
+      }
+      .s-skip {
+        background: #fff7ea;
+        color: #b45309;
+      }
+      .s-fail {
+        background: #fdecec;
+        color: #b91c1c;
+      }
+      .ev-detail {
+        padding: 0 16px 12px 130px;
+        display: none;
+      }
+      .ev-detail.open {
+        display: block;
+      }
+      .ev-detail > div {
+        background: #1f2937;
+        color: #e5e7eb;
+        border-radius: 6px;
+        padding: 9px 11px;
+        font-size: 11px;
+        font-family: ui-monospace, Menlo, monospace;
+        white-space: pre-wrap;
+      }
+      .hist-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .hist-table th,
+      .hist-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--c-border-soft);
+        text-align: left;
+      }
+      .hist-table th {
+        font-size: 11px;
+        color: var(--c-text-sub);
+        background: #fafafa;
+      }
+      .hist-table td.c {
+        text-align: center;
+      }
+      .empty {
+        padding: 40px 20px;
+        text-align: center;
+        color: var(--c-text-sub);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <section class="admin-section">
+          <!-- 종합 상태 바 -->
+          <div class="hc-bar" id="hcBar">
+            <span class="hc-pill st-ok" id="hcOverall"
+              ><span class="hc-dot"></span> 불러오는 중…</span
+            >
+            <div class="hc-bar-meta" id="hcMeta">—</div>
+            <div class="hc-counts">
+              <div>
+                <b id="cntOk" style="color: #16a34a">—</b><span>정상</span>
+              </div>
+              <div>
+                <b id="cntFail" style="color: #dc2626">—</b><span>오류</span>
+              </div>
+              <div>
+                <b id="cntWarn" style="color: #f59e0b">—</b><span>주의</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              id="btnRunNow"
+              style="margin-left: 12px"
+            >
+              지금 점검
+            </button>
+          </div>
+
+          <!-- 5개 인디케이터 카드 -->
+          <div class="hc-grid" id="hcCards">
+            <div class="empty" style="grid-column: 1 / -1">불러오는 중…</div>
+          </div>
+
+          <!-- 실시간 작동로그 (접수 이벤트) -->
+          <div class="panel">
+            <div class="panel-head">
+              <h2>
+                <span class="live-dot"></span> 실시간 작동로그
+                <span
+                  style="
+                    font-weight: 400;
+                    font-size: 12px;
+                    color: var(--c-text-muted);
+                  "
+                  >접수 1건 = 한 줄 · 언제·어디서·무엇이 작동했는지</span
+                >
+              </h2>
+              <div class="ev-filter" id="evFilter">
+                <button data-f="all" class="active">전체</button>
+                <button data-f="ok">정상</button>
+                <button data-f="warn">주의</button>
+                <button data-f="fail">오류</button>
+              </div>
+            </div>
+            <div class="evwrap">
+              <div class="ev head">
+                <div>시각</div>
+                <div>채널</div>
+                <div>지점</div>
+                <div>고객</div>
+                <div>유입 위치</div>
+                <div>작동 단계</div>
+                <div style="text-align: right">판정</div>
+              </div>
+              <div id="evList">
+                <div class="empty">불러오는 중…</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 일일 점검 이력 -->
+          <div class="panel">
+            <div class="panel-head">
+              <h2>일일 점검 이력</h2>
+              <span style="font-size: 12px; color: var(--c-text-muted)"
+                >매일 04:00 자동 진단 · 최근 30회</span
+              >
+            </div>
+            <div style="overflow-x: auto">
+              <table class="hist-table">
+                <thead>
+                  <tr>
+                    <th>점검 시각</th>
+                    <th>트리거</th>
+                    <th>종합</th>
+                    <th class="c">접수</th>
+                    <th class="c">GA4</th>
+                    <th class="c">Meta데이터</th>
+                    <th class="c">SENS</th>
+                    <th class="c">Meta리드</th>
+                  </tr>
+                </thead>
+                <tbody id="histBody">
+                  <tr>
+                    <td colspan="8" class="empty">불러오는 중…</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script defer src="config.js"></script>
+    <script defer src="admin.js?v=20260602-pixel-data"></script>
+    <script defer src="health.js?v=20260625-init"></script>
+  </body>
+</html>

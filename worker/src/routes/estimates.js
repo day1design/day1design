@@ -24,6 +24,7 @@ import {
   buildCustomerSms,
   CUSTOMER_SMS_SUBJECT,
 } from "../lib/sens.js";
+import { logIntakeEvent } from "../lib/intake-log.js";
 import {
   edgeCacheGet,
   edgeCachePut,
@@ -810,9 +811,17 @@ async function submitEstimate(request, env, ctx, services) {
   }
   const notificationText = notificationLines.join("\n");
 
-  // 알림 발송 실패가 접수 저장 성공을 막지 않도록 waitUntil으로 분리
+  // 알림 발송 실패가 접수 저장 성공을 막지 않도록 waitUntil으로 분리.
+  // 작동로그(IntakeEvents)용 단계별 결과 수집 — 여기 도달 = D1 저장 확정.
+  const steps = { d1: "ok" };
   const notifyTasks = [
-    notifyTelegram(env, notificationText),
+    notifyTelegram(env, notificationText)
+      .then(() => {
+        steps.telegram = "ok";
+      })
+      .catch(() => {
+        steps.telegram = "fail";
+      }),
     notifyEmail(env, {
       subject: "[DAYONE] 새 상담신청",
       text: notificationText,
@@ -823,7 +832,13 @@ async function submitEstimate(request, env, ctx, services) {
         planCount: planUrls.length,
         submittedAt,
       }),
-    }),
+    })
+      .then(() => {
+        steps.email = "ok";
+      })
+      .catch(() => {
+        steps.email = "fail";
+      }),
   ];
   // 고객 접수확인 메일은 이메일을 입력한 경우에만 (간소화 폼은 이메일 미수집)
   if (fields.email) {
@@ -833,8 +848,16 @@ async function submitEstimate(request, env, ctx, services) {
         subject: "[DAYONE DESIGN] 견적문의가 접수되었습니다",
         text: customerReceiptText(fields),
         html: customerReceiptHtml(env, fields, submittedAt),
-      }),
+      })
+        .then(() => {
+          steps.emailCustomer = "ok";
+        })
+        .catch(() => {
+          steps.emailCustomer = "fail";
+        }),
     );
+  } else {
+    steps.emailCustomer = "skip";
   }
   notifyTasks.push(
     // NCP SENS LMS — env/발신번호 미설정 시 sens.js 가 자동 skip
@@ -842,17 +865,22 @@ async function submitEstimate(request, env, ctx, services) {
       to: fields.phone,
       subject: CUSTOMER_SMS_SUBJECT,
       content: buildCustomerSms("homepage"),
-    }).then((r) => {
-      if (!r.ok && !r.skipped) {
-        return notifyTelegram(
-          env,
-          `[day1design/estimates] SENS 발송 실패\n` +
-            `phone: ${escapeHtml(fields.phone)}\n` +
-            `status: ${r.status || "-"}\n` +
-            `body: ${escapeHtml((r.body || "").slice(0, 200))}`,
-        );
-      }
-    }),
+    })
+      .then((r) => {
+        steps.lms = r.ok ? "ok" : r.skipped ? "skip" : "fail";
+        if (!r.ok && !r.skipped) {
+          return notifyTelegram(
+            env,
+            `[day1design/estimates] SENS 발송 실패\n` +
+              `phone: ${escapeHtml(fields.phone)}\n` +
+              `status: ${r.status || "-"}\n` +
+              `body: ${escapeHtml((r.body || "").slice(0, 200))}`,
+          );
+        }
+      })
+      .catch(() => {
+        steps.lms = "fail";
+      }),
   );
   // Meta CAPI — 브라우저 픽셀과 동일 event_id(_fb_event_id)로 Lead 재전송(중복제거)
   // + pixel_events 에 Lead 1건 기록(광고별 귀속 포함)
@@ -873,10 +901,32 @@ async function submitEstimate(request, env, ctx, services) {
       ad: fields._fb_ad || "",
       adId: fields._fb_adid || "",
       fbclid: fields._fbclid || "",
-    }),
+    })
+      .then(() => {
+        steps.capi = "ok";
+      })
+      .catch(() => {
+        steps.capi = "fail";
+      }),
   );
 
-  ctx.waitUntil(Promise.allSettled(notifyTasks));
+  ctx.waitUntil(
+    Promise.allSettled(notifyTasks).then(() =>
+      logIntakeEvent(services, {
+        channel: "homepage",
+        source: "homepage",
+        branch: fields.branch,
+        name: fields.name,
+        phone: fields.phone,
+        geo: String(
+          request.cf?.city || request.cf?.region || request.cf?.country || "",
+        ),
+        estimateId: record.id,
+        steps,
+        ip,
+      }),
+    ),
+  );
 
   // 관리자 목록 캐시 무효화
   await edgeCacheDeleteMany(

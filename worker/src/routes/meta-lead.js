@@ -15,6 +15,7 @@ import {
   buildCustomerSms,
   CUSTOMER_SMS_SUBJECT,
 } from "../lib/sens.js";
+import { logIntakeEvent } from "../lib/intake-log.js";
 
 const MAX_BODY_CHARS = 65536;
 
@@ -228,16 +229,23 @@ export async function handleMetaLead(
   ctx.waitUntil(
     (async () => {
       // Meta 인스턴트폼 리드 → CAPI Lead. 사이트 미방문이라 전화 해시 매칭(action_source=system_generated).
-      await sendMetaCapiLead(env, ctx, {
-        actionSource: "system_generated",
-        gaName: "lead_form",
-        channel: "capi",
-        eventId: `meta-lead:${phoneDigits}:${timestamp || ""}`,
-        phone: phoneDigits,
-        source: "meta",
-        campaign,
-        pagePath: "",
-      });
+      // 작동로그(IntakeEvents)용 단계 결과 수집.
+      let capiStep = "ok";
+      let lmsStep = "skip";
+      try {
+        await sendMetaCapiLead(env, ctx, {
+          actionSource: "system_generated",
+          gaName: "lead_form",
+          channel: "capi",
+          eventId: `meta-lead:${phoneDigits}:${timestamp || ""}`,
+          phone: phoneDigits,
+          source: "meta",
+          campaign,
+          pagePath: "",
+        });
+      } catch {
+        capiStep = "fail";
+      }
       if (recordId) {
         await edgeCacheDeleteMany(
           ["estimates:list:all", "estimates:list:접수대기"],
@@ -268,6 +276,7 @@ export async function handleMetaLead(
             content: smsBody,
           });
           const status = r.ok ? "sent" : r.skipped ? "skipped" : "failed";
+          lmsStep = r.ok ? "ok" : r.skipped ? "skip" : "fail";
           const detail = r.ok
             ? `meta-lead status=${r.status || ""}`
             : r.skipped
@@ -294,11 +303,23 @@ export async function handleMetaLead(
             );
           }
         } catch (e) {
+          lmsStep = "fail";
           await notifyTelegram(
             env,
             `[day1design/meta-lead] LMS 호출 예외\n${escapeHtml((e?.message || "").slice(0, 200))}`,
           );
         }
+        // 작동로그 기록 (메타는 지점값 없음 → 두 지점 안내 = '지점 무관')
+        await logIntakeEvent(services, {
+          channel: smsChannel,
+          source: "meta",
+          branch: "지점 무관",
+          name,
+          phone: prettyPhone,
+          geo: "",
+          estimateId: recordId,
+          steps: { d1: "ok", telegram: "ok", lms: lmsStep, capi: capiStep },
+        });
       } else if (saveError) {
         await notifyTelegram(
           env,
