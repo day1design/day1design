@@ -94,6 +94,16 @@
       href="https://day1design-api.day1design-co.workers.dev"
       crossorigin
     />
+    <!-- 히어로 첫 슬라이드(LCP) 정적 preload: API 응답을 기다리지 않고 곧바로
+         다운로드 시작 → 첫 화면 표시 단축. 아래 동적 preload(API 기반)는
+         순서 변경 시의 백스톱(동일 URL이면 브라우저가 중복 다운로드 안 함).
+         ⚠ 슬라이드 1번을 바꾸면 data/hero-slides.json 첫 항목과 함께 이 URL도 갱신. -->
+    <link
+      rel="preload"
+      as="image"
+      fetchpriority="high"
+      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/hero/20260513-0fcu5zdt/2-1_보정본__사진_자른후_.webp"
+    />
     <script>
       // defer 스크립트가 모두 실행되길 기다리지 않고, 히어로 슬라이드 API를
       // 문서 파싱 초반에 곧바로 호출한다. 응답이 오면 첫 슬라이드(LCP) 이미지를

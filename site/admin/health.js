@@ -76,6 +76,25 @@
 
   let evFilter = "all";
 
+  /* ---------- 즉시 페인트 스냅샷 (콜드스타트 체감 제거) ----------
+     직전 방문의 응답을 localStorage 에 저장 → 재방문 시 네트워크 대기 없이
+     마지막 상태를 즉시 그리고, 뒤이어 라이브 응답으로 갱신(stale-while-revalidate).
+     admin.js 의 cacheInvalidate(sessionStorage)와 별도 키라 영향 없음. */
+  const SNAP_KEY = "day1_health_snapshot_v1";
+  function readSnap() {
+    try {
+      return JSON.parse(localStorage.getItem(SNAP_KEY) || "null");
+    } catch {
+      return null;
+    }
+  }
+  function writeSnap(patch) {
+    try {
+      const cur = readSnap() || {};
+      localStorage.setItem(SNAP_KEY, JSON.stringify(Object.assign(cur, patch)));
+    } catch {}
+  }
+
   /* ---------- 최신 점검 + 카드 + 이력 ---------- */
   function renderLatest(latest, history) {
     const bar = $("hcOverall");
@@ -211,7 +230,9 @@
     try {
       const q = evFilter === "all" ? "" : `?status=${evFilter}`;
       const r = await api(`/api/admin/health/events${q}`);
-      renderEvents((r && r.items) || []);
+      const items = (r && r.items) || [];
+      renderEvents(items);
+      if (evFilter === "all") writeSnap({ events: items });
     } catch {
       $("evList").innerHTML =
         `<div class="empty">작동로그를 불러오지 못했습니다.</div>`;
@@ -280,6 +301,7 @@
       const r = await api("/api/admin/health");
       renderPower(r.latest);
       renderLatest(r.latest, r.history);
+      writeSnap({ health: { latest: r.latest, history: r.history } });
     } catch {
       setPower("off", "확인 실패", "점검 데이터를 불러오지 못했습니다", "—");
       $("hcCards").innerHTML =
@@ -299,6 +321,16 @@
       loadEvents();
     });
   });
+
+  // 즉시 페인트: 직전 방문 스냅샷이 있으면 네트워크 대기 없이 먼저 그린다.
+  const snap = readSnap();
+  if (snap) {
+    if (snap.health) {
+      renderPower(snap.health.latest);
+      renderLatest(snap.health.latest, snap.health.history);
+    }
+    if (snap.events) renderEvents(snap.events);
+  }
 
   // 접속 시 1회 로드로 충분 (자동 폴링 없음 — 비용 절감).
   // 작동로그는 서버에서 접수마다 IntakeEvents 에 영속 기록되므로, admin 접속 여부와

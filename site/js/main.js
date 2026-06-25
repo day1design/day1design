@@ -1100,14 +1100,16 @@ async function syncPortfolioFromApi() {
 }
 
 syncPortfolioFromApi();
-// 라이브 탭이 띄워진 상태에서도 admin 변경이 즉시 보이도록 짧은 폴링.
-// 활성 탭일 때만 폴링 (백그라운드 탭은 visibilitychange로 즉시 갱신).
+// 라이브 탭이 띄워진 상태에서도 admin 변경이 반영되도록 폴링.
+// 활성 탭일 때만 폴링(백그라운드 탭은 멈춤). 탭 복귀(focus/visibilitychange)
+// 시에는 즉시 갱신하므로, 보고 있던 사용자는 항상 최신. 따라서 유휴 폴링은
+// 30초로 충분 — Worker 요청/D1 read 부하를 8초 대비 ~73% 절감(기능 동일).
 let _portfolioPollTimer = null;
 function startPortfolioPolling() {
   if (_portfolioPollTimer) return;
   _portfolioPollTimer = setInterval(() => {
     if (!document.hidden) syncPortfolioFromApi();
-  }, 8000);
+  }, 30000);
 }
 function stopPortfolioPolling() {
   if (_portfolioPollTimer) {
