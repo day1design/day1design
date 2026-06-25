@@ -287,41 +287,44 @@ export default {
     }
   },
 
-  // Cron: 매일 KST 04:00 (= UTC 19:00)
-  //   1) Meta 광고 어제 데이터 sync
-  //   2) Analytics summary daily snapshot (today/7/30/cur-month) 갱신
-  //   3) 시스템 헬스 점검(5기능) + 전용 채널 텔레그램 다이제스트
+  // Cron 두 종류:
+  //   "0 19 * * *" 매일 KST 04:00 — meta-ads sync + analytics snapshot + 풀 헬스점검(다이제스트)
+  //   "0 * * * *"  매시간 정각 — 헬스 하트비트 점검(기록만, 오류 시 텔레그램). 전원 인디케이터용.
   async scheduled(event, env, ctx) {
+    const isDaily = event.cron === "0 19 * * *";
     ctx.waitUntil(
       (async () => {
-        try {
-          await runScheduledSync(env, ctx);
-        } catch (e) {
-          await notifyTelegram(
-            env,
-            `[day1design/cron] meta-ads scheduled sync 실패\n${(e?.message || "").slice(0, 200)}`,
-            {
-              botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
-              chatId: env.META_RATE_TELEGRAM_CHAT_ID,
-            },
-          );
+        if (isDaily) {
+          try {
+            await runScheduledSync(env, ctx);
+          } catch (e) {
+            await notifyTelegram(
+              env,
+              `[day1design/cron] meta-ads scheduled sync 실패\n${(e?.message || "").slice(0, 200)}`,
+              {
+                botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
+                chatId: env.META_RATE_TELEGRAM_CHAT_ID,
+              },
+            );
+          }
+          try {
+            await runScheduledAnalyticsSnapshot(env, ctx);
+          } catch (e) {
+            await notifyTelegram(
+              env,
+              `[day1design/cron] analytics snapshot 실패\n${(e?.message || "").slice(0, 200)}`,
+              {
+                botToken: env.TELEGRAM_BOT_TOKEN,
+                chatId: env.TELEGRAM_ADMIN_CHAT_ID,
+              },
+            );
+          }
         }
-        try {
-          await runScheduledAnalyticsSnapshot(env, ctx);
-        } catch (e) {
-          await notifyTelegram(
-            env,
-            `[day1design/cron] analytics snapshot 실패\n${(e?.message || "").slice(0, 200)}`,
-            {
-              botToken: env.TELEGRAM_BOT_TOKEN,
-              chatId: env.TELEGRAM_ADMIN_CHAT_ID,
-            },
-          );
-        }
+        // 헬스 점검: 매시간(하트비트, 오류만 알림) + 매일(풀 다이제스트)
         try {
           await runAndReportHealth(env, createServices(env), {
-            triggeredBy: "cron",
-            alertOnlyOnIssue: false,
+            triggeredBy: isDaily ? "cron" : "hourly",
+            alertOnlyOnIssue: !isDaily,
           });
         } catch (e) {
           await notifyTelegram(

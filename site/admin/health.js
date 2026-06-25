@@ -202,18 +202,77 @@
     }
   }
 
+  /* ---------- 전원/가동 인디케이터 ---------- */
+  // 최신 점검의 신선도(하트비트)로 ON/OFF 판정.
+  // 매시간 자동 점검이므로 2시간 넘게 끊기면 = 시스템/크론 다운 의심(꺼짐).
+  function setPower(mode, state, sub, meta) {
+    const led = $("powerLed");
+    led.className = "power-led " + mode;
+    $("powerState").textContent = state;
+    $("powerSub").textContent = sub;
+    $("powerMeta").innerHTML = meta;
+  }
+  function renderPower(latest) {
+    if (!latest || !latest.checkedAt) {
+      setPower(
+        "off",
+        "점검 대기",
+        "아직 점검 기록 없음 · 매시간 자동 점검",
+        "—",
+      );
+      return;
+    }
+    const mins = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(latest.checkedAt).getTime()) / 60000),
+    );
+    const stale = mins > 130; // 약 2회 하트비트 누락 = 점검 끊김
+    let mode, state, sub;
+    if (stale) {
+      mode = "off";
+      state = "점검 지연 · 확인 필요";
+      sub = "매시간 점검이 끊겼습니다 (워커/크론 상태 점검)";
+    } else if (latest.overall === "fail") {
+      mode = "fail";
+      state = "이상 발생";
+      sub = "일부 기능 오류 — 아래 카드 확인";
+    } else if (latest.overall === "warn") {
+      mode = "warn";
+      state = "주의";
+      sub = "확인 권장 항목 있음";
+    } else {
+      mode = "on";
+      state = "정상 가동 중";
+      sub = "모든 핵심 기능 정상";
+    }
+    const ago =
+      mins < 1
+        ? "방금"
+        : mins < 60
+          ? `${mins}분 전`
+          : `${Math.floor(mins / 60)}시간 전`;
+    setPower(
+      mode,
+      state,
+      sub,
+      `마지막 점검 <b>${ago}</b><br>${fmtKstFull(latest.checkedAt)}`,
+    );
+  }
+
   async function loadHealth() {
     try {
       const r = await api("/api/admin/health");
+      renderPower(r.latest);
       renderLatest(r.latest, r.history);
     } catch {
+      setPower("off", "확인 실패", "점검 데이터를 불러오지 못했습니다", "—");
       $("hcCards").innerHTML =
         `<div class="empty" style="grid-column:1/-1">점검 데이터를 불러오지 못했습니다.</div>`;
     }
   }
 
   /* ---------- 이벤트 바인딩 ---------- */
-  // 점검은 매일 04:00 자동 실행(cron). 사용자 수동 실행 버튼 없음.
+  // 점검은 매시간 자동 실행(cron). 사용자 수동 실행 버튼 없음.
   document.querySelectorAll("#evFilter button").forEach((b) => {
     b.addEventListener("click", () => {
       evFilter = b.dataset.f;
@@ -227,4 +286,6 @@
 
   loadHealth();
   loadEvents();
+  // 전원 상태 라이브 유지: 60초마다 최신 점검 재조회(하트비트 신선도 갱신)
+  setInterval(loadHealth, 60000);
 })();

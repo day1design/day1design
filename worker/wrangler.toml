@@ -83,6 +83,7 @@ zone_name = "day1design.co.kr"
 # 로컬 개발은 worker/.dev.vars 파일에 동일 키로 저장
 
 # Cron Triggers
-# - meta-ads 어제 데이터 sync: 매일 KST 04:00 = UTC 19:00
+# - "0 19 * * *"  매일 KST 04:00: meta-ads sync + analytics snapshot + 풀 헬스점검(다이제스트)
+# - "0 * * * *"   매시간 정각: 헬스 하트비트 점검(기록만, 오류 시 텔레그램). 전원 인디케이터용.
 [triggers]
-crons = ["0 19 * * *"]
+crons = ["0 19 * * *", "0 * * * *"]
