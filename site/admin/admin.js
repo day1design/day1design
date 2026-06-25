@@ -636,6 +636,47 @@ function compressToWebP(file, maxWidth = 1920, quality = 0.82) {
 }
 
 /**
+ * 저용량 LQIP(흐림 미리보기) 생성 — 원본 File 을 작은 폭(기본 32px)으로 줄여
+ * data:image/jpeg base64 로 반환. 히어로 첫 화면 즉시 표시 + '점점 선명(현상)' 용.
+ * 로컬 File 에서 캔버스로 그리므로 CORS taint 없음. 실패 시 "" 반환(파이프라인 비차단).
+ * @param {File} file
+ * @param {number} w  목표 가로 픽셀(기본 32)
+ * @returns {Promise<string>} data URL 또는 ""
+ */
+function makeLqipDataUrl(file, w = 32) {
+  return new Promise((resolve) => {
+    try {
+      if (!file || !file.type || !file.type.startsWith("image/"))
+        return resolve("");
+      const reader = new FileReader();
+      reader.onerror = () => resolve("");
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onerror = () => resolve("");
+        img.onload = () => {
+          try {
+            const ratio = img.height / img.width || 0.6;
+            const cw = Math.max(8, Math.min(48, w));
+            const ch = Math.max(6, Math.round(cw * ratio));
+            const canvas = document.createElement("canvas");
+            canvas.width = cw;
+            canvas.height = ch;
+            canvas.getContext("2d").drawImage(img, 0, 0, cw, ch);
+            resolve(canvas.toDataURL("image/jpeg", 0.5));
+          } catch {
+            resolve("");
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      resolve("");
+    }
+  });
+}
+
+/**
  * 이미지 파일을 WebP로 자동 변환 후 R2 업로드.
  * skipCompressUnder(bytes) 가 지정되고 파일이 그 이하면 원본 그대로 업로드.
  * @param {File} file
@@ -703,6 +744,7 @@ window.adminUtil = {
   apiUpload,
   uploadImage,
   compressToWebP,
+  makeLqipDataUrl,
   slugify,
   formatBytes,
   getToken,

@@ -1,10 +1,6 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import {
-  safeFileName,
-  datePrefix,
-  randomId,
-} from "../lib/r2.js";
+import { safeFileName, datePrefix, randomId } from "../lib/r2.js";
 import { createServices } from "../lib/services.js";
 import { assertUploadPolicy, fileExt } from "../lib/upload-policy.js";
 import {
@@ -57,6 +53,7 @@ async function getSlides(env, ctx, services) {
       href: r.fields.Href || "",
       alt: r.fields.Alt || "",
       order: r.fields.Order ?? 0,
+      lqip: r.fields.Lqip || "",
     }));
   const payload = {
     config: { maxSlides: 10, autoPlayMs: 6000 },
@@ -91,6 +88,7 @@ async function putSlides(request, env, ctx, services) {
       Alt: s.alt || "",
       Order: i,
       Active: true,
+      Lqip: s.lqip || "",
     }));
   const created = await services.heroSlides.replaceAll(newRecords);
 

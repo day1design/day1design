@@ -891,29 +891,68 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
 
   // Only the first slide gets its background-image inline (LCP).
   // Other slides store the URL in data-bg and load it just before activation.
-  // 첫 슬라이드도 .active는 이미지 로드 완료 후에만 부여 → pop-in/섬광 방지.
+  // 첫 슬라이드: lqip(저용량 흐림 미리보기)가 있으면 그것을 즉시 표시(배경색 섬광
+  // 제거)하고 원본 도착 시 blur→0 '현상(점점 선명)'. lqip 없으면 기존 동작
+  // (원본 inline, 로드 완료 후에만 .active → pop-in/섬광 방지)으로 폴백.
+  // blur/transform/transition 은 인라인 스타일로 처리 — main.css 캐시 상태와
+  // 무관하게 자기완결 동작(옛 CSS로 인한 픽셀 확대 사고 방지).
+  const first = slides[0];
+  const useLqip = !!(first.lqip && /^data:image\//.test(first.lqip));
   track.innerHTML = slides
     .map((s, i) => {
       const alt = (s.alt || "").replace(/"/g, "&quot;");
-      const style = i === 0 ? `background-image:url('${s.image}');` : "";
+      let style = "";
+      let cls = "hero-slide";
+      if (i === 0) {
+        if (useLqip) {
+          // lqip 즉시 표시 + 인라인 블러. active 로 바로 보이게(배경색 섬광 제거).
+          style = `background-image:url('${first.lqip}');filter:blur(18px);transform:scale(1.06);`;
+          cls = "hero-slide active";
+        } else {
+          style = `background-image:url('${s.image}');`;
+        }
+      }
       const dataBg = i === 0 ? "" : ` data-bg="${s.image}"`;
       if (s.href) {
-        return `<a href="${s.href}" class="hero-slide" style="${style}"${dataBg} aria-label="${alt}"></a>`;
+        return `<a href="${s.href}" class="${cls}" style="${style}"${dataBg} aria-label="${alt}"></a>`;
       }
-      return `<div class="hero-slide" style="${style}"${dataBg} role="img" aria-label="${alt}"></div>`;
+      return `<div class="${cls}" style="${style}"${dataBg} role="img" aria-label="${alt}"></div>`;
     })
     .join("");
 
-  // 첫 슬라이드 이미지 로드 완료 시에만 .active 부여 + 로더 신호
-  const activateFirst = () => {
-    const el = track.querySelector(".hero-slide");
-    if (el && !el.classList.contains("active")) el.classList.add("active");
+  const firstEl = track.querySelector(".hero-slide");
+  // 원본 도착: lqip면 풀이미지로 교체 + blur→0 '현상' / 아니면 로드 완료 후 .active
+  const onFirstReady = () => {
+    if (useLqip && firstEl) {
+      firstEl.style.backgroundImage = `url('${first.image}')`;
+      // 더블 rAF 후 트랜지션 시작 → blur(18px)→0, scale(1.06)→1 로 점점 선명
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          firstEl.style.transition = "filter 900ms ease, transform 900ms ease";
+          firstEl.style.filter = "blur(0px)";
+          firstEl.style.transform = "none";
+        }),
+      );
+      // 현상 종료 후 인라인 스타일 정리 → 이후 크로스페이드는 일반 슬라이드와 동일
+      setTimeout(() => {
+        firstEl.style.transition = "";
+        firstEl.style.filter = "";
+        firstEl.style.transform = "";
+      }, 1100);
+    } else if (firstEl && !firstEl.classList.contains("active")) {
+      firstEl.classList.add("active");
+    }
     signalHeroReady();
   };
   const firstSlideImg = new Image();
-  firstSlideImg.onload = activateFirst;
-  firstSlideImg.onerror = activateFirst;
-  firstSlideImg.src = slides[0].image;
+  firstSlideImg.onload = onFirstReady;
+  firstSlideImg.onerror = () => {
+    // 원본 실패: lqip는 그대로 두고(이미 active) 신호만. 비-lqip는 기존대로 active.
+    if (!useLqip && firstEl && !firstEl.classList.contains("active"))
+      firstEl.classList.add("active");
+    signalHeroReady();
+  };
+  firstSlideImg.src = first.image;
 
   const dotsEl = document.getElementById("heroDots");
   if (dotsEl) {

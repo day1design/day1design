@@ -69,7 +69,7 @@ const SCHEMA = {
     "CompletedAt",
   ],
   WorkComments: ["WorkId", "Role", "Label", "Body", "IP", "CreatedAt"],
-  HeroSlides: ["Image", "Href", "Alt", "Order", "Active"],
+  HeroSlides: ["Image", "Href", "Alt", "Order", "Active", "Lqip"],
   Portfolio: [
     "Name",
     "Folder",

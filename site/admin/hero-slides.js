@@ -4,6 +4,7 @@ let slides = [];
 let original = [];
 let dirty = false;
 let pendingAddUrl = "";
+let pendingAddLqip = "";
 
 const listEl = document.getElementById("slidesList");
 const addFormEl = document.getElementById("addForm");
@@ -76,12 +77,14 @@ const btnReplaceEditThumb = document.getElementById("btnReplaceEditThumb");
 
 let editingIndex = -1;
 let editingImage = "";
+let editingLqip = "";
 
 function openEditModal(index) {
   const s = slides[index];
   if (!s) return;
   editingIndex = index;
   editingImage = s.image || "";
+  editingLqip = s.lqip || "";
   editAltInput.value = s.alt || "";
   renderEditThumb(editingImage);
   slideModal.hidden = false;
@@ -93,6 +96,7 @@ function closeEditModal() {
   document.body.classList.remove("modal-open");
   editingIndex = -1;
   editingImage = "";
+  editingLqip = "";
   editThumbFile.value = "";
 }
 
@@ -125,6 +129,7 @@ editThumbFile.addEventListener("change", async () => {
       skipCompressUnder: 5 * 1024 * 1024,
     });
     editingImage = res.url;
+    editingLqip = await adminUtil.makeLqipDataUrl(f);
     renderEditThumb(editingImage);
     adminUtil.toast("업로드 완료");
   } catch (e) {
@@ -154,6 +159,7 @@ document.getElementById("slideEditForm").addEventListener("submit", (e) => {
   }
   const s = slides[editingIndex];
   s.image = editingImage;
+  s.lqip = editingLqip;
   s.alt = editAltInput.value.trim();
   s.href = "";
   setDirty(true);
@@ -170,6 +176,7 @@ async function handleImageReplace(index, file) {
       skipCompressUnder: 5 * 1024 * 1024,
     });
     slides[index].image = res.url;
+    slides[index].lqip = await adminUtil.makeLqipDataUrl(file);
     setDirty(true);
     render();
     adminUtil.toast("이미지 교체 완료");
@@ -201,6 +208,7 @@ function resetAddForm() {
   previewWrap.classList.add("hidden");
   previewEl.style.backgroundImage = "none";
   pendingAddUrl = "";
+  pendingAddLqip = "";
 }
 function setPreview(url) {
   if (!url) {
@@ -221,6 +229,7 @@ uploadInput?.addEventListener("change", async () => {
       skipCompressUnder: 5 * 1024 * 1024,
     });
     pendingAddUrl = res.url;
+    pendingAddLqip = await adminUtil.makeLqipDataUrl(file);
     setPreview(res.url);
     adminUtil.toast("업로드 완료");
   } catch (e) {
@@ -246,6 +255,7 @@ document.getElementById("addForm").addEventListener("submit", (e) => {
     image: pendingAddUrl,
     href: "",
     alt: altInput.value.trim(),
+    lqip: pendingAddLqip,
   });
   setDirty(true);
   showAddForm(false);
@@ -289,6 +299,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
       image: s.image,
       href: "",
       alt: s.alt || "",
+      lqip: s.lqip || "",
     }));
     original = JSON.parse(JSON.stringify(slides));
     render();
