@@ -79,6 +79,8 @@ zone_name = "day1design.co.kr"
 #   printf "%s" "986916453663066" | wrangler secret put META_AD_ACCOUNT_ID
 #   printf "%s" "8717156602:AAFD..." | wrangler secret put META_RATE_TELEGRAM_BOT_TOKEN
 #   printf "%s" "-1003958023969" | wrangler secret put META_RATE_TELEGRAM_CHAT_ID
+#   printf "%s" "8803224108:AAGp..." | wrangler secret put WORKS_BOT_TOKEN   # 업무관리 등록/수정 알림 전용 봇
+#   printf "%s" "-4210965893" | wrangler secret put WORKS_CHAT_ID            # 업무관리봇 채널
 #   printf "%s" "EAAxxx..." | wrangler secret put META_CAPI_TOKEN   # Events Manager→데이터세트→설정→전환 API→액세스 토큰
 # 로컬 개발은 worker/.dev.vars 파일에 동일 키로 저장
 

@@ -16,8 +16,9 @@
 
 import { json, jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin, timingSafeEqual } from "../lib/auth.js";
-import { clientIP } from "../lib/security.js";
+import { clientIP, escapeHtml } from "../lib/security.js";
 import { createServices } from "../lib/services.js";
+import { notifyTelegram } from "../lib/telegram.js";
 
 const TYPES = ["완료", "진행", "특이사항"];
 
@@ -25,6 +26,45 @@ function phone4Of(p) {
   return String(p || "")
     .replace(/\D/g, "")
     .slice(-4);
+}
+
+// KST 타임스탬프 (텔레그램 알림용)
+function kstNow() {
+  return (
+    new Date(Date.now() + 9 * 3600000)
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 19) + " KST"
+  );
+}
+
+// 광고주 브랜드명 조회 (실패해도 알림 흐름을 막지 않음)
+async function brandOf(services, clientId) {
+  try {
+    const c = await services.clients.get(String(clientId || ""));
+    return c.fields.Brand || "광고주";
+  } catch {
+    return "광고주";
+  }
+}
+
+// 모든 업무관리 봇 메시지 머리글: 네임태그 + 업체명 뱃지(항상 부착).
+// 텔레그램 <code> 는 회색 알약 배경으로 렌더되어 뱃지처럼 보인다.
+function worksHeader(action, brand) {
+  return [
+    `<b>[day1design/works]</b> ${action}`,
+    `🏢 <code>${escapeHtml(brand || "광고주")}</code>`,
+  ];
+}
+
+// 업무관리 전용 텔레그램 봇으로 알림. 미설정이면 조용히 skip.
+// 알림 실패가 업무 저장(응답)을 막지 않도록 ctx.waitUntil 으로 분리.
+function notifyWorks(env, ctx, text) {
+  const botToken = String(env.WORKS_BOT_TOKEN || "").trim();
+  const chatId = String(env.WORKS_CHAT_ID || "").trim();
+  if (!botToken || !chatId) return;
+  const p = notifyTelegram(env, text, { botToken, chatId });
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(p);
 }
 
 // YYYY-MM-DD 형식 + 실제 달력 유효성 (2026-13-99 등 차단)
@@ -161,16 +201,30 @@ export async function handleWorks(
       if (e.notFound) return jsonError(400, "bad client");
       throw e;
     }
+    const body = String(b.body || "").slice(0, 2000);
     const rec = await services.works.create({
       ClientId: cl.id,
       Date: date,
       Type: type,
       Title: title,
-      Body: String(b.body || "").slice(0, 2000),
+      Body: body,
       AuthorLabel: who.label,
       IP: ip,
       CreatedAt: new Date().toISOString(),
     });
+    notifyWorks(
+      env,
+      ctx,
+      [
+        ...worksHeader("🆕 업무 등록", cl.fields.Brand),
+        `유형: ${escapeHtml(type)} · 일자: ${escapeHtml(date)}`,
+        `제목: ${escapeHtml(title)}`,
+        ...(body ? [`내용: ${escapeHtml(body.slice(0, 300))}`] : []),
+        `작성: ${escapeHtml(who.label)}`,
+        "",
+        kstNow(),
+      ].join("\n"),
+    );
     return jsonOk({ id: rec.id });
   }
 
@@ -257,6 +311,29 @@ export async function handleWorks(
     }
     if (!Object.keys(fields).length) return jsonError(400, "no fields");
     await services.works.update(m[1], fields);
+
+    // 변경 요약 (완료 전환은 강조)
+    const completed = fields.Type === "완료" && cur.fields.Type !== "완료";
+    const changes = [];
+    if (fields.Type !== undefined)
+      changes.push(`유형 → ${escapeHtml(fields.Type)}`);
+    if (fields.Date !== undefined)
+      changes.push(`일자 → ${escapeHtml(fields.Date)}`);
+    if (fields.Title !== undefined)
+      changes.push(`제목 → ${escapeHtml(fields.Title)}`);
+    if (fields.Body !== undefined) changes.push(`내용 수정`);
+    const brand = await brandOf(services, cur.fields.ClientId);
+    notifyWorks(
+      env,
+      ctx,
+      [
+        ...worksHeader(completed ? "✅ 업무 완료처리" : "✏️ 업무 수정", brand),
+        `대상: ${escapeHtml(cur.fields.Title || "(제목없음)")}`,
+        `변경: ${changes.join(" · ")}`,
+        "",
+        kstNow(),
+      ].join("\n"),
+    );
     return jsonOk({});
   }
 
