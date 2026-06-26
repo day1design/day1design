@@ -467,6 +467,11 @@ function bootstrap() {
   cacheInvalidate();
   initShell();
   if (!isLoginPage()) {
+    // 토큰이 있으면 인증 왕복(/api/auth/me, 크로스오리진 ~200ms+)을 기다리지 않고
+    // 즉시 표시 — 그 동안 레이아웃이 visibility:hidden 으로 '빈 화면'처럼 보이던
+    // 체감 지연 제거. 검증은 백그라운드로 계속하고, 무효 토큰이면 api() 401 →
+    // 로그인 리다이렉트로 처리되므로 데이터 노출 위험 없음.
+    if (getToken()) document.body.classList.add("auth-ready");
     ensureAuth().then((ok) => {
       if (ok) pingApi();
     });
