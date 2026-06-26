@@ -75,6 +75,9 @@
   }
 
   let evFilter = "all";
+  let allEvents = []; // 작동로그 전체(최대 500) — 인라인 미리보기 + 모달이 공유
+  let logStatus = "all"; // 모달 상태 필터
+  let logDate = ""; // 모달 날짜 필터(YYYY-MM-DD, 빈값=전체)
 
   /* ---------- 즉시 페인트 스냅샷 (콜드스타트 체감 제거) ----------
      직전 방문의 응답을 localStorage 에 저장 → 재방문 시 네트워크 대기 없이
@@ -188,51 +191,151 @@
     return `<span class="step ${m[0]}">${STEP_LABEL[key] || key}${m[1]}</span>`;
   }
 
-  function renderEvents(items) {
+  // 한 건의 작동로그 행(.ev 그리드) + 펼침 상세. idPrefix 로 인라인/모달 ID 충돌 방지.
+  function evRowHtml(e, domId, detailHtml) {
+    const st = ST[e.overall] || ST.ok;
+    const ch = CH[e.channel] || { label: e.channel || "—", cls: "ch-home" };
+    const steps = STEP_ORDER.filter((k) => e.steps && e.steps[k])
+      .map((k) => stepTag(k, e.steps[k]))
+      .join("");
+    const extra = Object.keys(e.steps || {})
+      .filter((k) => !STEP_ORDER.includes(k))
+      .map((k) => stepTag(k, e.steps[k]))
+      .join("");
+    return `<div>
+      <div class="ev row-${e.overall}" data-ev="${domId}">
+        <div style="font-family:ui-monospace,monospace;color:var(--c-text-sub)">${escapeHtml(fmtKst(e.at))}</div>
+        <div><span class="chtag ${ch.cls}">${escapeHtml(ch.label)}</span></div>
+        <div style="font-weight:600">${escapeHtml(e.branch || "—")}</div>
+        <div class="cust">${escapeHtml((e.name || "") + " " + (e.phone || ""))}</div>
+        <div style="color:var(--c-text-sub)">${escapeHtml(e.geo || "—")}</div>
+        <div class="steps">${steps}${extra}</div>
+        <div style="text-align:right"><span class="hc-pill ${st.cls}" style="font-size:11px;padding:2px 8px"><span class="hc-dot"></span>${st.label}</span></div>
+      </div>
+      <div class="ev-detail" id="${domId}">${detailHtml}</div>
+    </div>`;
+  }
+
+  // 상태/날짜 조건으로 allEvents 필터
+  function filteredEvents(status, dateKey) {
+    return allEvents.filter((e) => {
+      if (status && status !== "all" && e.overall !== status) return false;
+      if (dateKey && String(e.at).slice(0, 10) !== dateKey) return false;
+      return true;
+    });
+  }
+
+  function bindRowToggle(scope) {
+    scope.querySelectorAll(".ev[data-ev]").forEach((row) => {
+      row.addEventListener("click", () =>
+        $(row.dataset.ev).classList.toggle("open"),
+      );
+    });
+  }
+
+  // 메인 페이지 = 미리보기(최근 8건). 전체는 모달에서 날짜별로.
+  function renderInlinePreview() {
     const list = $("evList");
+    const items = filteredEvents(evFilter, "").slice(0, 8);
     if (!items.length) {
       list.innerHTML = `<div class="empty">표시할 접수 이벤트가 없습니다.</div>`;
       return;
     }
     list.innerHTML = items
-      .map((e, i) => {
-        const st = ST[e.overall] || ST.ok;
-        const ch = CH[e.channel] || { label: e.channel || "—", cls: "ch-home" };
-        const steps = STEP_ORDER.filter((k) => e.steps && e.steps[k])
-          .map((k) => stepTag(k, e.steps[k]))
+      .map((e, i) =>
+        evRowHtml(
+          e,
+          "evd" + i,
+          `<div>${escapeHtml(JSON.stringify(e.steps || {}))} · ${escapeHtml(e.estimateId || "")}</div>`,
+        ),
+      )
+      .join("");
+    bindRowToggle(list);
+  }
+
+  /* ---------- 작동로그 전체 모달 (날짜별 + 상세) ---------- */
+  function populateLogDates() {
+    const sel = $("logDateSel");
+    if (!sel) return;
+    const counts = {};
+    allEvents.forEach((e) => {
+      const d = String(e.at).slice(0, 10);
+      if (d) counts[d] = (counts[d] || 0) + 1;
+    });
+    const dates = Object.keys(counts).sort().reverse();
+    const prev = logDate;
+    sel.innerHTML =
+      `<option value="">전체 날짜 (${allEvents.length})</option>` +
+      dates
+        .map((d) => `<option value="${d}">${d} (${counts[d]})</option>`)
+        .join("");
+    if (prev && counts[prev]) sel.value = prev;
+    else logDate = "";
+  }
+
+  function renderLogModal() {
+    const body = $("logModalBody");
+    if (!body) return;
+    const items = filteredEvents(logStatus, logDate);
+    const cnt = $("logModalCount");
+    if (cnt) cnt.textContent = `${items.length}건`;
+    if (!items.length) {
+      body.innerHTML = `<div class="empty">해당 조건의 작동로그가 없습니다.</div>`;
+      return;
+    }
+    // 날짜별 그룹(최신 날짜 먼저)
+    const groups = {};
+    items.forEach((e) => {
+      const d = String(e.at).slice(0, 10) || "—";
+      (groups[d] = groups[d] || []).push(e);
+    });
+    const dates = Object.keys(groups).sort().reverse();
+    body.innerHTML = dates
+      .map((d) => {
+        const rows = groups[d]
+          .map((e, idx) => {
+            const detailSteps =
+              Object.entries(e.steps || {})
+                .map(([k, v]) => `${STEP_LABEL[k] || k}: ${v}`)
+                .join(" · ") || "—";
+            const detail = `<div style="line-height:1.7">
+              <div><b>전체 작동 단계</b> · ${escapeHtml(detailSteps)}</div>
+              <div><b>접수번호</b> ${escapeHtml(e.estimateId || "—")} &nbsp;·&nbsp; <b>유입</b> ${escapeHtml(e.source || "—")} &nbsp;·&nbsp; <b>채널</b> ${escapeHtml((CH[e.channel] || {}).label || e.channel || "—")}</div>
+              <div><b>시각</b> ${escapeHtml(fmtKstFull(e.at))} &nbsp;·&nbsp; <b>유입위치</b> ${escapeHtml(e.geo || "—")}</div>
+            </div>`;
+            return evRowHtml(e, `lm_${d}_${idx}`, detail);
+          })
           .join("");
-        const extra = Object.keys(e.steps || {})
-          .filter((k) => !STEP_ORDER.includes(k))
-          .map((k) => stepTag(k, e.steps[k]))
-          .join("");
-        return `<div>
-        <div class="ev row-${e.overall}" data-ev="${i}">
-          <div style="font-family:ui-monospace,monospace;color:var(--c-text-sub)">${escapeHtml(fmtKst(e.at))}</div>
-          <div><span class="chtag ${ch.cls}">${escapeHtml(ch.label)}</span></div>
-          <div style="font-weight:600">${escapeHtml(e.branch || "—")}</div>
-          <div class="cust">${escapeHtml((e.name || "") + " " + (e.phone || ""))}</div>
-          <div style="color:var(--c-text-sub)">${escapeHtml(e.geo || "—")}</div>
-          <div class="steps">${steps}${extra}</div>
-          <div style="text-align:right"><span class="hc-pill ${st.cls}" style="font-size:11px;padding:2px 8px"><span class="hc-dot"></span>${st.label}</span></div>
-        </div>
-        <div class="ev-detail" id="evd${i}"><div>${escapeHtml(JSON.stringify(e.steps || {}))} · ${escapeHtml(e.estimateId || "")}</div></div>
-      </div>`;
+        return `<div class="logday">
+          <div class="logday-head">${d} <span>· ${groups[d].length}건</span></div>
+          ${rows}
+        </div>`;
       })
       .join("");
-    document.querySelectorAll(".ev[data-ev]").forEach((row) => {
-      row.addEventListener("click", () =>
-        $("evd" + row.dataset.ev).classList.toggle("open"),
-      );
-    });
+    bindRowToggle(body);
+  }
+
+  function openLogModal() {
+    populateLogDates();
+    renderLogModal();
+    $("logModalMask")?.removeAttribute("hidden");
+    $("logModal")?.removeAttribute("hidden");
+    document.body.classList.add("logmodal-open");
+  }
+  function closeLogModal() {
+    $("logModalMask")?.setAttribute("hidden", "");
+    $("logModal")?.setAttribute("hidden", "");
+    document.body.classList.remove("logmodal-open");
   }
 
   async function loadEvents() {
     try {
-      const q = evFilter === "all" ? "" : `?status=${evFilter}`;
-      const r = await api(`/api/admin/health/events${q}`);
-      const items = (r && r.items) || [];
-      renderEvents(items);
-      if (evFilter === "all") writeSnap({ events: items });
+      // 한 번에 전체(최대 500) 수신 → 인라인/모달이 클라이언트에서 필터(왕복 절감).
+      const r = await api(`/api/admin/health/events?limit=500`);
+      allEvents = (r && r.items) || [];
+      renderInlinePreview();
+      populateLogDates();
+      writeSnap({ events: allEvents });
     } catch {
       $("evList").innerHTML =
         `<div class="empty">작동로그를 불러오지 못했습니다.</div>`;
@@ -311,6 +414,7 @@
 
   /* ---------- 이벤트 바인딩 ---------- */
   // 점검은 매시간 자동 실행(cron). 사용자 수동 실행 버튼 없음.
+  // 인라인 필터는 이미 받아둔 allEvents 를 클라이언트에서 거름(왕복 없음).
   document.querySelectorAll("#evFilter button").forEach((b) => {
     b.addEventListener("click", () => {
       evFilter = b.dataset.f;
@@ -318,7 +422,29 @@
         .querySelectorAll("#evFilter button")
         .forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
-      loadEvents();
+      renderInlinePreview();
+    });
+  });
+
+  // 작동로그 전체 모달
+  $("btnAllLogs")?.addEventListener("click", openLogModal);
+  $("logModalClose")?.addEventListener("click", closeLogModal);
+  $("logModalMask")?.addEventListener("click", closeLogModal);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeLogModal();
+  });
+  $("logDateSel")?.addEventListener("change", (e) => {
+    logDate = e.target.value || "";
+    renderLogModal();
+  });
+  document.querySelectorAll("#logStatusFilter button").forEach((b) => {
+    b.addEventListener("click", () => {
+      logStatus = b.dataset.f;
+      document
+        .querySelectorAll("#logStatusFilter button")
+        .forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      renderLogModal();
     });
   });
 
@@ -329,7 +455,11 @@
       renderPower(snap.health.latest);
       renderLatest(snap.health.latest, snap.health.history);
     }
-    if (snap.events) renderEvents(snap.events);
+    if (snap.events) {
+      allEvents = snap.events;
+      renderInlinePreview();
+      populateLogDates();
+    }
   }
 
   // 접속 시 1회 로드로 충분 (자동 폴링 없음 — 비용 절감).

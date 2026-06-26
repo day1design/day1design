@@ -476,6 +476,9 @@
                 <button data-f="warn">주의</button>
                 <button data-f="fail">오류</button>
               </div>
+              <button type="button" class="logmodal-open" id="btnAllLogs">
+                전체 로그 ▸
+              </button>
             </div>
             <div class="evwrap">
               <div class="ev head">
@@ -527,8 +530,178 @@
       </main>
     </div>
     <div class="toast" id="toast"></div>
+
+    <!-- 작동로그 전체 모달 (날짜별 + 상세) -->
+    <div class="logmodal-mask" id="logModalMask" hidden></div>
+    <div
+      class="logmodal"
+      id="logModal"
+      role="dialog"
+      aria-label="작동로그 전체"
+      hidden
+    >
+      <div class="logmodal-head">
+        <h3><span class="live-dot"></span> 작동로그 전체 · 날짜별</h3>
+        <button class="logmodal-close" id="logModalClose" aria-label="닫기">
+          ✕
+        </button>
+      </div>
+      <div class="logmodal-controls">
+        <label
+          >날짜
+          <select id="logDateSel">
+            <option value="">전체 날짜</option>
+          </select>
+        </label>
+        <div class="ev-filter" id="logStatusFilter">
+          <button data-f="all" class="active">전체</button>
+          <button data-f="ok">정상</button>
+          <button data-f="warn">주의</button>
+          <button data-f="fail">오류</button>
+        </div>
+        <span class="logmodal-count" id="logModalCount"></span>
+      </div>
+      <div class="logmodal-scroll">
+        <div class="ev head logmodal-headrow">
+          <div>시각</div>
+          <div>채널</div>
+          <div>지점</div>
+          <div>고객</div>
+          <div>유입 위치</div>
+          <div>작동 단계</div>
+          <div style="text-align: right">판정</div>
+        </div>
+        <div class="logmodal-body" id="logModalBody">
+          <div class="empty">불러오는 중…</div>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .logmodal-open {
+        margin-left: auto;
+        border: 1px solid var(--c-border, #e2e5ea);
+        background: var(--c-card, #fff);
+        color: var(--c-text, #1f2937);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .logmodal-open:hover {
+        background: #f4f6f8;
+      }
+      .logmodal-mask {
+        position: fixed;
+        inset: 0;
+        background: rgba(17, 20, 24, 0.46);
+        z-index: 80;
+      }
+      .logmodal {
+        position: fixed;
+        z-index: 81;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: min(940px, 94vw);
+        max-height: 86vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--c-card, #fff);
+        border-radius: 16px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+        overflow: hidden;
+      }
+      .logmodal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--c-border, #ececef);
+      }
+      .logmodal-head h3 {
+        margin: 0;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .logmodal-close {
+        border: none;
+        background: transparent;
+        font-size: 19px;
+        line-height: 1;
+        color: var(--c-text-sub, #6b7280);
+        cursor: pointer;
+        padding: 4px 9px;
+        border-radius: 8px;
+      }
+      .logmodal-close:hover {
+        background: #f1f3f5;
+      }
+      .logmodal-controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--c-border, #f0f1f3);
+      }
+      .logmodal-controls label {
+        font-size: 13px;
+        color: var(--c-text-sub, #6b7280);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .logmodal-controls select {
+        padding: 6px 10px;
+        border: 1px solid var(--c-border, #d8dce2);
+        border-radius: 8px;
+        font-size: 13px;
+        background: #fff;
+      }
+      .logmodal-count {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--c-text-sub, #6b7280);
+      }
+      .logmodal-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+      }
+      .logmodal-headrow {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        padding: 0 20px;
+      }
+      .logmodal-body {
+        padding: 2px 20px 20px;
+      }
+      .logday-head {
+        background: #f6f7f9;
+        color: #5b6370;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 7px 10px;
+        border-radius: 7px;
+        margin: 14px 0 4px;
+      }
+      .logday-head span {
+        font-weight: 400;
+        color: #8b919b;
+      }
+      body.logmodal-open {
+        overflow: hidden;
+      }
+    </style>
+
     <script defer src="config.js"></script>
     <script defer src="admin.js?v=20260626-authfast"></script>
-    <script defer src="health.js?v=20260625-loadperf"></script>
+    <script defer src="health.js?v=20260626-logmodal"></script>
   </body>
 </html>
