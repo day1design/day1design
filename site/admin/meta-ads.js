@@ -741,51 +741,29 @@
     try {
       await adminUtil.ensureAuth();
       const qs = buildQuery(key);
-      const [
-        summary,
-        campaigns,
-        ads,
-        eff,
-        plat,
-        pos,
-        dev,
-        ag,
-        reg,
-        dow,
-        hh,
-        log,
-      ] = await Promise.all([
-        adminUtil.api(`/api/meta-ads/summary?${qs}`),
-        adminUtil.api(`/api/meta-ads/campaigns?${qs}`),
-        adminUtil.api(
-          `/api/meta-ads/ads?${qs}&sort=${adsSort}&order=${adsOrder}&limit=20`,
-        ),
-        adminUtil.api(`/api/meta-ads/efficiency?${qs}`),
-        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=platform`),
-        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=position`),
-        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=device`),
-        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=age_gender`),
-        adminUtil.api(`/api/meta-ads/breakdown?${qs}&dim=region`),
-        adminUtil.api(`/api/meta-ads/dow?${qs}`),
-        adminUtil.api(`/api/meta-ads/hour-heatmap?${qs}`),
-        adminUtil.api(`/api/meta-ads/sync-log`),
-      ]);
+      // 12개 분리 호출 → 1회 통합 엔드포인트(서버측 병합 + 30분 엣지 캐시).
+      // 이중 홉(Vercel→Worker) 왕복을 12→1 로 줄여 로드 지연 대폭 단축.
+      const ov = await adminUtil.api(
+        `/api/meta-ads/overview?${qs}&sort=${adsSort}&order=${adsOrder}&limit=20`,
+      );
+      const summary = ov?.summary;
+      const bd = ov?.breakdown || {};
 
       renderSummary(summary);
-      renderCampaigns(campaigns?.campaigns);
-      renderAds(ads?.ads);
-      renderEfficiency(eff);
+      renderCampaigns(ov?.campaigns?.campaigns);
+      renderAds(ov?.ads?.ads);
+      renderEfficiency(ov?.efficiency);
       renderBreakdowns({
-        platform: plat?.rows,
-        position: pos?.rows,
-        device: dev?.rows,
-        age_gender: ag?.rows,
-        region: reg?.rows,
+        platform: bd.platform?.rows,
+        position: bd.position?.rows,
+        device: bd.device?.rows,
+        age_gender: bd.age_gender?.rows,
+        region: bd.region?.rows,
       });
       renderVideoFunnel(summary);
-      renderDow(dow?.rows);
-      renderHeatmap(hh?.cells);
-      renderSyncLog(log?.logs);
+      renderDow(ov?.dow?.rows);
+      renderHeatmap(ov?.hourHeatmap?.cells);
+      renderSyncLog(ov?.syncLog?.logs);
     } catch (e) {
       console.error("meta-ads load failed:", e);
       adminUtil.toast?.("Meta 광고 데이터 로드 실패", "error");

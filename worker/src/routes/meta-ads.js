@@ -60,6 +60,13 @@ export async function handleMetaAds(request, env, ctx) {
     return jsonError(401, "Unauthorized");
   }
 
+  // GET /api/meta-ads/overview?days=30 — 12개 분리 호출을 1회로 통합(서버측 병합)
+  // + 30분 엣지 캐시. Meta 데이터는 하루 1회 cron 동기화라 캐시 안전.
+  // 어드민 로드 시 12 round-trip(이중 홉 Vercel→Worker) → 1 round-trip 으로 단축.
+  if (path === "/overview" && request.method === "GET") {
+    return getOverview(request, env);
+  }
+
   // GET /api/meta-ads/summary?days=30 — D1 read-only
   if (path === "/summary" && request.method === "GET") {
     return getSummary(request, env);
@@ -121,6 +128,101 @@ export async function runScheduledSync(env, ctx) {
   const end = kstYesterday();
   const start = kstDaysAgo(3);
   return syncRange(env, ctx, start, end, "cron");
+}
+
+// 동일 request 를 쿼리파라미터만 바꿔 복제 (breakdown dim 별 핸들러 재사용용)
+function withQuery(request, extra) {
+  const u = new URL(request.url);
+  for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, String(v));
+  return new Request(u.toString(), request);
+}
+
+// ─── 통합 개요 (12개 분리 호출 → 1회) + 30분 엣지 캐시 ──────
+// 기존 핸들러 로직을 그대로 재사용(쿼리 중복/회귀 위험 0)하고 서버측에서 한 번에
+// 병합. 각 하위 응답을 키별로 담아 프론트가 기존 필드(.campaigns/.rows/.cells/.logs)
+// 를 그대로 쓰도록 형태 보존. 캐시는 verifyAdmin 통과 후 호출되므로 노출 위험 없음.
+async function getOverview(request, env) {
+  const url = new URL(request.url);
+  const range = resolveRangeFromQuery(url);
+  const sort = url.searchParams.get("sort") || "spend";
+  const order = url.searchParams.get("order") || "top";
+  const cache = caches.default;
+  const cacheKey = `https://meta-overview.internal/${encodeURIComponent(range.startDate)}/${encodeURIComponent(range.endDate)}/${encodeURIComponent(sort)}/${encodeURIComponent(order)}`;
+
+  try {
+    const hit = await cache.match(cacheKey);
+    if (hit) {
+      return new Response(hit.body, {
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+  } catch {}
+
+  const j = (resp) => resp.json();
+  try {
+    const [
+      summary,
+      campaigns,
+      ads,
+      efficiency,
+      platform,
+      position,
+      device,
+      ageGender,
+      region,
+      dow,
+      hourHeatmap,
+      syncLog,
+    ] = await Promise.all([
+      getSummary(request, env).then(j),
+      listCampaigns(request, env).then(j),
+      listAds(request, env).then(j),
+      getEfficiency(request, env).then(j),
+      listBreakdown(withQuery(request, { dim: "platform" }), env).then(j),
+      listBreakdown(withQuery(request, { dim: "position" }), env).then(j),
+      listBreakdown(withQuery(request, { dim: "device" }), env).then(j),
+      listBreakdown(withQuery(request, { dim: "age_gender" }), env).then(j),
+      listBreakdown(withQuery(request, { dim: "region" }), env).then(j),
+      listDow(request, env).then(j),
+      listHourHeatmap(request, env).then(j),
+      listSyncLog(env).then(j),
+    ]);
+
+    const body = JSON.stringify({
+      ok: true,
+      range,
+      summary,
+      campaigns,
+      ads,
+      efficiency,
+      breakdown: { platform, position, device, age_gender: ageGender, region },
+      dow,
+      hourHeatmap,
+      syncLog,
+      cachedAt: new Date().toISOString(),
+    });
+
+    try {
+      await cache.put(
+        cacheKey,
+        new Response(body, {
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": "max-age=1800",
+          },
+        }),
+      );
+    } catch {}
+
+    return new Response(body, {
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  } catch (e) {
+    return jsonError(
+      500,
+      "overview failed: " + (e.message || "").slice(0, 100),
+    );
+  }
 }
 
 // ─── 사용자 응답 (D1 read-only) ───────────────────────────
