@@ -6,15 +6,51 @@ import {
   timingSafeEqual,
 } from "../lib/auth.js";
 import { sign as signJwt } from "../lib/jwt.js";
-import { clientIP, rateLimit } from "../lib/security.js";
-import { notifyTelegram } from "../lib/telegram.js";
+import { clientIP, rateLimit, escapeHtml } from "../lib/security.js";
+import { notifyInfra } from "../lib/telegram.js";
 import { queueAudit } from "../lib/audit-log.js";
 
 const SESSION_TTL = 60 * 60 * 12; // 12h
 const DEFAULT_ADMIN_USERNAME = "admin";
+const LOGIN_FAIL_ALERT_THRESHOLD = 5; // 동일 IP 연속 실패 임계(브루트포스)
 
 function queueTask(ctx, task) {
   if (task && typeof task.then === "function") ctx?.waitUntil?.(task);
+}
+
+// 동일 IP 로그인 실패 누적(Cache API, 1h TTL). 반환=현재 누적 실패 횟수.
+async function recordLoginFailure(ip) {
+  const cache = caches.default;
+  const key = `https://login-fail.internal/count/${ip}`;
+  const cached = await cache.match(key);
+  let count = cached ? parseInt((await cached.text()) || "0", 10) || 0 : 0;
+  count++;
+  await cache.put(
+    key,
+    new Response(String(count), {
+      headers: { "cache-control": "max-age=3600" },
+    }),
+  );
+  return count;
+}
+
+// 실패 임계 초과 시 인프라봇으로 1회만 알림(동시간대 과알림 방지).
+async function maybeAlertBruteforce(env, ip, username, count) {
+  if (count < LOGIN_FAIL_ALERT_THRESHOLD) return;
+  const cache = caches.default;
+  const alertKey = `https://login-fail.internal/alert/${ip}`;
+  if (await cache.match(alertKey)) return; // 이미 알림함(1h)
+  await cache.put(
+    alertKey,
+    new Response("1", { headers: { "cache-control": "max-age=3600" } }),
+  );
+  await notifyInfra(
+    env,
+    `<b>[day1design/auth]</b> 🚨 로그인 실패 급증(브루트포스 의심)\n` +
+      `IP: ${escapeHtml(ip)}\n` +
+      `누적 실패: ${count}회 (임계 ${LOGIN_FAIL_ALERT_THRESHOLD})\n` +
+      `시도 ID: <code>${escapeHtml(username || "-")}</code>`,
+  );
 }
 
 export async function handleAuth(request, env, ctx) {
@@ -42,9 +78,9 @@ async function loginWithPassword(request, env, ctx) {
   if (!rl.allowed) {
     queueTask(
       ctx,
-      notifyTelegram(
+      notifyInfra(
         env,
-        `[day1design/auth] rate-limit 초과\nIP: ${ip} (${rl.count}회)`,
+        `<b>[day1design/auth]</b> ⛔ 로그인 rate-limit 초과\nIP: ${escapeHtml(ip)} (${rl.count}회)`,
       ),
     );
     queueAudit(ctx, env, request, {
@@ -81,6 +117,14 @@ async function loginWithPassword(request, env, ctx) {
       username,
       message: "관리자 로그인 실패",
     });
+    // 실패 누적 + 임계 초과 시 인프라봇 브루트포스 알림(응답 비차단)
+    queueTask(
+      ctx,
+      (async () => {
+        const count = await recordLoginFailure(ip);
+        await maybeAlertBruteforce(env, ip, username, count);
+      })(),
+    );
     return jsonError(401, "Invalid credentials");
   }
 

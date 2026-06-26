@@ -2,7 +2,7 @@ import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { clientIP, validateContentType, escapeHtml } from "../lib/security.js";
 import { generateId } from "../lib/d1.js";
-import { notifyTelegram } from "../lib/telegram.js";
+import { notifyInfra } from "../lib/telegram.js";
 
 // 히트맵은 빈도가 높아 일반 폼 rate-limit(10/h)보다 관대
 const HEATMAP_RATE_LIMIT_PER_HOUR = 1000;
@@ -150,7 +150,7 @@ async function maybeAlertBotBurst(env, delta, sample) {
       `• 표본 유입: ${escapeHtml(s.referrer || "-")} → ${escapeHtml(s.page || "-")}\n\n` +
       `유입통계는 IsBot=0 만 집계하므로 실제 수치 영향 없음.\n` +
       `관리자 › 유입통계에서 정상 수치 확인 가능합니다.`;
-    await notifyTelegram(env, msg);
+    await notifyInfra(env, msg);
   } catch (_) {}
 }
 

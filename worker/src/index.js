@@ -29,7 +29,7 @@ import { handleHealth } from "./routes/healthcheck.js";
 import { runAndReportHealth } from "./lib/healthcheck.js";
 import { cors, preflight } from "./lib/cors.js";
 import { jsonError } from "./lib/response.js";
-import { notifyTelegram } from "./lib/telegram.js";
+import { notifyTelegram, notifyInfra } from "./lib/telegram.js";
 import { createServices } from "./lib/services.js";
 import { accessDenied, authorizeRequest } from "./lib/access.js";
 import { queueAudit } from "./lib/audit-log.js";
@@ -268,9 +268,9 @@ export default {
     } catch (e) {
       console.error(`[day1design/${path}]`, e);
       ctx.waitUntil(
-        notifyTelegram(
+        notifyInfra(
           env,
-          `[day1design${path}] 500\n${e.message?.slice(0, 200) || "unknown"}`,
+          `<b>[day1design${path}]</b> 🔴 500 서버 에러\n${e.message?.slice(0, 200) || "unknown"}`,
         ),
       );
       queueAudit(ctx, env, request, {

@@ -35,6 +35,17 @@ function telegramChatIds(env) {
   ];
 }
 
+// 인프라/보안 특이사항(로그인공격·500 에러·봇 급증) 전용 채널.
+// INFRA_BOT_TOKEN/INFRA_CHAT_ID 미설정 시 기본 관리자 채널로 폴백(알림 유실 금지).
+export async function notifyInfra(env, text) {
+  const botToken = String(env.INFRA_BOT_TOKEN || "").trim();
+  const chatId = String(env.INFRA_CHAT_ID || "").trim();
+  if (botToken && chatId) {
+    return notifyTelegram(env, text, { botToken, chatId });
+  }
+  return notifyTelegram(env, text);
+}
+
 export async function notifyTelegram(env, text, opts = {}) {
   // opts: { botToken?: string, chatId?: string | string[] }
   // override 안 하면 env.TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID/ADMIN_CHAT_ID
