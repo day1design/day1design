@@ -113,7 +113,7 @@ export async function handlePixelEventsAdmin(request, env) {
   const daily = await env.DB.prepare(
     `SELECT substr(created_at,1,10) d, event_name, COUNT(*) c
        FROM pixel_events WHERE created_at >= ${since}
-       GROUP BY d, event_name ORDER BY d ASC`,
+       GROUP BY d, event_name ORDER BY d ASC LIMIT 4000`,
   ).all();
 
   const bySource = await env.DB.prepare(

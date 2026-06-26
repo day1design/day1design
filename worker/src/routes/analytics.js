@@ -6,6 +6,12 @@ import { clientIP, rateLimit, validateContentType } from "../lib/security.js";
 
 const SOURCE = "google";
 const SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
+// 구글 API(GA4/GSC/OAuth) 동기 대기 상한. 초과 시 AbortSignal 로 즉시 실패 →
+// getSummary 가 stale 스냅샷으로 폴백. (옛: 타임아웃 없어 구글 지연 시 최대 30초 행 → 500)
+const EXTERNAL_FETCH_TIMEOUT_MS = 4500;
+// 자체측정 통계 엣지 캐시(초). /summary 는 캐시 hit 여도 fetchSelfStats(8 D1쿼리)를
+// 매번 재실행하던 것을 60초 캐시로 절감. 60초 staleness 는 유입통계에 무해.
+const SELF_STATS_TTL_S = 60;
 const DEFAULT_SITE_URL = "https://day1design.co.kr/";
 const VISIT_TRACK_RATE_LIMIT_PER_HOUR = 240;
 const VISITOR_LOCATION_LIMIT = 5;
@@ -63,7 +69,7 @@ export async function handleAnalytics(
     if (!(await verifyAdmin(request, env))) {
       return jsonError(401, "Unauthorized");
     }
-    return getSummary(request, env, services);
+    return getSummary(request, env, services, ctx);
   }
 
   if (
@@ -804,7 +810,7 @@ function isMissingVisitorTable(error) {
   );
 }
 
-async function getSummary(request, env, services) {
+async function getSummary(request, env, services, ctx) {
   const url = new URL(request.url);
   const range = resolveRange(url);
   const forceRefresh = url.searchParams.get("refresh") === "1";
@@ -846,6 +852,33 @@ async function getSummary(request, env, services) {
     const cached = latest.payload || {};
     return jsonOk(
       mergeWithSelf(cached, { persisted: latest.persisted, cached: true }),
+    );
+  }
+
+  // SWR(stale-while-revalidate): 캐시가 만료됐어도 옛 스냅샷이 있으면 즉시 반환하고
+  // GA4/GSC 라이브 갱신(3~5초)은 백그라운드로 이연 — 방문자가 매 6시간마다 첫
+  // 로드에서 3~5초 대기하던 체감 지연 제거. forceRefresh(?refresh=1)는 동기 갱신 유지.
+  if (!forceRefresh && latest && ctx?.waitUntil) {
+    ctx.waitUntil(
+      (async () => {
+        try {
+          const fresh = await collectGoogleSummary(env, range);
+          if (fresh.ok) {
+            await persistSnapshot(services, range, {
+              ...fresh,
+              self: await fetchSelfStats(env, range),
+            });
+          }
+        } catch {}
+      })(),
+    );
+    return jsonOk(
+      mergeWithSelf(latest.payload || {}, {
+        persisted: latest.persisted,
+        cached: true,
+        stale: true,
+        revalidating: true,
+      }),
     );
   }
 
@@ -892,8 +925,35 @@ async function fetchLiveTouches(env, range) {
   }
 }
 
-// 자체측정 통계 — 30일 SessionId 기준 신규/재방문 + 보조 지표 6종
+// 자체측정 통계 — 60초 엣지 캐시 래퍼. /summary 가 캐시 hit 여도 매 호출
+// computeSelfStats(8 D1쿼리, ~200~500ms)를 재실행하던 비용 절감. 실패 시 라이브 폴백.
 async function fetchSelfStats(env, range) {
+  const cache = caches.default;
+  const key = `https://selfstats.internal/${encodeURIComponent(range.startDate)}/${encodeURIComponent(range.endDate)}`;
+  try {
+    const hit = await cache.match(key);
+    if (hit) {
+      const cached = await hit.json();
+      if (cached) return cached;
+    }
+  } catch {}
+  const result = await computeSelfStats(env, range);
+  try {
+    await cache.put(
+      key,
+      new Response(JSON.stringify(result), {
+        headers: {
+          "content-type": "application/json",
+          "cache-control": `max-age=${SELF_STATS_TTL_S}`,
+        },
+      }),
+    );
+  } catch {}
+  return result;
+}
+
+// 자체측정 통계 — 30일 SessionId 기준 신규/재방문 + 보조 지표 6종
+async function computeSelfStats(env, range) {
   const startDate = range.startDate;
   const endDate = range.endDate;
   const result = {
@@ -1335,6 +1395,7 @@ async function googleAccessToken(env, refreshToken) {
       refresh_token: refreshToken,
       grant_type: "refresh_token",
     }),
+    signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`oauth_refresh_${res.status}`);
   const body = await res.json();
@@ -1645,6 +1706,7 @@ async function runGa4Report(accessToken, propertyId, body) {
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
     },
   );
   if (!res.ok) throw new Error(`ga4_report_${res.status}`);
@@ -1680,6 +1742,7 @@ async function collectSearchConsole(env, siteUrl, refreshToken, range) {
         dimensions: ["query"],
         rowLimit: 10,
       }),
+      signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
     },
   );
   if (!res.ok) throw new Error(`gsc_query_${res.status}`);
