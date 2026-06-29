@@ -77,6 +77,18 @@ export function hasUrl(s) {
   return URL_RE.test(String(s || ""));
 }
 
+// 단순 참고링크(1~2개)는 허용 — 정상 고객이 견적 참고자료(드라이브/이미지 등)
+// 링크를 문의내용에 첨부하는 경우가 흔하다. '인젝션/스팸'만 차단한다:
+//   · 링크 3개 이상(링크 스팸) · <a/script/iframe/img/svg/form/style> 또는 javascript: (HTML 삽입)
+// 이름 필드는 별도로 hasUrl 단독 차단(이름에 URL = 봇 신호, 정상 사유 없음).
+const LINK_GLOBAL_RE = /(https?:\/\/|www\.)/gi;
+const HTML_INJECT_RE = /<\s*(a|script|iframe|img|svg|form|style)\b|javascript:/i;
+export function isLinkSpam(s) {
+  const str = String(s || "");
+  const linkCount = (str.match(LINK_GLOBAL_RE) || []).length;
+  return linkCount >= 3 || HTML_INJECT_RE.test(str);
+}
+
 export function isValidEmail(s) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || ""));
 }

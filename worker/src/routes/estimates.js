@@ -4,6 +4,7 @@ import {
   clientIP,
   escapeHtml,
   hasUrl,
+  isLinkSpam,
   isValidEmail,
   isValidPhone,
   rateLimit,
@@ -573,7 +574,9 @@ async function submitEstimate(request, env, ctx, services) {
   const sig = botSignals(fields);
   const phoneOk = isValidPhone(fields.phone || "");
   const nameOk = !!(fields.name && fields.name.trim().length >= 2);
-  const urlInjected = hasUrl(fields.detail) || hasUrl(fields.name);
+  // 이름의 URL(봇) 또는 문의내용의 링크 스팸/HTML 삽입만 봇 신호로 본다.
+  // 문의내용의 단순 참고링크(1~2개)는 정상 고객 패턴이라 봇 신호에서 제외.
+  const urlInjected = hasUrl(fields.name) || isLinkSpam(fields.detail);
   const humanShape =
     looksHuman({ name: fields.name, phone: fields.phone }) && phoneOk;
 
@@ -626,7 +629,10 @@ async function submitEstimate(request, env, ctx, services) {
   if (!fields.branch) errors.push("branch");
   if (!fields.budget) errors.push("budget");
   if ((fields.detail || "").length > 2000) errors.push("detail-too-long");
-  if (hasUrl(fields.detail) || hasUrl(fields.name)) errors.push("url-detected");
+  // URL 정책: 이름엔 URL 금지(봇). 문의내용엔 단순 참고링크 허용,
+  // 링크 스팸(3개+)·HTML/스크립트 삽입만 차단. (정상 고객 링크 첨부 보존)
+  if (hasUrl(fields.name)) errors.push("url-in-name");
+  if (isLinkSpam(fields.detail)) errors.push("link-spam");
   if (errors.length) {
     // ★누락 0: 검증 실패도 (1) R2 원문 (2) D1 Status='오류' 레코드 (3) 사람이면 텔레그램.
     // 2026-05 사고(budget 누락 silent drop) 재발 방지 — 거부건도 추적/복구 가능해야 한다.

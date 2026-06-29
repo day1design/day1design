@@ -235,8 +235,8 @@ test("[invariant] human autofill honeypot is SAVED as normal estimate (D1 접수
   );
 });
 
-// 진짜 봇(허니팟 + URL 삽입) → 조용히 드롭(가짜 200) + R2 honeypot_bot, D1 미저장.
-test("[invariant] bot honeypot (URL-injected) is dropped to R2 only (no D1)", async () => {
+// 진짜 봇(허니팟 + 링크 스팸 삽입) → 조용히 드롭(가짜 200) + R2 honeypot_bot, D1 미저장.
+test("[invariant] bot honeypot (link-spam injected) is dropped to R2 only (no D1)", async () => {
   const puts = [];
   const created = [];
   const tasks = [];
@@ -249,7 +249,11 @@ test("[invariant] bot honeypot (URL-injected) is dropped to R2 only (no D1)", as
   form.append("schedule", "x");
   form.append("branch", "x");
   form.append("budget", "x");
-  form.append("detail", "buy now http://spam.example.com");
+  // 링크 3개+ = 링크 스팸 → 봇 신호. (단순 링크 1개는 정상 고객으로 허용됨)
+  form.append(
+    "detail",
+    "buy now http://s1.example.com http://s2.example.com http://s3.example.com",
+  );
   form.append("_hp", "filled-by-bot");
 
   const res = await handleEstimates(
@@ -276,4 +280,104 @@ test("[invariant] bot honeypot (URL-injected) is dropped to R2 only (no D1)", as
   assert.equal(body.queued, true, "봇은 가짜 200 으로 기만");
   assert.ok(r2Outcomes(puts).includes("honeypot_bot"), "R2 honeypot_bot 보관");
   assert.equal(created.length, 0, "봇은 D1 에 저장하지 않음");
+});
+
+// ★단순 참고링크(문의내용 1개) 는 정상 접수로 살린다 — 고객이 견적 참고자료
+// (구글 드라이브 등) 링크를 첨부하는 정상 패턴. (2026-06-30 url-detected 오탐 복구)
+test("[invariant] single reference link in detail is ACCEPTED (D1 접수대기 + 200)", async () => {
+  const puts = [];
+  const created = [];
+  const tasks = [];
+  const form = new FormData();
+  form.append("name", "송훈희");
+  form.append("phone", "010-8233-3800");
+  form.append("privacy_agreed", "true");
+  form.append("space_size", "20~30평");
+  form.append("address", "서울 양천구 목동서로 155");
+  form.append("schedule", "2026년 10월");
+  form.append("branch", "강남점");
+  form.append("budget", "6,000~8,000만원");
+  form.append(
+    "detail",
+    "상세는 링크 참고: https://drive.google.com/file/d/abc/view",
+  );
+
+  const res = await handleEstimates(
+    new Request("https://api.example.test/api/estimates", {
+      method: "POST",
+      body: form,
+      headers: { "cf-connecting-ip": "203.0.113.20" },
+    }),
+    { IMAGES: makeR2(puts), TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "-100" },
+    { waitUntil: (t) => tasks.push(t) },
+    {
+      media: { async upload() { return "https://x/y"; } },
+      estimates: {
+        async create(fields) {
+          created.push(fields);
+          return { id: "recLinkOk0000001", fields };
+        },
+      },
+    },
+  );
+  const body = await res.json();
+  await Promise.allSettled(tasks);
+
+  assert.equal(res.status, 200, "단순 링크 첨부는 정상 접수");
+  assert.equal(body.received, true);
+  assert.equal(created.length, 1);
+  assert.equal(created[0].Status, "접수대기", "오류 아닌 정상 리드");
+  assert.ok(
+    r2Outcomes(puts).includes("accepted"),
+    "R2 accepted 원문 보관",
+  );
+});
+
+// 이름에 URL = 봇/인젝션 → 차단(누락 0: R2 validation_failed + D1 오류).
+test("[invariant] URL in name is BLOCKED (D1 오류 + R2 validation_failed)", async () => {
+  const puts = [];
+  const created = [];
+  const tasks = [];
+  const form = new FormData();
+  form.append("name", "http://spam.example.com");
+  form.append("phone", "010-2222-3333");
+  form.append("privacy_agreed", "true");
+  form.append("space_size", "30평");
+  form.append("address", "서울 강남구 1");
+  form.append("schedule", "2026년 9월");
+  form.append("branch", "강남점");
+  form.append("budget", "5000만원");
+
+  const res = await handleEstimates(
+    new Request("https://api.example.test/api/estimates", {
+      method: "POST",
+      body: form,
+      headers: { "cf-connecting-ip": "203.0.113.21" },
+    }),
+    { IMAGES: makeR2(puts), TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "-100" },
+    { waitUntil: (t) => tasks.push(t) },
+    {
+      media: { async upload() { throw new Error("no upload expected"); } },
+      estimates: {
+        async create(fields) {
+          created.push(fields);
+          return { id: "recUrlName000001", fields };
+        },
+      },
+    },
+  );
+  const body = await res.json();
+  await Promise.allSettled(tasks);
+
+  assert.equal(res.status, 400);
+  assert.ok(
+    Array.isArray(body.errors) && body.errors.includes("url-in-name"),
+    "url-in-name 사유로 차단",
+  );
+  assert.ok(
+    r2Outcomes(puts).includes("validation_failed"),
+    "R2 validation_failed 보관",
+  );
+  assert.equal(created.length, 1, "거부건도 D1 에 남아야 함");
+  assert.equal(created[0].Status, "오류");
 });
