@@ -460,6 +460,23 @@
     const g = gender === "female" ? "여" : gender === "male" ? "남" : "?";
     return `${age || "?"} ${g}`;
   }
+  function genderLabel(v) {
+    return v === "male" ? "남성" : v === "female" ? "여성" : "미상";
+  }
+  // age_gender 분해 rows 를 성별로 합산 (남/여/미상). 별도 API 호출 없이 재사용.
+  function aggregateGender(agRows) {
+    const acc = {};
+    for (const r of agRows || []) {
+      const gender = String(r.value || "").split("_")[1] || "unknown";
+      if (!acc[gender]) {
+        acc[gender] = { value: gender, spend: 0, impressions: 0, leads: 0 };
+      }
+      acc[gender].spend += Number(r.spend || 0);
+      acc[gender].impressions += Number(r.impressions || 0);
+      acc[gender].leads += Number(r.leads || 0);
+    }
+    return Object.values(acc).sort((a, b) => b.spend - a.spend);
+  }
 
   function renderBreakdowns(byDim) {
     renderBarRows($("brkPlatform"), (byDim.platform || []).slice(0, 6), {
@@ -481,12 +498,26 @@
       labelFn: (r) => deviceLabel(r.value),
       displayFn: (r) => fmtUsd(r.spend),
     });
-    const ag = (byDim.age_gender || []).slice(0, 5);
-    renderBarRows($("brkAgeGender"), ag, {
+    // 성별 (남/여) — 소진율% + 지출총액 (통계필터 기간 연동)
+    const genderRows = aggregateGender(byDim.age_gender);
+    const genderTotal = genderRows.reduce(
+      (s, r) => s + Number(r.spend || 0),
+      0,
+    );
+    renderBarRows($("brkGender"), genderRows, {
+      valFn: (r) => r.spend,
+      labelFn: (r) => genderLabel(r.value),
+      displayFn: (r) =>
+        `${fmtPct(genderTotal > 0 ? r.spend / genderTotal : 0)} · ${fmtUsd(r.spend)}`,
+    });
+    // 연령·성별 — 비율% + 지출총액
+    const agAll = byDim.age_gender || [];
+    const agTotal = agAll.reduce((s, r) => s + Number(r.spend || 0), 0);
+    renderBarRows($("brkAgeGender"), agAll.slice(0, 8), {
       valFn: (r) => r.spend,
       labelFn: (r) => ageGenderLabel(r.value),
       displayFn: (r) =>
-        r.leads > 0 ? `${r.leads} / ${fmtUsd(r.cpl)}` : fmtUsd(r.spend),
+        `${fmtPct(agTotal > 0 ? r.spend / agTotal : 0)} · ${fmtUsd(r.spend)}`,
     });
     renderBarRows($("brkRegion"), (byDim.region || []).slice(0, 5), {
       valFn: (r) => r.spend,

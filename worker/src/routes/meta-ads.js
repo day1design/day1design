@@ -181,7 +181,10 @@ async function getOverview(request, env) {
       listBreakdown(withQuery(request, { dim: "platform" }), env).then(j),
       listBreakdown(withQuery(request, { dim: "position" }), env).then(j),
       listBreakdown(withQuery(request, { dim: "device" }), env).then(j),
-      listBreakdown(withQuery(request, { dim: "age_gender" }), env).then(j),
+      listBreakdown(
+        withQuery(request, { dim: "age_gender", limit: "30" }),
+        env,
+      ).then(j),
       listBreakdown(withQuery(request, { dim: "region" }), env).then(j),
       listDow(request, env).then(j),
       listHourHeatmap(request, env).then(j),
