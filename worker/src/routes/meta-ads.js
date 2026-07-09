@@ -47,14 +47,16 @@ export async function handleMetaAds(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/meta-ads/, "") || "/";
 
-  // 백필은 internal secret 으로도 호출 가능 (수동 백필·cron 보조용)
-  // verifyAdmin 우회 조건: X-Internal-Secret 헤더가 env.META_INTERNAL_SECRET 와 일치
-  const isBackfillRoute = path === "/backfill" && request.method === "POST";
+  // internal secret 으로 verifyAdmin 우회 (수동 백필·cron self-fetch 프리워밍용)
+  // 허용 경로: POST /backfill(기존) + GET /overview(cron 프리워밍 refresh=1).
+  // overview 는 read-only 이고 secret 은 서버 내부에만 존재 → 노출 위험 없음.
   const internalSecret = request.headers.get("x-internal-secret") || "";
-  const internalOk =
-    isBackfillRoute &&
-    env.META_INTERNAL_SECRET &&
+  const internalSecretOk =
+    !!env.META_INTERNAL_SECRET &&
     timingSafeEqual(internalSecret, env.META_INTERNAL_SECRET);
+  const isBackfillRoute = path === "/backfill" && request.method === "POST";
+  const isOverviewGet = path === "/overview" && request.method === "GET";
+  const internalOk = internalSecretOk && (isBackfillRoute || isOverviewGet);
 
   if (!internalOk && !(await verifyAdmin(request, env))) {
     return jsonError(401, "Unauthorized");
@@ -64,7 +66,7 @@ export async function handleMetaAds(request, env, ctx) {
   // + 30분 엣지 캐시. Meta 데이터는 하루 1회 cron 동기화라 캐시 안전.
   // 어드민 로드 시 12 round-trip(이중 홉 Vercel→Worker) → 1 round-trip 으로 단축.
   if (path === "/overview" && request.method === "GET") {
-    return getOverview(request, env);
+    return getOverview(request, env, ctx);
   }
 
   // GET /api/meta-ads/summary?days=30 — D1 read-only
@@ -137,95 +139,171 @@ function withQuery(request, extra) {
   return new Request(u.toString(), request);
 }
 
-// ─── 통합 개요 (12개 분리 호출 → 1회) + 30분 엣지 캐시 ──────
+// ─── 통합 개요 (12개 분리 호출 → 1회) + SWR 엣지 캐시 ──────
 // 기존 핸들러 로직을 그대로 재사용(쿼리 중복/회귀 위험 0)하고 서버측에서 한 번에
 // 병합. 각 하위 응답을 키별로 담아 프론트가 기존 필드(.campaigns/.rows/.cells/.logs)
-// 를 그대로 쓰도록 형태 보존. 캐시는 verifyAdmin 통과 후 호출되므로 노출 위험 없음.
-async function getOverview(request, env) {
+// 를 그대로 쓰도록 형태 보존.
+//
+// SWR(stale-while-revalidate): 캐시가 논리적으로 만료(30분)됐어도 물리 보관(24h)된
+// 옛 응답이 있으면 즉시 반환하고 재계산은 ctx.waitUntil 로 백그라운드 이연.
+// → range=all(73KB) 콜드 첫 로드(~1초+, 완전콜드+부하 시 수초)를 사용자 체감에서 제거.
+// cron sync 직후 prewarmOverviewCache 로 refresh=1 self-fetch → 완전 콜드도 없앰.
+const OVERVIEW_FRESH_MS = 30 * 60 * 1000; // 이 안이면 즉시반환, 넘으면 stale+백그라운드갱신
+const OVERVIEW_CACHE_TTL_S = 24 * 60 * 60; // 물리 보관 24h (stale 서빙 위해 길게)
+
+function overviewCacheKey(range, sort, order) {
+  return `https://meta-overview.internal/v2/${encodeURIComponent(range.startDate)}/${encodeURIComponent(range.endDate)}/${encodeURIComponent(sort)}/${encodeURIComponent(order)}`;
+}
+function overviewJsonResponse(body) {
+  return new Response(body, {
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
+async function putOverviewCache(cache, cacheKey, body) {
+  try {
+    await cache.put(
+      cacheKey,
+      new Response(body, {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `max-age=${OVERVIEW_CACHE_TTL_S}`,
+        },
+      }),
+    );
+  } catch {}
+}
+
+async function getOverview(request, env, ctx) {
   const url = new URL(request.url);
   const range = resolveRangeFromQuery(url);
   const sort = url.searchParams.get("sort") || "spend";
   const order = url.searchParams.get("order") || "top";
+  // refresh=1 (cron prewarm) → 캐시 무시하고 동기 재계산+저장. 캐시 키엔 미반영.
+  const forceRefresh = url.searchParams.get("refresh") === "1";
   const cache = caches.default;
-  const cacheKey = `https://meta-overview.internal/${encodeURIComponent(range.startDate)}/${encodeURIComponent(range.endDate)}/${encodeURIComponent(sort)}/${encodeURIComponent(order)}`;
+  const cacheKey = overviewCacheKey(range, sort, order);
 
+  if (forceRefresh) {
+    try {
+      const body = await computeOverview(request, env, range);
+      await putOverviewCache(cache, cacheKey, body);
+      return overviewJsonResponse(body);
+    } catch (e) {
+      return jsonError(
+        500,
+        "overview failed: " + (e.message || "").slice(0, 100),
+      );
+    }
+  }
+
+  // SWR — 캐시에 뭐라도 있으면 신선도 판정
+  let staleBody = null;
   try {
     const hit = await cache.match(cacheKey);
     if (hit) {
-      return new Response(hit.body, {
-        headers: { "content-type": "application/json; charset=utf-8" },
-      });
+      staleBody = await hit.text();
+      let cachedAt = 0;
+      try {
+        cachedAt = Date.parse(JSON.parse(staleBody)?.cachedAt || "") || 0;
+      } catch {}
+      const isFresh = cachedAt && Date.now() - cachedAt < OVERVIEW_FRESH_MS;
+      if (isFresh) return overviewJsonResponse(staleBody);
+      // stale → 옛값 즉시 반환 + 백그라운드 갱신
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(
+          computeOverview(request, env, range)
+            .then((body) => putOverviewCache(cache, cacheKey, body))
+            .catch(() => {}),
+        );
+        return overviewJsonResponse(staleBody);
+      }
+      // ctx 없으면 아래 동기 경로로 진행
     }
   } catch {}
 
-  const j = (resp) => resp.json();
+  // 완전 콜드 (또는 ctx 없는 stale) → 동기 계산
   try {
-    const [
-      summary,
-      campaigns,
-      ads,
-      efficiency,
-      platform,
-      position,
-      device,
-      ageGender,
-      region,
-      dow,
-      hourHeatmap,
-      syncLog,
-    ] = await Promise.all([
-      getSummary(request, env).then(j),
-      listCampaigns(request, env).then(j),
-      listAds(request, env).then(j),
-      getEfficiency(request, env).then(j),
-      listBreakdown(withQuery(request, { dim: "platform" }), env).then(j),
-      listBreakdown(withQuery(request, { dim: "position" }), env).then(j),
-      listBreakdown(withQuery(request, { dim: "device" }), env).then(j),
-      listBreakdown(
-        withQuery(request, { dim: "age_gender", limit: "30" }),
-        env,
-      ).then(j),
-      listBreakdown(withQuery(request, { dim: "region" }), env).then(j),
-      listDow(request, env).then(j),
-      listHourHeatmap(request, env).then(j),
-      listSyncLog(env).then(j),
-    ]);
-
-    const body = JSON.stringify({
-      ok: true,
-      range,
-      summary,
-      campaigns,
-      ads,
-      efficiency,
-      breakdown: { platform, position, device, age_gender: ageGender, region },
-      dow,
-      hourHeatmap,
-      syncLog,
-      cachedAt: new Date().toISOString(),
-    });
-
-    try {
-      await cache.put(
-        cacheKey,
-        new Response(body, {
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-            "cache-control": "max-age=1800",
-          },
-        }),
-      );
-    } catch {}
-
-    return new Response(body, {
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
+    const body = await computeOverview(request, env, range);
+    await putOverviewCache(cache, cacheKey, body);
+    return overviewJsonResponse(body);
   } catch (e) {
+    if (staleBody) return overviewJsonResponse(staleBody); // 갱신 실패 시 옛값 폴백
     return jsonError(
       500,
       "overview failed: " + (e.message || "").slice(0, 100),
     );
   }
+}
+
+// 12개 하위 핸들러를 서버측 Promise.all 1회 병합 → JSON 문자열 반환.
+// sort/order/limit 등은 request.url 에 이미 반영되어 하위 핸들러가 그대로 읽음.
+async function computeOverview(request, env, range) {
+  const j = (resp) => resp.json();
+  const [
+    summary,
+    campaigns,
+    ads,
+    efficiency,
+    platform,
+    position,
+    device,
+    ageGender,
+    region,
+    dow,
+    hourHeatmap,
+    syncLog,
+  ] = await Promise.all([
+    getSummary(request, env).then(j),
+    listCampaigns(request, env).then(j),
+    listAds(request, env).then(j),
+    getEfficiency(request, env).then(j),
+    listBreakdown(withQuery(request, { dim: "platform" }), env).then(j),
+    listBreakdown(withQuery(request, { dim: "position" }), env).then(j),
+    listBreakdown(withQuery(request, { dim: "device" }), env).then(j),
+    listBreakdown(
+      withQuery(request, { dim: "age_gender", limit: "30" }),
+      env,
+    ).then(j),
+    listBreakdown(withQuery(request, { dim: "region" }), env).then(j),
+    listDow(request, env).then(j),
+    listHourHeatmap(request, env).then(j),
+    listSyncLog(env).then(j),
+  ]);
+
+  return JSON.stringify({
+    ok: true,
+    range,
+    summary,
+    campaigns,
+    ads,
+    efficiency,
+    breakdown: { platform, position, device, age_gender: ageGender, region },
+    dow,
+    hourHeatmap,
+    syncLog,
+    cachedAt: new Date().toISOString(),
+  });
+}
+
+// ─── cron sync 직후 캐시 프리워밍 (완전 콜드 제거) ──────────
+// 주요 필터의 overview 를 self-fetch(refresh=1) 로 미리 채운다. self-fetch 라
+// 각 요청이 독립 subrequest 예산을 가져(콜드 계산은 하위 invocation에서 소비),
+// cron invocation 은 fetch 개수(≈6)만 소비 → Free plan subrequest 한도(50) 안전.
+export async function prewarmOverviewCache(env) {
+  if (!env.META_INTERNAL_SECRET) return { ok: false, reason: "no secret" };
+  const ranges = ["all", "30", "today", "cur-month", "7", "prev-month"];
+  const origin = "https://admin.day1design.co.kr";
+  let done = 0;
+  for (const rg of ranges) {
+    const u = `${origin}/api/meta-ads/overview?range=${rg}&sort=spend&order=top&limit=20&refresh=1`;
+    try {
+      const r = await fetch(u, {
+        headers: { "x-internal-secret": env.META_INTERNAL_SECRET },
+      });
+      if (r.ok) done++;
+    } catch {}
+  }
+  return { ok: true, prewarmed: done, total: ranges.length };
 }
 
 // ─── 사용자 응답 (D1 read-only) ───────────────────────────

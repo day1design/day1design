@@ -18,7 +18,11 @@ import {
   handleMarketingLinks,
   handleSlugRedirect,
 } from "./routes/marketing.js";
-import { handleMetaAds, runScheduledSync } from "./routes/meta-ads.js";
+import {
+  handleMetaAds,
+  runScheduledSync,
+  prewarmOverviewCache,
+} from "./routes/meta-ads.js";
 import { handleSearchVolume } from "./routes/search-volume.js";
 import {
   handlePixelEvents,
@@ -297,6 +301,11 @@ export default {
         if (isDaily) {
           try {
             await runScheduledSync(env, ctx);
+            // sync 로 D1 갱신된 직후 주요 필터 overview 캐시 프리워밍
+            // (self-fetch refresh=1) → 사용자 첫 로드 콜드 지연 제거
+            try {
+              await prewarmOverviewCache(env);
+            } catch {}
           } catch (e) {
             await notifyTelegram(
               env,
