@@ -1,0 +1,19 @@
+{
+  "rules": [
+    {
+      "id": "fonts-and-assets-get",
+      "allowed": {
+        "origins": [
+          "https://day1design.co.kr",
+          "https://www.day1design.co.kr",
+          "https://day1design.localhost",
+          "http://localhost:3000",
+          "http://localhost:5173"
+        ],
+        "methods": ["GET", "HEAD"],
+        "headers": ["*"]
+      },
+      "maxAgeSeconds": 86400
+    }
+  ]
+}

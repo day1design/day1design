@@ -37,10 +37,13 @@
   display: flex;
   gap: 40px;
 }
+/* 메뉴는 한글 고정. 같은 400 이라도 S-Core Dream(한글)은 Century Gothic(영문)보다
+   획이 굵게 보여 300(Light) 로 낮춘다. */
 .nav-list a {
+  font-family: var(--font-kr);
   font-size: 14px;
-  font-weight: 400;
-  letter-spacing: 1px;
+  font-weight: 300;
+  letter-spacing: 0.5px;
   color: var(--color-text-heading);
   transition: color var(--transition);
   position: relative;
@@ -49,33 +52,14 @@
 .nav-list a.active {
   color: var(--color-brand-beige);
 }
-/* active 표시는 색상 + bold로 처리 (밑줄 제거) */
+/* active 표시는 색상 + bold로 처리 (밑줄 제거).
+   본문이 300 이라 700 은 낙차가 과해 600 사용. */
 .nav-list a.active {
-  font-weight: 700;
+  font-weight: 600;
 }
-
-/* Menu EN ↔ KO crossfade (Option A) */
 .nav-list a.menu-item {
   display: inline-block;
   position: relative;
-}
-.nav-list a.menu-item .en,
-.nav-list a.menu-item .ko {
-  display: block;
-  transition: opacity 260ms ease;
-}
-.nav-list a.menu-item .ko {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-}
-.nav-list a.menu-item:hover .en,
-.nav-list .nav-item.has-dropdown:hover .menu-item .en {
-  opacity: 0;
-}
-.nav-list a.menu-item:hover .ko,
-.nav-list .nav-item.has-dropdown:hover .menu-item .ko {
-  opacity: 1;
 }
 
 /* Header Dropdown (LNB on hover) */
@@ -269,6 +253,97 @@
 }
 .footer-credit span[aria-hidden] {
   opacity: 0.5;
+}
+
+/* ========== 견적문의 플로팅 배너 ==========
+   z-index 90 — 헤더(100)·탭바(99)보다 아래, 팝업/모달(200)보다 아래.
+   어드민 팝업이 뜰 때 배너가 그 위로 겹치지 않도록 의도한 값. */
+.est-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 90;
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.36s ease,
+    transform 0.36s ease;
+  pointer-events: none;
+}
+.est-fab.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.est-fab__card {
+  position: relative;
+  width: max-content;
+  /* 좁은 폰에서 화면 밖으로 나가지 않게만 제한. 폭은 문구에 맞춰 자동 */
+  max-width: min(260px, calc(100vw - 32px));
+  background: #fff;
+  border: 1px solid var(--color-divider);
+  border-radius: 2px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.13);
+  padding: 22px 20px 18px;
+  font-family: var(--font-kr);
+}
+.est-fab__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-heading);
+  line-height: 1.5;
+  margin-bottom: 12px;
+  word-break: keep-all;
+  /* 닫기(✕) 와 같은 줄이므로 그 폭만큼 비워둔다. 없으면 제목이 ✕ 밑으로 파고든다 */
+  padding-right: 28px;
+}
+.est-fab__cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--color-brand-beige);
+  color: #fff;
+  padding: 12px;
+  border-radius: 2px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  transition: opacity var(--transition);
+}
+.est-fab__cta:hover {
+  opacity: 0.85;
+}
+.est-fab__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: #b4ada2;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.est-fab__close:hover {
+  color: var(--color-text-heading);
+  background: #f2efe9;
+}
+@media (max-width: 991px) {
+  .est-fab {
+    right: 16px;
+    /* 아이폰 홈 인디케이터 영역 회피 */
+    bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .est-fab {
+    transition: none;
+    transform: none;
+  }
 }
 
 /* ========== POPUP ========== */
@@ -578,19 +653,21 @@ h1,
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 1.2px;
+    font-family: var(--font-kr);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
     color: var(--color-text-primary);
     transition: color 0.2s ease;
   }
+  /* padding-bottom 금지: align-items:center 와 겹쳐 글자를 위로 5.3px 밀어올린다
+     (2026-07-15 실측). active indicator 는 absolute/bottom:0 이라 여백 없이도 제자리. */
   .bottom-nav a {
     position: relative;
-    padding-bottom: 10px; /* active indicator(하단 막대)용 여유 */
   }
   .bottom-nav a.active {
     color: var(--color-brand-beige);
-    font-weight: 700;
+    font-weight: 600;
   }
   /* active indicator: 하단 중앙 막대 + 은은한 배경. 탭바 아래에 표식이 떨어지도록 */
   .bottom-nav a.active::before {
@@ -857,7 +934,9 @@ h1,
 }
 .brandfilm-caption {
   margin-top: 16px;
-  font-family: var(--font-en), var(--font-kr);
+  /* var(--font-en), var(--font-kr) 는 --font-en 끝의 sans-serif 가 한글을 가로채
+     S-Core Dream 에 도달하지 못한다. --font-primary 가 그 문제를 해결한 스택. */
+  font-family: var(--font-primary);
   font-size: 13px;
   letter-spacing: 4px;
   color: var(--color-text-light);

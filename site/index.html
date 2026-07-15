@@ -136,7 +136,10 @@
         }
       })();
     </script>
-    <!-- 핵심 폰트 preload (body 400 / heading 700) -->
+    <!-- 핵심 폰트 preload — 이 페이지에서 실제로 쓰는 weight 만 올린다.
+         7ExtraBold(700) 은 제거: 홈에서 굵기 700 인 요소는 "FIRST SPACE WITH DAYONE"
+         하나뿐인데 영문이라 Century Gothic 이 렌더한다 → S-Core Dream 700 은 쓰이지
+         않으면서 262KB 를 매 방문 내려받고 버리고 있었다(2026-07-15 실측). -->
     <link
       rel="preload"
       as="font"
@@ -144,17 +147,10 @@
       href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-4Regular.woff2"
       crossorigin
     />
-    <link
-      rel="preload"
-      as="font"
-      type="font/woff2"
-      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-7ExtraBold.woff2"
-      crossorigin
-    />
-    <link rel="stylesheet" href="css/fonts.css" />
-    <link rel="stylesheet" href="css/variables.css" />
+    <link rel="stylesheet" href="css/fonts.css?v=20260715-r2woff2" />
+    <link rel="stylesheet" href="css/variables.css?v=20260715-fontfix" />
     <link rel="stylesheet" href="css/reset.css" />
-    <link rel="stylesheet" href="css/common.css?v=20260520-topnav" />
+    <link rel="stylesheet" href="css/common.css?v=20260715-konav" />
     <link rel="stylesheet" href="css/main.css" />
 
     <!-- ========== JSON-LD (SEO · AEO · GEO) ========== -->
@@ -308,28 +304,21 @@
         <nav>
           <ul class="nav-list">
             <li>
-              <a href="pages/about.html" class="menu-item"
-                ><span class="en">ABOUT US</span
-                ><span class="ko">회사소개</span></a
+              <a href="pages/about.html" class="menu-item">회사소개</a>
+            </li>
+            <li>
+              <a href="pages/project-flow.html" class="menu-item">진행절차</a>
+            </li>
+            <li>
+              <a
+                href="pages/portfolio.html"
+                class="menu-item"
+                data-menu="PORTFOLIO"
+                >포트폴리오</a
               >
             </li>
             <li>
-              <a href="pages/project-flow.html" class="menu-item"
-                ><span class="en">PROJECT FLOW</span
-                ><span class="ko">진행과정</span></a
-              >
-            </li>
-            <li>
-              <a href="pages/portfolio.html" class="menu-item"
-                ><span class="en">PORTFOLIO</span
-                ><span class="ko">포트폴리오</span></a
-              >
-            </li>
-            <li>
-              <a href="pages/estimates.html" class="menu-item"
-                ><span class="en">ESTIMATE</span
-                ><span class="ko">견적문의</span></a
-              >
+              <a href="pages/estimates.html" class="menu-item">견적문의</a>
             </li>
           </ul>
         </nav>
@@ -339,10 +328,10 @@
       </div>
     </header>
     <div class="mobile-nav" id="mobileNav">
-      <a href="pages/about.html">ABOUT US</a>
-      <a href="pages/project-flow.html">PROJECT FLOW</a>
-      <a href="pages/portfolio.html" data-submenu="portfolio">PORTFOLIO</a>
-      <a href="pages/estimates.html">ESTIMATE</a>
+      <a href="pages/about.html">회사소개</a>
+      <a href="pages/project-flow.html">진행절차</a>
+      <a href="pages/portfolio.html" data-submenu="portfolio">포트폴리오</a>
+      <a href="pages/estimates.html">견적문의</a>
     </div>
 
     <!-- ========== POPUP (이미지 기반) ========== -->
@@ -586,15 +575,15 @@
 
     <!-- 모바일 하단 탭바 -->
     <nav class="bottom-nav" aria-label="모바일 하단 메뉴">
-      <a href="pages/about.html">ABOUT</a>
-      <a href="pages/project-flow.html">PROJECT FLOW</a>
-      <a href="pages/portfolio.html" data-submenu="portfolio">PORTFOLIO</a>
-      <a href="pages/estimates.html">ESTIMATE</a>
+      <a href="pages/about.html">회사소개</a>
+      <a href="pages/project-flow.html">진행절차</a>
+      <a href="pages/portfolio.html" data-submenu="portfolio">포트폴리오</a>
+      <a href="pages/estimates.html">견적문의</a>
     </nav>
 
     <script src="js/config.js?v=20260602-pixel"></script>
     <script src="js/tracker.js?v=20260520" defer></script>
-    <script src="js/common.js?v=20260602-pixel-data" defer></script>
+    <script src="js/common.js?v=20260715-konav" defer></script>
     <script src="js/main.js?v=20260625-herolqip" defer></script>
   </body>
 </html>

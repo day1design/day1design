@@ -14,7 +14,14 @@
   /* Typography */
   --font-kr: "S-Core Dream", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --font-en: "Century Gothic", "CenturyGothic", "AppleGothic", sans-serif;
-  --font-primary: var(--font-en), var(--font-kr);
+  /* ⚠ var(--font-en) 을 그대로 앞에 두면 안 된다.
+     --font-en 이 sans-serif 로 끝나는데, 제네릭은 모든 글자에 매칭되므로
+     그 뒤의 --font-kr(S-Core Dream) 에 영영 도달하지 못한다.
+     실제로 2026-07-15 이전까지 한글 본문이 S-Core Dream 이 아니라 시스템
+     기본 산세리프로 렌더되고 있었다(실측 확인). 그래서 여기서는 영문 스택을
+     제네릭 없이 직접 나열하고, 마지막 제네릭은 --font-kr 이 담당하게 한다. */
+  --font-primary:
+    "Century Gothic", "CenturyGothic", "AppleGothic", var(--font-kr);
   --font-size-base: 15px;
   --font-size-sm: 13px;
   --font-size-lg: 18px;

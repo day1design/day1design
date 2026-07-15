@@ -1,44 +1,68 @@
-/* S-Core Dream - 에스코어드림 웹폰트 (CDN)
+/* S-Core Dream - 에스코어드림 웹폰트
  * 실제 사용 weight만 로드: 300(Light) / 400(Regular) / 500(Medium) / 600(Bold) / 700(ExtraBold)
  * 100/200/800/900은 어디에도 사용되지 않아 제거 (전체 약 200KB 절감)
+ *
+ * 2026-07-15 — jsdelivr woff → 자체 R2 woff2 로 전환.
+ *   · woff2 가 weight 당 약 101KB(28%) 작다 (354KB → 253KB)
+ *   · R2 는 이미 preconnect 되어 있어 추가 DNS/TLS 연결이 없다 (jsdelivr 는 없음)
+ *   · index.html 의 woff2 preload 가 그동안 여기서 안 쓰여 버려지고 있었는데,
+ *     이제 실제로 사용되어 LCP 에 기여한다
+ *   · 폰트는 항상 CORS 요청이라 R2 버킷에 CORS 규칙(GET/HEAD + 도메인 화이트리스트)을
+ *     설정해 두었다. 규칙이 사라지면 폰트가 통째로 깨지므로 아래 jsdelivr woff 를
+ *     2순위 src 로 남겨 자동 폴백되게 한다.
  */
 @font-face {
   font-family: "S-Core Dream";
   font-weight: 300;
   font-style: normal;
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-3Light.woff")
-    format("woff");
+  src:
+    url("https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-3Light.woff2")
+      format("woff2"),
+    url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-3Light.woff")
+      format("woff");
   font-display: swap;
 }
 @font-face {
   font-family: "S-Core Dream";
   font-weight: 400;
   font-style: normal;
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-4Regular.woff")
-    format("woff");
+  src:
+    url("https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-4Regular.woff2")
+      format("woff2"),
+    url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-4Regular.woff")
+      format("woff");
   font-display: swap;
 }
 @font-face {
   font-family: "S-Core Dream";
   font-weight: 500;
   font-style: normal;
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-5Medium.woff")
-    format("woff");
+  src:
+    url("https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-5Medium.woff2")
+      format("woff2"),
+    url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-5Medium.woff")
+      format("woff");
   font-display: swap;
 }
 @font-face {
   font-family: "S-Core Dream";
   font-weight: 600;
   font-style: normal;
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-6Bold.woff")
-    format("woff");
+  src:
+    url("https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-6Bold.woff2")
+      format("woff2"),
+    url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-6Bold.woff")
+      format("woff");
   font-display: swap;
 }
 @font-face {
   font-family: "S-Core Dream";
   font-weight: 700;
   font-style: normal;
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-7ExtraBold.woff")
-    format("woff");
+  src:
+    url("https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-7ExtraBold.woff2")
+      format("woff2"),
+    url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-7ExtraBold.woff")
+      format("woff");
   font-display: swap;
 }

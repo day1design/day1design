@@ -357,7 +357,9 @@ if (hamburger) {
   const prefix = isRoot ? "pages/" : "";
 
   document.querySelectorAll(".nav-list .menu-item").forEach((a) => {
-    const en = a.querySelector(".en")?.textContent.trim();
+    // 메뉴 한글화로 .en 스팬을 제거했으므로 data-menu 속성으로 키를 잡는다.
+    // (텍스트로 키를 잡으면 문구가 바뀔 때마다 드롭다운이 조용히 사라진다)
+    const en = a.dataset.menu;
     if (!en || !DROPDOWNS[en]) return;
 
     const li = a.closest("li");
@@ -638,4 +640,58 @@ if (hamburger) {
     if (e.key === "Escape") closePopover();
   });
   window.addEventListener("resize", closePopover);
+})();
+
+// ========== 견적문의 플로팅 배너 ==========
+// 우측 하단 고정 카드. 스크롤 400px 이후 등장, 견적문의 페이지에선 미노출,
+// 닫으면 해당 세션 동안만 숨김(localStorage 로 영구히 숨기면 재방문 리드를 놓친다).
+(function injectEstimateFab() {
+  const SHOW_AFTER = 400;
+  const DISMISS_KEY = "day1_est_fab_dismissed";
+
+  const isRoot = !location.pathname.includes("/pages/");
+  const prefix = isRoot ? "pages/" : "";
+  const page = location.pathname.split("/").pop() || "index.html";
+
+  // 자기 자신으로 가는 CTA 방지
+  if (/^estimates(\.html)?$/.test(page)) return;
+  try {
+    if (sessionStorage.getItem(DISMISS_KEY) === "1") return;
+  } catch {}
+
+  const fab = document.createElement("div");
+  fab.className = "est-fab";
+  fab.innerHTML = `
+    <div class="est-fab__card">
+      <button type="button" class="est-fab__close" aria-label="배너 닫기">✕</button>
+      <div class="est-fab__title">무료 견적 상담</div>
+      <a class="est-fab__cta" href="${prefix}estimates.html">1분 견적신청 <span aria-hidden="true">→</span></a>
+    </div>`;
+  document.body.appendChild(fab);
+
+  fab.querySelector(".est-fab__close").addEventListener("click", () => {
+    fab.classList.remove("is-visible");
+    try {
+      sessionStorage.setItem(DISMISS_KEY, "1");
+    } catch {}
+  });
+
+  // CTA 클릭은 common.js 의 기존 위임 핸들러가 estimate_cta_click 으로 이미 추적한다.
+  // 여기서 별도 추적을 붙이면 같은 클릭이 두 번 집계된다.
+
+  let ticking = false;
+  function sync() {
+    fab.classList.toggle("is-visible", window.scrollY > SHOW_AFTER);
+    ticking = false;
+  }
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(sync);
+    },
+    { passive: true },
+  );
+  sync();
 })();
