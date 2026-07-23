@@ -3,15 +3,15 @@ import { verifyAdmin } from "../lib/auth.js";
 import { randomId } from "../lib/r2.js";
 import { createServices } from "../lib/services.js";
 import { clientIP, rateLimit, validateContentType } from "../lib/security.js";
+import { kstRangeToUtc } from "../lib/analytics-rollups.js";
 
 const SOURCE = "google";
+const SELF_SOURCE = "self";
+const SELF_CACHE_VERSION = "v2";
 const SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
 // 구글 API(GA4/GSC/OAuth) 동기 대기 상한. 초과 시 AbortSignal 로 즉시 실패 →
 // getSummary 가 stale 스냅샷으로 폴백. (옛: 타임아웃 없어 구글 지연 시 최대 30초 행 → 500)
 const EXTERNAL_FETCH_TIMEOUT_MS = 4500;
-// 자체측정 통계 엣지 캐시(초). /summary 는 캐시 hit 여도 fetchSelfStats(8 D1쿼리)를
-// 매번 재실행하던 것을 60초 캐시로 절감. 60초 staleness 는 유입통계에 무해.
-const SELF_STATS_TTL_S = 60;
 const DEFAULT_SITE_URL = "https://day1design.co.kr/";
 const VISIT_TRACK_RATE_LIMIT_PER_HOUR = 240;
 const VISITOR_LOCATION_LIMIT = 5;
@@ -111,16 +111,15 @@ async function getFunnel(request, env) {
   };
 
   try {
-    // SessionId 별 첫 page_view (가장 오래된 CreatedAt) 의 Page → 1단계
     const stage1 = await env.DB.prepare(
       `WITH first_event AS (
          SELECT SessionId, Page,
-                ROW_NUMBER() OVER (PARTITION BY SessionId ORDER BY CreatedAt ASC) AS rn
-         FROM HeatmapEvents
-         WHERE EventType = 'page_view'
-           AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-           AND SessionId != ''
-           AND IsBot = 0
+                ROW_NUMBER() OVER (
+                  PARTITION BY SessionId
+                  ORDER BY CreatedAt ASC, id ASC
+                ) AS rn
+         FROM AnalyticsPageViews
+         WHERE DayKey BETWEEN ? AND ?
        )
        SELECT Page, COUNT(*) AS Cnt
        FROM first_event
@@ -132,16 +131,15 @@ async function getFunnel(request, env) {
       .bind(startDate, endDate)
       .all();
 
-    // SessionId 별 두 번째 page_view 페이지 → 2단계
     const stage2 = await env.DB.prepare(
       `WITH ordered AS (
          SELECT SessionId, Page,
-                ROW_NUMBER() OVER (PARTITION BY SessionId ORDER BY CreatedAt ASC) AS rn
-         FROM HeatmapEvents
-         WHERE EventType = 'page_view'
-           AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-           AND SessionId != ''
-           AND IsBot = 0
+                ROW_NUMBER() OVER (
+                  PARTITION BY SessionId
+                  ORDER BY CreatedAt ASC, id ASC
+                ) AS rn
+         FROM AnalyticsPageViews
+         WHERE DayKey BETWEEN ? AND ?
        )
        SELECT Page, COUNT(*) AS Cnt
        FROM ordered
@@ -153,24 +151,22 @@ async function getFunnel(request, env) {
       .bind(startDate, endDate)
       .all();
 
-    // 터치(고유 SessionId 수)
     const touchesRow = await env.DB.prepare(
       `SELECT COUNT(DISTINCT SessionId) AS Cnt
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''
-         AND IsBot = 0`,
+       FROM AnalyticsSessionDays
+       WHERE DayKey BETWEEN ? AND ?
+         AND Pageviews > 0`,
     )
       .bind(startDate, endDate)
       .first();
 
-    // 견적 접수 수 (KST 변환 없이 SubmittedAt UTC ISO 첫 10자 비교 — Estimates는 UTC 저장)
+    const { startUtc, endExclusiveUtc } = kstRangeToUtc(startDate, endDate);
     const subsRow = await env.DB.prepare(
       `SELECT COUNT(*) AS Cnt FROM Estimates
-       WHERE substr(datetime(SubmittedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?`,
+       WHERE SubmittedAt >= ?
+         AND SubmittedAt < ?`,
     )
-      .bind(startDate, endDate)
+      .bind(startUtc, endExclusiveUtc)
       .first();
 
     const touches = Number(touchesRow?.Cnt || 0);
@@ -814,18 +810,22 @@ async function getSummary(request, env, services, ctx) {
   const url = new URL(request.url);
   const range = resolveRange(url);
   const forceRefresh = url.searchParams.get("refresh") === "1";
-  const latest = await latestSnapshot(services, range);
+  let latest = null;
+  let snapshotReadError = "";
+  try {
+    latest = await latestSnapshot(services, range);
+  } catch (error) {
+    snapshotReadError = safeErrorCode(error);
+  }
+  const selfResult = await fetchSelfStats(env, services, range, ctx, {
+    forceRefresh,
+    mode: forceRefresh ? "manual" : "request",
+  });
+  const selfStats = selfResult.data;
 
-  // 캐시 hit 시에도 자체측정 통계는 D1에서 실시간 머지 (GA4 캐시와 별개로 항상 최신)
-  const selfStats = await fetchSelfStats(env, range);
-
-  // 응답 머지 헬퍼 — visitors/pageviews/trend 는 자체 측정(D1 HeatmapEvents)을
-  // 우선. self 측정값이 0/빈 배열이면 GA4 캐시 값으로 fallback.
-  // sources 는 cached 의 rawSources 를 현재 classifyTrafficSource 로 재분류
-  // → 옛 snapshot 의 "Meta 합산" 이 새 분류(Instagram/Facebook/Threads 분리)로
-  //   즉시 반영. snapshot 재생성 안 기다림.
   const mergeWithSelf = (base, extra = {}) => ({
     ...base,
+    ok: true,
     summary: {
       ...(base.summary || {}),
       // visitors / pageviews / avgDuration / bounceRate 는 GA4 본연 값 그대로 —
@@ -845,6 +845,20 @@ async function getSummary(request, env, services, ctx) {
         ? selfStats.sources
         : reclassifySources(base.sources),
     self: selfStats,
+    freshness: {
+      ...(base.freshness || {}),
+      snapshotRead: {
+        state: snapshotReadError ? "error" : latest ? "ready" : "empty",
+        createdAt: latest?.createdAt || "",
+        errorCode: snapshotReadError,
+      },
+      self: {
+        state: selfResult.state,
+        createdAt: selfResult.createdAt || "",
+        stale: Boolean(selfResult.stale),
+        errorCode: selfResult.errorCode || "",
+      },
+    },
     ...extra,
   });
 
@@ -864,10 +878,7 @@ async function getSummary(request, env, services, ctx) {
         try {
           const fresh = await collectGoogleSummary(env, range);
           if (fresh.ok) {
-            await persistSnapshot(services, range, {
-              ...fresh,
-              self: await fetchSelfStats(env, range),
-            });
+            await persistSnapshot(services, range, fresh);
           }
         } catch {}
       })(),
@@ -900,63 +911,26 @@ async function getSummary(request, env, services, ctx) {
     return jsonOk(mergeWithSelf(fresh, { cached: false }));
   }
 
-  const persisted = await persistSnapshot(services, range, {
-    ...fresh,
-    self: selfStats,
-  });
+  let persisted = null;
+  try {
+    persisted = await persistSnapshot(services, range, fresh);
+    if (persisted.archiveError) {
+      fresh.errors.push({
+        source: "snapshot_archive",
+        code: persisted.archiveError,
+      });
+    }
+  } catch (error) {
+    fresh.errors.push({
+      source: "snapshot",
+      code: safeErrorCode(error),
+    });
+  }
   return jsonOk(mergeWithSelf(fresh, { persisted, cached: false }));
 }
 
-async function fetchLiveTouches(env, range) {
-  try {
-    const row = await env.DB.prepare(
-      `SELECT COUNT(DISTINCT SessionId) AS Touches
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''
-         AND IsBot = 0`,
-    )
-      .bind(range.startDate, range.endDate)
-      .first();
-    return Number(row?.Touches || 0);
-  } catch {
-    return 0;
-  }
-}
-
-// 자체측정 통계 — 60초 엣지 캐시 래퍼. /summary 가 캐시 hit 여도 매 호출
-// computeSelfStats(8 D1쿼리, ~200~500ms)를 재실행하던 비용 절감. 실패 시 라이브 폴백.
-async function fetchSelfStats(env, range) {
-  const cache = caches.default;
-  const key = `https://selfstats.internal/${encodeURIComponent(range.startDate)}/${encodeURIComponent(range.endDate)}`;
-  try {
-    const hit = await cache.match(key);
-    if (hit) {
-      const cached = await hit.json();
-      if (cached) return cached;
-    }
-  } catch {}
-  const result = await computeSelfStats(env, range);
-  try {
-    await cache.put(
-      key,
-      new Response(JSON.stringify(result), {
-        headers: {
-          "content-type": "application/json",
-          "cache-control": `max-age=${SELF_STATS_TTL_S}`,
-        },
-      }),
-    );
-  } catch {}
-  return result;
-}
-
-// 자체측정 통계 — 30일 SessionId 기준 신규/재방문 + 보조 지표 6종
-async function computeSelfStats(env, range) {
-  const startDate = range.startDate;
-  const endDate = range.endDate;
-  const result = {
+function emptySelfStats() {
+  return {
     touches: 0,
     pageviews: 0,
     newVisitors: 0,
@@ -971,228 +945,324 @@ async function computeSelfStats(env, range) {
     trend: [],
     sources: [],
   };
+}
 
-  // 1) 터치 + 신규 + 재방문 (단순 정의: 기간 시작 이전 등장 이력 유무)
-  // 옛 코드는 WITH InRange + IN 서브쿼리 조합인데 D1 에서 silent fail —
-  // touches=0 으로 떨어져 어드민 KPI 가 0 표시되던 사고. 3 개 분리 쿼리로 교체.
+function selfStatsTtlSeconds(range) {
+  if (range.key === "today") return 60;
+  if (range.key === "7") return 300;
+  if (range.key === "30") return 900;
+  if (range.key === "all") return 21600;
+  return 3600;
+}
+
+function selfSnapshotData(snapshot) {
+  const payload = snapshot?.payload || {};
+  return payload.self || payload.data || null;
+}
+
+async function cacheSelfStats(range, result) {
+  const cache = caches.default;
+  const key = `https://selfstats.internal/${SELF_CACHE_VERSION}/${encodeURIComponent(range.key)}/${encodeURIComponent(range.startDate)}/${encodeURIComponent(range.endDate)}`;
+  const ttl = selfStatsTtlSeconds(range);
   try {
-    const touchesRow = await env.DB.prepare(
-      `SELECT COUNT(DISTINCT SessionId) AS Cnt
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''
-         AND IsBot = 0`,
-    )
-      .bind(startDate, endDate)
-      .first();
-    result.touches = Number(touchesRow?.Cnt || 0);
-
-    // 재방문 정의: 기간 내 등장한 SessionId 중, 같은 SessionId 가 history 전체
-    // 어느 다른 날에도 등장한 적 있음 (기간 시작 이전이든 기간 안 다른 날이든).
-    // → 옛 정의는 "기간 시작 이전 only" 라 첫 데이터일을 포함하는 range 에서 항상
-    //   0이 나와 직관과 안 맞던 사고 차단 (7일 range 재방문 0 사고).
-    const returningRow = await env.DB.prepare(
-      `SELECT COUNT(DISTINCT a.SessionId) AS Cnt
-       FROM HeatmapEvents a
-       WHERE a.EventType = 'page_view'
-         AND substr(datetime(a.CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND a.SessionId != ''
-         AND a.IsBot = 0
-         AND EXISTS (
-           SELECT 1 FROM HeatmapEvents b
-           WHERE b.SessionId = a.SessionId
-             AND b.EventType = 'page_view'
-             AND b.IsBot = 0
-             AND substr(datetime(b.CreatedAt, '+9 hours'), 1, 10) != substr(datetime(a.CreatedAt, '+9 hours'), 1, 10)
-         )`,
-    )
-      .bind(startDate, endDate)
-      .first();
-    result.returningVisitors = Number(returningRow?.Cnt || 0);
-    result.newVisitors = Math.max(0, result.touches - result.returningVisitors);
+    await cache.put(
+      key,
+      new Response(JSON.stringify(result), {
+        headers: {
+          "content-type": "application/json",
+          "cache-control": `max-age=${ttl}`,
+        },
+      }),
+    );
   } catch {}
+}
 
-  // 2) 평균 페이지뷰 / 세션
+async function readCachedSelfStats(range) {
+  const cache = caches.default;
+  const key = `https://selfstats.internal/${SELF_CACHE_VERSION}/${encodeURIComponent(range.key)}/${encodeURIComponent(range.startDate)}/${encodeURIComponent(range.endDate)}`;
   try {
-    const row = await env.DB.prepare(
-      `SELECT
-         COUNT(*) AS TotalPv,
-         COUNT(DISTINCT SessionId) AS Sessions
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''
-         AND IsBot = 0`,
-    )
-      .bind(startDate, endDate)
-      .first();
-    const tot = Number(row?.TotalPv || 0);
-    const sess = Number(row?.Sessions || 0);
-    result.avgPageviewsPerSession = sess > 0 ? tot / sess : 0;
+    const hit = await cache.match(key);
+    return hit ? await hit.json() : null;
   } catch {}
+  return null;
+}
 
-  // 3) 평균 접속시간 (SessionId·날짜별 첫·마지막 이벤트 차이의 평균, 초)
+async function fetchSelfStats(
+  env,
+  services,
+  range,
+  ctx,
+  { forceRefresh = false, mode = "request" } = {},
+) {
+  if (!forceRefresh) {
+    const cached = await readCachedSelfStats(range);
+    if (cached?.data) return cached;
+  }
+
+  let latest = null;
   try {
-    const row = await env.DB.prepare(
-      `SELECT AVG(DwellSec) AS AvgDwell FROM (
-         SELECT
-           (julianday(MAX(CreatedAt)) - julianday(MIN(CreatedAt))) * 86400 AS DwellSec
-         FROM HeatmapEvents
-         WHERE substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-           AND SessionId != ''
-           AND IsBot = 0
-         GROUP BY SessionId, substr(datetime(CreatedAt, '+9 hours'), 1, 10)
-         HAVING COUNT(*) > 1
-       )`,
-    )
-      .bind(startDate, endDate)
-      .first();
-    result.avgDwellSec = Number(row?.AvgDwell || 0);
+    latest = await latestSnapshot(services, range, SELF_SOURCE);
   } catch {}
+  const latestData = selfSnapshotData(latest);
+  const ttlMs = selfStatsTtlSeconds(range) * 1000;
+  const latestAge = Date.now() - Date.parse(latest?.createdAt || "");
 
-  // 4) 피크 시간대 (UTC 기준 — 표시 시 KST 보정 필요)
-  try {
-    const row = await env.DB.prepare(
-      `SELECT substr(CreatedAt, 12, 2) AS Hour, COUNT(*) AS Cnt
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND IsBot = 0
-       GROUP BY Hour
-       ORDER BY Cnt DESC
-       LIMIT 1`,
-    )
-      .bind(startDate, endDate)
-      .first();
-    if (row?.Hour) {
-      const utcHour = parseInt(row.Hour, 10);
-      const kstHour = (utcHour + 9) % 24;
-      result.peakHour = kstHour;
-    }
-  } catch {}
+  if (
+    !forceRefresh &&
+    latestData &&
+    Number.isFinite(latestAge) &&
+    latestAge <= ttlMs
+  ) {
+    const result = {
+      data: latestData,
+      state: "snapshot",
+      createdAt: latest.createdAt,
+      stale: false,
+      errorCode: "",
+    };
+    await cacheSelfStats(range, result);
+    return result;
+  }
 
-  // 5) 디바이스 비중 (세션 단위)
+  if (!forceRefresh && latestData && ctx?.waitUntil) {
+    ctx.waitUntil(
+      refreshSelfStats(env, services, range, "swr").catch(() => null),
+    );
+    const result = {
+      data: latestData,
+      state: "snapshot",
+      createdAt: latest.createdAt,
+      stale: true,
+      errorCode: "",
+    };
+    await cacheSelfStats(range, result);
+    return result;
+  }
+
   try {
-    const res = await env.DB.prepare(
-      `SELECT Device, COUNT(DISTINCT SessionId) AS Cnt
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''
-         AND IsBot = 0
-       GROUP BY Device`,
-    )
-      .bind(startDate, endDate)
-      .all();
-    for (const r of res.results || []) {
-      if (r.Device === "pc" || r.Device === "mobile") {
-        result.devices[r.Device] = Number(r.Cnt || 0);
+    return await refreshSelfStats(env, services, range, mode);
+  } catch (error) {
+    const fallback = {
+      data: latestData || emptySelfStats(),
+      state: latestData ? "snapshot" : "error",
+      createdAt: latest?.createdAt || "",
+      stale: Boolean(latestData),
+      errorCode: safeErrorCode(error),
+    };
+    if (latestData) await cacheSelfStats(range, fallback);
+    return fallback;
+  }
+}
+
+async function refreshSelfStats(env, services, range, mode) {
+  const startedAt = Date.now();
+  try {
+    const data = await computeSelfStats(env, range);
+    const fetchedAt = new Date().toISOString();
+    let persisted = null;
+    let persistError = "";
+    let persistState = "";
+    try {
+      persisted = await persistSnapshot(
+        services,
+        range,
+        {
+          ok: true,
+          source: SELF_SOURCE,
+          range,
+          fetchedAt,
+          self: data,
+        },
+        SELF_SOURCE,
+      );
+      if (persisted.archiveError) {
+        persistError = persisted.archiveError;
+        persistState = "fresh_archive_failed";
       }
+    } catch (error) {
+      persistError = safeErrorCode(error);
+      persistState = "fresh_unpersisted";
     }
-  } catch {}
-
-  // 6) 접속 위치 TOP 5 (CF cf.city·country, 세션 단위)
-  try {
-    const res = await env.DB.prepare(
-      `SELECT
-         COALESCE(NULLIF(City, ''), 'Unknown') AS City,
-         COALESCE(NULLIF(Country, ''), '') AS Country,
-         COUNT(DISTINCT SessionId) AS Cnt
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''
-         AND IsBot = 0
-       GROUP BY City, Country
-       ORDER BY Cnt DESC
-       LIMIT 5`,
-    )
-      .bind(startDate, endDate)
-      .all();
-    result.topLocations = (res.results || []).map((r) => ({
-      city: String(r.City || "Unknown"),
-      country: String(r.Country || ""),
-      sessions: Number(r.Cnt || 0),
-    }));
-  } catch {}
-
-  // 7) 전환율 (Estimates 접수 / 터치)
-  try {
-    const row = await env.DB.prepare(
-      `SELECT COUNT(*) AS Cnt FROM Estimates
-       WHERE substr(datetime(SubmittedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?`,
-    )
-      .bind(startDate, endDate)
-      .first();
-    result.submissions = Number(row?.Cnt || 0);
-    result.conversionRate =
-      result.touches > 0 ? result.submissions / result.touches : 0;
-  } catch {}
-
-  // 8a) 출처 (UTM source/medium + Referrer 기반 자체 측정)
-  //   GA4 측정이 끊겨도 자체 sources 가 admin 에 표시됨. 라이브에서 사용자가
-  //   ig/paid · fb/paid 등으로 들어오는 트래픽이 1000명 단위인데 admin sources
-  //   에 안 보이던 사고 차단.
-  try {
-    const res = await env.DB.prepare(
-      `SELECT
-         COALESCE(NULLIF(UtmSource, ''), '(none)') AS src,
-         COALESCE(NULLIF(UtmMedium, ''), '') AS med,
-         COALESCE(NULLIF(Referrer, ''), '') AS ref,
-         COUNT(DISTINCT SessionId) AS Visitors,
-         COUNT(*) AS Sessions
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''
-         AND IsBot = 0
-       GROUP BY src, med, ref`,
-    )
-      .bind(startDate, endDate)
-      .all();
-    const fakeRows = (res.results || []).map((r) => {
-      const srcVal = r.src === "(none)" && r.ref ? r.ref : r.src;
-      return {
-        dimensionValues: [
-          { value: String(srcVal || "") },
-          { value: String(r.med || "") },
-          { value: "" },
-        ],
-        metricValues: [
-          { value: String(r.Sessions || 0) },
-          { value: String(r.Visitors || 0) },
-        ],
-      };
+    await recordAnalyticsRefresh(env, {
+      range,
+      mode,
+      source: SELF_SOURCE,
+      state: persistState || "success",
+      durationMs: Date.now() - startedAt,
+      snapshotId: persisted?.id || "",
+      errorCode: persistError,
     });
-    result.sources = aggregateTrafficSources(fakeRows);
-  } catch {}
+    const result = {
+      data,
+      state: persistState || "fresh",
+      createdAt: fetchedAt,
+      stale: false,
+      errorCode: persistError,
+    };
+    await cacheSelfStats(range, result);
+    return result;
+  } catch (error) {
+    await recordAnalyticsRefresh(env, {
+      range,
+      mode,
+      source: SELF_SOURCE,
+      state: "error",
+      durationMs: Date.now() - startedAt,
+      snapshotId: "",
+      errorCode: safeErrorCode(error),
+    });
+    throw error;
+  }
+}
 
-  // 8b) 일별 trend (자체 측정 — visitors=고유세션, pageviews=총 페이지뷰)
-  //   GA4 lag·누락에 영향 없이 차트/히트맵이 항상 실시간 D1 기준으로 동작.
-  try {
-    const res = await env.DB.prepare(
-      `SELECT
-         substr(datetime(CreatedAt, '+9 hours'), 1, 10) AS d,
-         COUNT(DISTINCT SessionId) AS Visitors,
-         COUNT(*) AS Pageviews
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND SessionId != ''
-         AND IsBot = 0
-       GROUP BY d
-       ORDER BY d ASC`,
-    )
-      .bind(startDate, endDate)
-      .all();
-    result.trend = (res.results || []).map((r) => ({
-      date: String(r.d),
-      visitors: Number(r.Visitors || 0),
-      pageviews: Number(r.Pageviews || 0),
-    }));
-    result.pageviews = result.trend.reduce((sum, x) => sum + x.pageviews, 0);
-  } catch {}
+async function computeSelfStats(env, range) {
+  const startDate = range.startDate;
+  const endDate = range.endDate;
+  const result = emptySelfStats();
+  if (!env?.DB) throw new Error("analytics_db_unavailable");
+
+  const summaryRow = await env.DB.prepare(
+    `WITH active AS (
+       SELECT SessionId, SUM(Pageviews) AS Pageviews
+       FROM AnalyticsSessionDays
+       WHERE DayKey BETWEEN ? AND ?
+         AND Pageviews > 0
+       GROUP BY SessionId
+     )
+     SELECT
+       COUNT(*) AS Touches,
+       COALESCE(SUM(active.Pageviews), 0) AS Pageviews,
+       COALESCE(SUM(CASE WHEN sessions.ActiveDayCount > 1 THEN 1 ELSE 0 END), 0) AS ReturningVisitors
+     FROM active
+     JOIN AnalyticsSessions sessions USING (SessionId)`,
+  )
+    .bind(startDate, endDate)
+    .first();
+  result.touches = Number(summaryRow?.Touches || 0);
+  result.pageviews = Number(summaryRow?.Pageviews || 0);
+  result.returningVisitors = Number(summaryRow?.ReturningVisitors || 0);
+  result.newVisitors = Math.max(0, result.touches - result.returningVisitors);
+  result.avgPageviewsPerSession =
+    result.touches > 0 ? result.pageviews / result.touches : 0;
+
+  const dwellRow = await env.DB.prepare(
+    `SELECT AVG(
+       (julianday(LastSeenAt) - julianday(FirstSeenAt)) * 86400
+     ) AS AvgDwell
+     FROM AnalyticsSessionDays
+     WHERE DayKey BETWEEN ? AND ?
+       AND Pageviews > 0
+       AND EventCount > 1`,
+  )
+    .bind(startDate, endDate)
+    .first();
+  result.avgDwellSec = Number(dwellRow?.AvgDwell || 0);
+
+  const peakRow = await env.DB.prepare(
+    `SELECT substr(HourKey, 12, 2) AS Hour, COUNT(*) AS Cnt
+     FROM AnalyticsPageViews
+     WHERE DayKey BETWEEN ? AND ?
+     GROUP BY Hour
+     ORDER BY Cnt DESC
+     LIMIT 1`,
+  )
+    .bind(startDate, endDate)
+    .first();
+  if (peakRow?.Hour) result.peakHour = parseInt(peakRow.Hour, 10);
+
+  const deviceRows = await env.DB.prepare(
+    `SELECT Device, COUNT(DISTINCT SessionId) AS Cnt
+     FROM AnalyticsPageViews
+     WHERE DayKey BETWEEN ? AND ?
+     GROUP BY Device`,
+  )
+    .bind(startDate, endDate)
+    .all();
+  for (const row of deviceRows.results || []) {
+    if (row.Device === "pc" || row.Device === "mobile") {
+      result.devices[row.Device] = Number(row.Cnt || 0);
+    }
+  }
+
+  const locationRows = await env.DB.prepare(
+    `SELECT
+       COALESCE(NULLIF(City, ''), 'Unknown') AS City,
+       COALESCE(NULLIF(Country, ''), '') AS Country,
+       COUNT(DISTINCT SessionId) AS Cnt
+     FROM AnalyticsPageViews
+     WHERE DayKey BETWEEN ? AND ?
+     GROUP BY City, Country
+     ORDER BY Cnt DESC
+     LIMIT 5`,
+  )
+    .bind(startDate, endDate)
+    .all();
+  result.topLocations = (locationRows.results || []).map((row) => ({
+    city: String(row.City || "Unknown"),
+    country: String(row.Country || ""),
+    sessions: Number(row.Cnt || 0),
+  }));
+
+  const { startUtc, endExclusiveUtc } = kstRangeToUtc(startDate, endDate);
+  const submissionRow = await env.DB.prepare(
+    `SELECT COUNT(*) AS Cnt
+     FROM Estimates
+     WHERE SubmittedAt >= ?
+       AND SubmittedAt < ?`,
+  )
+    .bind(startUtc, endExclusiveUtc)
+    .first();
+  result.submissions = Number(submissionRow?.Cnt || 0);
+  result.conversionRate =
+    result.touches > 0 ? result.submissions / result.touches : 0;
+
+  const sourceRows = await env.DB.prepare(
+    `SELECT
+       COALESCE(NULLIF(UtmSource, ''), '(none)') AS src,
+       COALESCE(NULLIF(UtmMedium, ''), '') AS med,
+       COALESCE(NULLIF(Referrer, ''), '') AS ref,
+       COUNT(DISTINCT SessionId) AS Visitors,
+       COUNT(*) AS Sessions
+     FROM AnalyticsPageViews
+     WHERE DayKey BETWEEN ? AND ?
+     GROUP BY src, med, ref`,
+  )
+    .bind(startDate, endDate)
+    .all();
+  const sourceMetricRows = (sourceRows.results || []).map((row) => {
+    const source = row.src === "(none)" && row.ref ? row.ref : row.src;
+    return {
+      dimensionValues: [
+        { value: String(source || "") },
+        { value: String(row.med || "") },
+        { value: "" },
+      ],
+      metricValues: [
+        { value: String(row.Sessions || 0) },
+        { value: String(row.Visitors || 0) },
+      ],
+    };
+  });
+  result.sources = aggregateTrafficSources(sourceMetricRows);
+
+  const trendRows = await env.DB.prepare(
+    `SELECT
+       DayKey AS d,
+       COUNT(*) AS Visitors,
+       SUM(Pageviews) AS Pageviews
+     FROM AnalyticsSessionDays
+     WHERE DayKey BETWEEN ? AND ?
+       AND Pageviews > 0
+     GROUP BY DayKey
+     ORDER BY DayKey ASC`,
+  )
+    .bind(startDate, endDate)
+    .all();
+  result.trend = (trendRows.results || []).map((row) => ({
+    date: String(row.d),
+    visitors: Number(row.Visitors || 0),
+    pageviews: Number(row.Pageviews || 0),
+  }));
 
   return result;
 }
@@ -1275,14 +1345,14 @@ function isExpired(iso) {
   return !t || Date.now() - t > SNAPSHOT_TTL_MS;
 }
 
-async function latestSnapshot(services, range) {
+async function latestSnapshot(services, range, source = SOURCE) {
   if (!services.analyticsSnapshots) return null;
   const result = await services.analyticsSnapshots.list({
     where: {
       RangeKey: range.key,
       StartDate: range.startDate,
       EndDate: range.endDate,
-      Source: SOURCE,
+      Source: source,
     },
     sort: [{ field: "CreatedAt", direction: "desc" }],
     limit: 1,
@@ -1308,13 +1378,9 @@ function snapshotFromRecord(record) {
   };
 }
 
-// cron 진입점 — 매일 KST 04:00 (UTC 19:00) 에 호출되어 today/7/30/cur-month
-// range 의 fresh GA4 fetch + self stats 머지 + persistSnapshot.
-// admin 안 들어가도 데일리 누적 보장. 6h TTL 이라 cron 직후 사용자 진입 시 즉시
-// fresh 응답.
 export async function runScheduledAnalyticsSnapshot(env, ctx) {
   const services = createServices(env);
-  const rangeKeys = ["today", "7", "30", "cur-month"];
+  const rangeKeys = ["today", "7", "30", "prev-month", "cur-month"];
   const fakeUrl = new URL("https://internal/api/analytics/summary");
   const errors = [];
   for (const key of rangeKeys) {
@@ -1322,11 +1388,46 @@ export async function runScheduledAnalyticsSnapshot(env, ctx) {
       fakeUrl.searchParams.set("range", key);
       fakeUrl.searchParams.set("refresh", "1");
       const range = resolveRange(fakeUrl);
-      const selfStats = await fetchSelfStats(env, range);
+      await fetchSelfStats(env, services, range, ctx, {
+        forceRefresh: true,
+        mode: "cron",
+      });
+      const startedAt = Date.now();
       const fresh = await collectGoogleSummary(env, range);
-      const payload = fresh.ok ? { ...fresh, self: selfStats } : fresh;
       if (fresh.ok) {
-        await persistSnapshot(services, range, payload);
+        let persisted = null;
+        let persistError = "";
+        try {
+          persisted = await persistSnapshot(services, range, fresh);
+        } catch (error) {
+          persistError = safeErrorCode(error);
+        }
+        if (persisted?.archiveError) {
+          persistError = persisted.archiveError;
+        }
+        await recordAnalyticsRefresh(env, {
+          range,
+          mode: "cron",
+          source: SOURCE,
+          state: persisted?.archiveError
+            ? "fresh_archive_failed"
+            : persistError
+              ? "fresh_unpersisted"
+              : "success",
+          durationMs: Date.now() - startedAt,
+          snapshotId: persisted?.id || "",
+          errorCode: persistError,
+        });
+      } else {
+        await recordAnalyticsRefresh(env, {
+          range,
+          mode: "cron",
+          source: SOURCE,
+          state: "error",
+          durationMs: Date.now() - startedAt,
+          snapshotId: "",
+          errorCode: fresh.errors?.[0]?.code || "google_unavailable",
+        });
       }
     } catch (e) {
       errors.push({ key, code: safeErrorCode(e) });
@@ -1335,20 +1436,28 @@ export async function runScheduledAnalyticsSnapshot(env, ctx) {
   return { ok: errors.length === 0, errors };
 }
 
-async function persistSnapshot(services, range, payload) {
+async function persistSnapshot(services, range, payload, source = SOURCE) {
+  if (!services.analyticsSnapshots) {
+    throw new Error("analytics_snapshot_store_unavailable");
+  }
   const createdAt = new Date().toISOString();
-  const rawR2Key = `analytics/snapshots/${range.endDate}/${range.key}-${Date.now()}-${randomId()}.json`;
+  const rawR2Key = `analytics/snapshots/${source}/${range.endDate}/${range.key}-${Date.now()}-${randomId()}.json`;
 
   let storedKey = "";
+  let archiveError = "";
   if (services.analyticsRaw) {
-    storedKey = await services.analyticsRaw.putJson(rawR2Key, payload);
+    try {
+      storedKey = await services.analyticsRaw.putJson(rawR2Key, payload);
+    } catch (error) {
+      archiveError = safeErrorCode(error);
+    }
   }
 
   const record = await services.analyticsSnapshots.create({
     RangeKey: range.key,
     StartDate: range.startDate,
     EndDate: range.endDate,
-    Source: SOURCE,
+    Source: source,
     Payload: JSON.stringify(payload),
     RawR2Key: storedKey,
     CreatedAt: createdAt,
@@ -1358,7 +1467,45 @@ async function persistSnapshot(services, range, payload) {
     id: record.id,
     createdAt,
     rawR2Key: storedKey,
+    archiveError,
   };
+}
+
+async function recordAnalyticsRefresh(
+  env,
+  {
+    range,
+    mode,
+    source,
+    state,
+    durationMs,
+    snapshotId,
+    errorCode,
+  },
+) {
+  if (!env?.DB) return;
+  try {
+    await env.DB.prepare(
+      `INSERT INTO AnalyticsRefreshLog (
+         id, RangeKey, StartDate, EndDate, Mode, Source, State,
+         DurationMs, SnapshotId, ErrorCode, CreatedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        `anl${Date.now().toString(36)}${randomId(8)}`,
+        range.key,
+        range.startDate,
+        range.endDate,
+        mode,
+        source,
+        state,
+        Math.max(0, Math.round(Number(durationMs) || 0)),
+        snapshotId || "",
+        errorCode || "",
+        new Date().toISOString(),
+      )
+      .run();
+  } catch {}
 }
 
 function hasOauth(env, refreshToken) {
@@ -1460,15 +1607,12 @@ async function collectGoogleSummary(env, range) {
     errors.push({ source: "gsc", code: "not_configured" });
   }
 
-  // 자체 트래커(D1) 기반 "터치" 카운트 — page_view 이벤트의 unique session 수
-  // 정의: 페이지 진입 즉시 sendBeacon 발사. 1초 미만 이탈도 잡힘 (GA4는 못 잡음)
   try {
     const touchRow = await env.DB.prepare(
       `SELECT COUNT(DISTINCT SessionId) AS Touches
-       FROM HeatmapEvents
-       WHERE EventType = 'page_view'
-         AND substr(datetime(CreatedAt, '+9 hours'), 1, 10) BETWEEN ? AND ?
-         AND IsBot = 0`,
+       FROM AnalyticsSessionDays
+       WHERE DayKey BETWEEN ? AND ?
+         AND Pageviews > 0`,
     )
       .bind(range.startDate, range.endDate)
       .first();

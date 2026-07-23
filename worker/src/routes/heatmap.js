@@ -3,10 +3,37 @@ import { verifyAdmin } from "../lib/auth.js";
 import { clientIP, validateContentType, escapeHtml } from "../lib/security.js";
 import { generateId } from "../lib/d1.js";
 import { notifyInfra } from "../lib/telegram.js";
+import { buildAnalyticsRollupStatements } from "../lib/analytics-rollups.js";
 
 // 히트맵은 빈도가 높아 일반 폼 rate-limit(10/h)보다 관대
 const HEATMAP_RATE_LIMIT_PER_HOUR = 1000;
 const MAX_EVENTS_PER_REQUEST = 50;
+const MAX_D1_BOUND_PARAMETERS = 100;
+const HEATMAP_INSERT_COLUMN_COUNT = 22;
+
+function buildHeatmapInsertStatements(env, rows) {
+  const chunkSize = Math.floor(
+    MAX_D1_BOUND_PARAMETERS / HEATMAP_INSERT_COLUMN_COUNT,
+  );
+  const statements = [];
+  for (let index = 0; index < rows.length; index += chunkSize) {
+    const chunk = rows.slice(index, index + chunkSize);
+    const values = chunk
+      .map(() => "(?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?)")
+      .join(", ");
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO HeatmapEvents
+          (id, Page, EventType, Device, XPct, YPct, ScrollDepthPct,
+           PageW, PageH, ViewportW, ViewportH,
+           SessionId, IP, Country, Region, City,
+           Referrer, UtmSource, UtmMedium, UtmCampaign, CreatedAt, IsBot)
+         VALUES ${values}`,
+      ).bind(...chunk.flat()),
+    );
+  }
+  return statements;
+}
 
 // 별도 캐시 네임스페이스 (폼 rate-limit과 격리)
 async function heatmapRateLimit(ip, limit = HEATMAP_RATE_LIMIT_PER_HOUR) {
@@ -154,6 +181,24 @@ async function maybeAlertBotBurst(env, delta, sample) {
   } catch (_) {}
 }
 
+async function persistAnalyticsRollups(env, events) {
+  try {
+    const statements = buildAnalyticsRollupStatements(env, events);
+    if (statements.length > 0) await env.DB.batch(statements);
+  } catch (error) {
+    try {
+      const code = escapeHtml(String(error?.message || error || "unknown")).slice(
+        0,
+        240,
+      );
+      await notifyInfra(
+        env,
+        `<b>Analytics rollup write failed</b>\n• Code: ${code}\n• Raw heatmap events remain stored; run the rollup repair script.`,
+      );
+    } catch {}
+  }
+}
+
 export async function handleHeatmap(request, env, ctx, services) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/heatmap/, "") || "/";
@@ -212,7 +257,8 @@ async function trackEvents(request, env, ctx) {
   const nowIso = new Date().toISOString();
   const uaBot = isBotUserAgent(request.headers.get("user-agent"));
 
-  const stmts = [];
+  const rawRows = [];
+  const rollupEvents = [];
   let accepted = 0;
   let botCount = 0;
   let botSample = null;
@@ -236,6 +282,10 @@ async function trackEvents(request, env, ctx) {
 
     const id = generateId();
     const refHost = safeReferrerHost(e.referrer);
+    const sessionId = safeStr(e.session_id, 64);
+    const utmSource = safeStr(e?.utm?.source, 100);
+    const utmMedium = safeStr(e?.utm?.medium, 100);
+    const utmCampaign = safeStr(e?.utm?.campaign, 100);
     const evIsBot = uaBot || isSpoofedSearch(refHost, country) ? 1 : 0;
     if (evIsBot) {
       botCount++;
@@ -243,48 +293,60 @@ async function trackEvents(request, env, ctx) {
         botSample = { ip, country, referrer: refHost, page };
       }
     }
-    const sql = `INSERT INTO HeatmapEvents
-      (id, Page, EventType, Device, XPct, YPct, ScrollDepthPct,
-       PageW, PageH, ViewportW, ViewportH,
-       SessionId, IP, Country, Region, City,
-       Referrer, UtmSource, UtmMedium, UtmCampaign, CreatedAt, IsBot)
-      VALUES (?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?)`;
-    stmts.push(
-      env.DB.prepare(sql).bind(
-        id,
-        page,
-        type,
-        device,
-        xPct,
-        yPct,
-        sdPct,
-        clampInt(e.page_w, 30000),
-        clampInt(e.page_h, 100000),
-        clampInt(e.viewport_w, 30000),
-        clampInt(e.viewport_h, 30000),
-        safeStr(e.session_id, 64),
-        ip,
-        country,
-        region,
-        city,
-        refHost,
-        safeStr(e?.utm?.source, 100),
-        safeStr(e?.utm?.medium, 100),
-        safeStr(e?.utm?.campaign, 100),
-        nowIso,
-        evIsBot,
-      ),
-    );
+    rawRows.push([
+      id,
+      page,
+      type,
+      device,
+      xPct,
+      yPct,
+      sdPct,
+      clampInt(e.page_w, 30000),
+      clampInt(e.page_h, 100000),
+      clampInt(e.viewport_w, 30000),
+      clampInt(e.viewport_h, 30000),
+      sessionId,
+      ip,
+      country,
+      region,
+      city,
+      refHost,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      nowIso,
+      evIsBot,
+    ]);
+    rollupEvents.push({
+      id,
+      type,
+      page,
+      device,
+      sessionId,
+      country,
+      region,
+      city,
+      referrer: refHost,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      createdAt: nowIso,
+      isBot: evIsBot === 1,
+    });
     accepted++;
   }
 
-  if (stmts.length === 0) return jsonOk({ accepted: 0 });
+  if (rawRows.length === 0) return jsonOk({ accepted: 0 });
 
   try {
-    await env.DB.batch(stmts);
+    await env.DB.batch(buildHeatmapInsertStatements(env, rawRows));
   } catch (err) {
     return jsonError(500, "DB error", { detail: String(err?.message || err) });
   }
+
+  const rollupWrite = persistAnalyticsRollups(env, rollupEvents);
+  if (ctx?.waitUntil) ctx.waitUntil(rollupWrite);
+  else await rollupWrite;
 
   // 봇 급증 시 관리자 텔레그램 알림 (조용한 감지 금지 — 시간당 임계치 throttle)
   if (botCount > 0 && ctx?.waitUntil) {

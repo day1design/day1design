@@ -70,6 +70,77 @@ function createServices() {
   };
 }
 
+function createAnalyticsDb() {
+  const refreshLogs = [];
+  return {
+    refreshLogs,
+    prepare(sql) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (sql.includes("COUNT(*) AS Touches")) {
+                return {
+                  Touches: 4,
+                  Pageviews: 8,
+                  ReturningVisitors: 1,
+                };
+              }
+              if (sql.includes("AVG(")) return { AvgDwell: 45 };
+              if (sql.includes("substr(HourKey")) return { Hour: "14", Cnt: 5 };
+              if (sql.includes("FROM Estimates")) return { Cnt: 1 };
+              if (sql.includes("COUNT(DISTINCT SessionId) AS Touches")) {
+                return { Touches: 4 };
+              }
+              return null;
+            },
+            async all() {
+              if (sql.includes("GROUP BY Device")) {
+                return {
+                  results: [
+                    { Device: "pc", Cnt: 3 },
+                    { Device: "mobile", Cnt: 1 },
+                  ],
+                };
+              }
+              if (sql.includes("GROUP BY City, Country")) {
+                return {
+                  results: [{ City: "Seoul", Country: "KR", Cnt: 4 }],
+                };
+              }
+              if (sql.includes("GROUP BY src, med, ref")) {
+                return {
+                  results: [
+                    {
+                      src: "google",
+                      med: "organic",
+                      ref: "",
+                      Visitors: 2,
+                      Sessions: 3,
+                    },
+                  ],
+                };
+              }
+              if (sql.includes("GROUP BY DayKey")) {
+                return {
+                  results: [{ d: "2026-05-12", Visitors: 4, Pageviews: 8 }],
+                };
+              }
+              return { results: [] };
+            },
+            async run() {
+              if (sql.includes("INSERT INTO AnalyticsRefreshLog")) {
+                refreshLogs.push(args);
+              }
+              return { meta: { changes: 1 } };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
 function createVisitorDb() {
   const events = [];
   const seen = new Set();
@@ -459,6 +530,7 @@ test("analytics summary refresh stores GA4 payload in D1 and R2", async () => {
   assert.equal(res.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.summary.visitors, 12);
+  assert.equal(body.freshness.self.state, "error");
   assert.equal(body.topPages[0].path, "/");
   assert.deepEqual(
     body.sources.map((source) => ({
@@ -476,6 +548,94 @@ test("analytics summary refresh stores GA4 payload in D1 and R2", async () => {
   assert.equal(services.raw.length, 1);
   assert.match(services.raw[0].key, /^analytics\/snapshots\//);
   assert.equal(calls.filter((url) => url.includes("analyticsdata.googleapis.com")).length, 4);
+});
+
+test("analytics summary persists self rollups and preserves the existing response fields", async () => {
+  const services = createServices();
+  const db = createAnalyticsDb();
+  const res = await handleAnalytics(
+    new Request(
+      "https://api.example.test/api/analytics/summary?range=custom&start=2026-05-12&end=2026-05-12&refresh=1",
+      { headers: { cookie: await adminCookie() } },
+    ),
+    { DB: db, JWT_SECRET },
+    {},
+    services,
+  );
+  const body = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.equal(body.summary.touches, 4);
+  assert.equal(body.summary.newVisitors, 3);
+  assert.equal(body.summary.returningVisitors, 1);
+  assert.equal(body.self.pageviews, 8);
+  assert.equal(body.self.avgPageviewsPerSession, 2);
+  assert.equal(body.self.avgDwellSec, 45);
+  assert.equal(body.self.peakHour, 14);
+  assert.deepEqual(body.self.devices, { pc: 3, mobile: 1 });
+  assert.equal(body.self.topLocations[0].city, "Seoul");
+  assert.equal(body.self.submissions, 1);
+  assert.equal(body.freshness.self.state, "fresh");
+  assert.equal(services.snapshots[0].fields.Source, "self");
+  assert.equal(services.raw.length, 1);
+  assert.equal(db.refreshLogs.length, 1);
+});
+
+test("analytics summary exposes R2 archive failure while keeping the D1 snapshot", async () => {
+  const services = createServices();
+  services.analyticsRaw.putJson = async () => {
+    throw new Error("r2_archive_unavailable");
+  };
+  const db = createAnalyticsDb();
+  const res = await handleAnalytics(
+    new Request(
+      "https://api.example.test/api/analytics/summary?range=custom&start=2026-05-12&end=2026-05-12&refresh=1",
+      { headers: { cookie: await adminCookie() } },
+    ),
+    { DB: db, JWT_SECRET },
+    {},
+    services,
+  );
+  const body = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.equal(body.summary.touches, 4);
+  assert.equal(body.freshness.self.state, "fresh_archive_failed");
+  assert.equal(body.freshness.self.errorCode, "r2_archive_unavailable");
+  assert.equal(services.snapshots.length, 1);
+  assert.equal(services.snapshots[0].fields.RawR2Key, "");
+  assert.equal(db.refreshLogs[0][6], "fresh_archive_failed");
+  assert.equal(db.refreshLogs[0][9], "r2_archive_unavailable");
+});
+
+test("analytics summary stays available when the snapshot lookup fails", async () => {
+  const services = createServices();
+  services.analyticsSnapshots.list = async () => {
+    throw new Error("snapshot_read_unavailable");
+  };
+  const db = createAnalyticsDb();
+
+  const res = await handleAnalytics(
+    new Request(
+      "https://api.example.test/api/analytics/summary?range=custom&start=2026-05-12&end=2026-05-12",
+      { headers: { cookie: await adminCookie() } },
+    ),
+    { DB: db, JWT_SECRET },
+    {},
+    services,
+  );
+  const body = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.summary.touches, 4);
+  assert.equal(body.self.pageviews, 8);
+  assert.equal(body.freshness.self.state, "fresh");
+  assert.equal(body.freshness.snapshotRead.state, "error");
+  assert.equal(
+    body.freshness.snapshotRead.errorCode,
+    "snapshot_read_unavailable",
+  );
 });
 
 test("analytics summary falls back to latest D1 snapshot when Google is unavailable", async () => {

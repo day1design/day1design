@@ -256,8 +256,61 @@ let visitorDetailEnd = null;
 let analyticsLoadSeq = 0;
 let visitorLocationLoadSeq = 0;
 let visitorLocationDetailLoadSeq = 0;
+const ANALYTICS_RANGE_CACHE_PREFIX = "analytics_range_v1:";
+const ANALYTICS_RANGE_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const ANALYTICS_RETRY_DELAYS_MS = [2000, 8000];
 let targetSettingsCache = readTargetSettings();
 const targetSettingsLoaded = new Set();
+
+function analyticsRangeCacheKey(range) {
+  return `${ANALYTICS_RANGE_CACHE_PREFIX}${range.key}:${dayKey(range.start)}:${dayKey(range.end)}`;
+}
+
+function readAnalyticsRangeCache(range) {
+  try {
+    const raw = sessionStorage.getItem(analyticsRangeCacheKey(range));
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (
+      !cached?.data?.summary ||
+      !cached.savedAt ||
+      Date.now() - cached.savedAt > ANALYTICS_RANGE_CACHE_MAX_AGE_MS
+    ) {
+      sessionStorage.removeItem(analyticsRangeCacheKey(range));
+      return null;
+    }
+    return cached;
+  } catch {
+    return null;
+  }
+}
+
+function writeAnalyticsRangeCache(range, data) {
+  try {
+    sessionStorage.setItem(
+      analyticsRangeCacheKey(range),
+      JSON.stringify({ savedAt: Date.now(), data }),
+    );
+  } catch {}
+}
+
+function setAnalyticsRangeStatus(range, state) {
+  const label = document.getElementById("rangeLabel");
+  if (!label) return;
+  const suffix = {
+    loading: currentTrafficSummary
+      ? " · 갱신 중, 직전값 표시"
+      : " · 불러오는 중",
+    cached: " · 저장값 표시",
+    retrying: currentTrafficSummary
+      ? " · 갱신 지연, 저장값 유지"
+      : " · 연결 재시도 중",
+    error: currentTrafficSummary
+      ? " · 갱신 실패, 저장값 유지"
+      : " · 통계 연결 지연",
+  }[state];
+  label.textContent = `${range.label}${suffix || ""}`;
+}
 const targetSettingsLoading = new Set();
 
 // ========== 공통 유틸 ==========
@@ -979,8 +1032,8 @@ function renderTopPages(rows) {
     .join("");
 }
 
-async function loadTrafficAnalytics(range) {
-  const seq = ++analyticsLoadSeq;
+async function loadTrafficAnalytics(range, attempt = 0, seq = null) {
+  const requestSeq = seq ?? ++analyticsLoadSeq;
   try {
     await adminUtil.ensureAuth();
     const params = new URLSearchParams({
@@ -992,11 +1045,26 @@ async function loadTrafficAnalytics(range) {
     // (6h TTL) 이 GA4 호출 부담은 막아주므로 매번 호출해도 빠름. (사용자가
     // sessionStorage 를 수동으로 비워야만 새 데이터가 보이던 사고 차단)
     const data = await adminUtil.api(`/api/analytics/summary?${params}`);
-    if (seq !== analyticsLoadSeq) return;
+    if (requestSeq !== analyticsLoadSeq) return;
+    writeAnalyticsRangeCache(range, data);
     renderTrafficAnalytics(data);
+    setAnalyticsRangeStatus(range, "ready");
   } catch (e) {
-    if (seq !== analyticsLoadSeq) return;
-    renderAnalyticsEmpty();
+    if (requestSeq !== analyticsLoadSeq) return;
+    const cached = readAnalyticsRangeCache(range);
+    if (cached?.data) renderTrafficAnalytics(cached.data);
+    if (attempt < ANALYTICS_RETRY_DELAYS_MS.length) {
+      setAnalyticsRangeStatus(range, "retrying");
+      const delay = ANALYTICS_RETRY_DELAYS_MS[attempt];
+      setTimeout(() => {
+        if (requestSeq === analyticsLoadSeq) {
+          loadTrafficAnalytics(range, attempt + 1, requestSeq);
+        }
+      }, delay);
+      console.warn("traffic analytics load delayed; retry scheduled:", e);
+      return;
+    }
+    setAnalyticsRangeStatus(range, "error");
     console.error("traffic analytics load failed:", e);
   }
 }
@@ -2470,10 +2538,13 @@ function applyRange(key) {
   if (picker) picker.hidden = key !== "custom";
 
   const range = resolveRange(key);
-  const label = document.getElementById("rangeLabel");
-  if (label) label.textContent = range.label;
-
-  renderAnalyticsEmpty();
+  const cached = readAnalyticsRangeCache(range);
+  if (cached?.data) {
+    renderTrafficAnalytics(cached.data);
+    setAnalyticsRangeStatus(range, "cached");
+  } else {
+    setAnalyticsRangeStatus(range, "loading");
+  }
   renderVisitorLocations(null);
   loadTrafficAnalytics(range);
   loadVisitorLocations(range);
