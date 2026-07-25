@@ -1,16 +1,20 @@
-# NEXT SESSION — 접수채널 유입량 + 이메일 수신자 + Meta 저장체계 (2026-07-25)
+# NEXT SESSION — 접수채널 유입량 + 광고썸네일 + 이메일 수신자 + Meta 저장체계 (2026-07-25)
 
-커밋 7개, 전부 push·배포 완료. 워커 소스는 무변경(재배포 불필요).
+커밋 9개, 전부 push·배포 완료. **Worker 재배포 있었음**(썸네일 라우트, 버전 `a03cb5c7`).
 
 ```
-a8beda0 feat(admin)  접수채널(Source) 기준 통계 추가
-ee239e2 fix(deploy)  .codegraph 113MB → Vercel 배포 전면 차단 해제
-af25c55 docs         세션 핸드오프(이 문서)
-2413914 test(upload) 업로드 정책 가드를 현행 기준으로 정정
-ce0ab24 test(worker) 저장소 밖에 있던 가드 테스트 4개 편입
-62920ae feat(admin)  상담신청 통계를 기간 필터로 전환
-584e716 refactor     기간 컨트롤 일원화 + 「접수채널별 유입량」 박스 통합
+a8beda0 feat(admin)    접수채널(Source) 기준 통계 추가
+ee239e2 fix(deploy)    .codegraph 113MB → Vercel 배포 전면 차단 해제
+af25c55 docs           세션 핸드오프(이 문서)
+2413914 test(upload)   업로드 정책 가드를 현행 기준으로 정정
+ce0ab24 test(worker)   저장소 밖에 있던 가드 테스트 4개 편입
+62920ae feat(admin)    상담신청 통계를 기간 필터로 전환
+584e716 refactor       기간 컨트롤 일원화 + 「접수채널별 유입량」 박스 통합
+459c346 docs           핸드오프 갱신
+206dd50 fix(meta-ads)  광고 썸네일 R2 프록시 — 서명 URL 만료로 전부 깨지던 것
 ```
+
+워커 테스트 **103/103 통과**.
 
 ---
 
@@ -86,7 +90,48 @@ meta 373건이 전부 `facebook` 이라 세분화 값이 사실상 없고, Refer
 
 ---
 
-## 3. 내부 알림 이메일 수신자 — 실효 1개뿐
+## 3. 광고 썸네일 미리보기 깨짐 → R2 프록시로 고정 (206dd50)
+
+**원인**: Meta 의 `thumbnail_url` 은 **서명 URL** 이다 — 쿼리의 `oe=` 가 만료
+타임스탬프(16진수 epoch)이고 발급 후 **약 7일**이면 죽는다. 동기화 시점 URL 을
+`MetaAdsAd.ThumbnailUrl` 에 그대로 박아두니 일주일 뒤 전부 깨졌다.
+
+실측(2026-07-25) — 행 날짜별 저장 URL 을 직접 호출:
+
+| 행 날짜 | oe 만료 | HTTP |
+| --- | --- | --- |
+| 2026-03-02 / 04-15 | 2026-05-25 | 연결거부 |
+| 2026-05-20 | 05-27 | 연결거부 |
+| 2026-06-20 | 06-27 | 연결거부 |
+| 2026-07-10 | 07-17 | 연결거부 |
+| **2026-07-24** | 07-29 | **200** |
+
+565행 중 fbcdn 562행. 최근 며칠분 외 **전부 만료** 상태였다.
+
+**조치**: URL 을 저장하지 않고 이미지를 R2 에 복사해 고정한다.
+
+- `GET /api/meta-ads/thumb/{creativeId}` 신설 (`worker/src/routes/meta-ads.js`)
+  - R2 `meta-ads/thumbs/{creativeId}` 히트 → 외부 호출 0
+  - 미스 → Graph 로 현재 유효한 URL 조회 → 원본 fetch → R2 put → 서빙
+- 고유 크리에이티브 **32개뿐**이라 미스는 크리에이티브당 최초 1회. Meta rate
+  limit(200/hr) 안전. **별도 백필 불필요** — 어드민 열면 알아서 채워진다.
+- 어드민(`site/admin/meta-ads.js` `thumbCell`)은 이 프록시로만 읽는다.
+- 로드 실패 시 `onerror` 로 기존 그라디언트 아이콘 교체(깨진 이미지 아이콘 방지).
+- `content-type` 은 `image/(jpeg|png|webp|gif|avif)` 화이트리스트로 정규화 —
+  원본 헤더를 그대로 믿고 서빙하지 않는다.
+- `creativeId` 는 `[A-Za-z0-9_-]{1,64}` 로 제한(경로 주입 차단).
+
+**⚠ 어드민이 D1 의 fbcdn URL 을 `<img src>` 로 직접 쓰도록 되돌리지 말 것.**
+되돌리면 같은 방식으로 또 깨진다. 가드: `worker/tests/meta-ads-thumb.test.mjs` (6건 —
+R2 히트 시 외부호출 0 / 미스 시 R2 보관 / 비이미지 타입 정규화 / Graph 실패 404 /
+미인증 401 / 잘못된 id 404).
+
+**참고**: D1 의 `ThumbnailUrl` 컬럼은 그대로 두었다(동기화 코드 미변경). 어드민이
+더 이상 쓰지 않을 뿐이다. 정리하려면 sync 쪽도 같이 봐야 한다.
+
+---
+
+## 4. 내부 알림 이메일 수신자 — 실효 1개뿐
 
 사용자 질문("mkt@polar.co.kr 이랑 다른 이메일들도 있지?") → **없다.**
 
@@ -109,7 +154,7 @@ printf "%s" "a@x.com,b@y.com" | wrangler secret put GMAIL_NOTIFY_TO
 
 ---
 
-## 4. Meta 접수 저장체계 — 이상 없음
+## 5. Meta 접수 저장체계 — 이상 없음
 
 사용자 요구: "meta 접수되는건 절대 누락안되게, 오류 나는것까지도 잡아서 저장".
 **테스트 리드 주입 0건**, 코드·기존 로그·가드테스트만으로 검증.
@@ -135,7 +180,7 @@ Worker HEAD `9672312` 가 07-25 06:48:10 라이브. 그 이전 facebook 리드 I
 
 ---
 
-## 5. 테스트 — 97/97 통과 (직전 세션의 미해결 항목 해소)
+## 6. 테스트 — 103/103 통과 (직전 세션의 미해결 항목 해소)
 
 ### upload-policy 실패 3건 → **회귀 아님, 낡은 테스트였다** (2413914)
 
@@ -159,6 +204,11 @@ Worker HEAD `9672312` 가 07-25 06:48:10 라이브. 그 이전 facebook 리드 I
 오리진별 접근제어·관리자 로그인·호스트별 에셋 서빙·D1/R2 주입 계약을 지킨다.
 더미 자격증명만 사용(`secret-pass`·`jwt-secret`·`test-secret`).
 
+### 썸네일 프록시 가드 6건 신설 (206dd50)
+
+`meta-ads-thumb.test.mjs`. `globalThis.fetch` 를 스텁으로 갈아끼워 외부 호출 0으로
+검증한다 — **R2 히트일 때 Graph 를 호출하지 않는 것**이 핵심 계약(rate limit 보호).
+
 ---
 
 ## 남은 것 / 다음 세션
@@ -172,6 +222,13 @@ Worker HEAD `9672312` 가 07-25 06:48:10 라이브. 그 이전 facebook 리드 I
   관리자 인증이 전제이고 R2 는 다른 오리진이라 세션 탈취로는 안 이어진다.
   닫으려면 두 조건을 AND 로 묶으면 된다. 테스트에는 주석으로만 기록(구멍을 정상으로
   못박지 않기 위해).
+- **썸네일 R2 채워짐 확인**: 어드민 광고 목록을 한 번 열면 크리에이티브 32개가
+  `meta-ads/thumbs/` 에 순차 적재된다. 며칠 뒤 다시 열어 과거 광고 썸네일이 뜨는지
+  확인할 것(만료가 더는 영향을 주지 않는다는 실증). 안 뜨면 해당 크리에이티브가
+  Meta 에서 삭제된 경우 — 폴백 아이콘으로 표시된다.
+- **`MetaAdsAd.ThumbnailUrl` 정리 여부**: 어드민이 더는 쓰지 않지만 sync 는 여전히
+  만료될 URL 을 기록한다. 지우려면 sync·스키마·`listAds` 응답을 같이 봐야 한다.
+  당장 해가 없어 미뤘다.
 - `git stash list` 의 `stash@{0}`(2026-05-26 WIP)는 **증거·복구 원본이라 drop 금지**
   (CLAUDE.md 불변규칙 3).
 - Vercel CLI 출력에 `VERCEL_TOKEN` 이 평문 노출된다 — 로그·스크린샷 공유 시 마스킹.
@@ -187,7 +244,12 @@ Worker HEAD `9672312` 가 07-25 06:48:10 라이브. 그 이전 facebook 리드 I
 
 - 안전망 불변규칙: `F:\day1design_homepage\CLAUDE.md` §불변규칙 1·2·6
 - 가드 테스트: `worker/tests/estimates-safetynet.test.mjs`, `meta-lead-poll.test.mjs`,
-  `upload-policy.test.mjs`, `access.test.mjs`, `index-access.test.mjs`
-- 배포: `scripts/deploy.ps1 main` (admin 은 main Vercel 프로젝트에 통합됨).
-  `npx vercel` 이 깨지면 전역 `vercel` 직접 호출.
-- 캐시버전: admin.css 는 전 admin HTML 일괄(`?v=20260725-inflow`), 변경된 JS 만 개별 갱신.
+  `upload-policy.test.mjs`, `meta-ads-thumb.test.mjs`, `access.test.mjs`,
+  `index-access.test.mjs`
+- 배포 순서: **Worker 먼저 → Vercel**. 워커 변경이 있으면
+  `cd worker && wrangler deploy` (셸의 `CLOUDFLARE_API_TOKEN` 을 비우고 Global API Key
+  사용), 이어서 `vercel --prod`. `npx` 가 깨지면 전역 `vercel` / `worker/node_modules/.bin/wrangler`
+  직접 호출.
+- 캐시버전: admin.css 는 전 admin HTML 일괄(`?v=20260725-inflow`), 변경된 JS 만 개별 갱신
+  (`estimates.js?v=20260725-inflow`, `meta-ads.js?v=20260725-thumbproxy`,
+  `analytics.js?v=20260725-channel`).
