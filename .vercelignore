@@ -9,3 +9,12 @@ NEXT_SESSION_*
 site/images
 site/_archive
 site/_private
+# 배포 산출물 아님 — 업로드에 섞이면 100MB 한도를 넘겨 deploy_failed 가 난다
+# (2026-07-25: code-review-graph MCP 가 만든 .codegraph/codegraph.db 113MB
+#  단일 파일이 100MB 한도를 넘겨 배포 전면 차단됨)
+.codegraph
+test-results
+_backup
+_fav_tmp
+blog-infographic-gangnam
+workers
