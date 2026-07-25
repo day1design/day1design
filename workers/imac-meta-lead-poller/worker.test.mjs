@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   buildLeadPayload,
   computeSinceMs,
+  discoverActiveForms,
   formatFailureMessage,
   normalizePhone,
   parseFormIds,
@@ -105,6 +106,39 @@ test("하트비트 실패는 예외로 드러난다(조용히 삼키지 않음)"
       fetchImpl: async () => new Response("nope", { status: 500 }),
     }),
     /하트비트 실패/,
+  );
+});
+
+test("폼 자동 발견 — ACTIVE 만 수집 대상, 그 외 상태는 제외", async () => {
+  const forms = await discoverActiveForms({
+    pageId: "969217572947331",
+    pageToken: "page-token",
+    graphVersion: "v21.0",
+    fetchImpl: async (url) => {
+      assert.ok(url.includes("/969217572947331/leadgen_forms"));
+      assert.ok(url.includes("access_token=page-token"));
+      return Response.json({
+        data: [
+          { id: "111", name: "견적 양식", status: "ACTIVE" },
+          { id: "222", name: "옛 양식", status: "ARCHIVED" },
+          { id: "333", name: "초안", status: "DRAFT" },
+        ],
+      });
+    },
+  });
+  assert.deepEqual(forms, [{ id: "111", name: "견적 양식" }]);
+});
+
+test("폼 자동 발견 실패는 예외로 드러난다(조용한 누락 금지)", async () => {
+  await assert.rejects(
+    discoverActiveForms({
+      pageId: "969217572947331",
+      pageToken: "bad",
+      graphVersion: "v21.0",
+      fetchImpl: async () =>
+        Response.json({ error: { message: "(#190) page token 필요" } }, { status: 400 }),
+    }),
+    /폼 목록 조회 실패/,
   );
 });
 

@@ -189,12 +189,63 @@ async function fetchFormLeads({
   return leads;
 }
 
+// ─── 폼 자동 발견 ───
+// Make 웹훅은 페이지 단위라 새 양식을 만들어도 자동으로 커버됐다. 폴러는 폼 ID 목록 기반이라
+// 그대로 두면 새 양식의 리드가 조용히 누락된다(폴러는 정상 동작으로 보이므로 알림도 안 뜬다).
+// 그래서 매 실행마다 페이지의 ACTIVE 폼을 열거해 조회 대상에 합친다.
+// leadgen_forms 열거는 페이지 액세스 토큰을 요구한다(시스템 토큰 직접 호출은 #190).
+async function resolvePageToken({ token, appSecret, graphVersion, pageId, fetchImpl }) {
+  const url = new URL(`https://graph.facebook.com/${graphVersion}/me/accounts`);
+  url.searchParams.set("fields", "id,access_token");
+  url.searchParams.set("limit", "50");
+  url.searchParams.set("access_token", token);
+  const proof = appSecretProof(token, appSecret);
+  if (proof) url.searchParams.set("appsecret_proof", proof);
+  const res = await fetchImpl(url.toString());
+  const data = await res.json();
+  if (!res.ok || data?.error) {
+    throw new Error(
+      `페이지 토큰 조회 실패: ${String(data?.error?.message || res.status).slice(0, 160)}`,
+    );
+  }
+  const page = (data?.data || []).find((p) => String(p?.id) === String(pageId));
+  if (!page?.access_token) {
+    throw new Error(`페이지(${pageId}) 액세스 토큰 없음 — 자산 할당 확인 필요`);
+  }
+  return page.access_token;
+}
+
+export async function discoverActiveForms({
+  pageId,
+  pageToken,
+  graphVersion,
+  fetchImpl = fetch,
+}) {
+  const url = new URL(
+    `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(pageId)}/leadgen_forms`,
+  );
+  url.searchParams.set("fields", "id,name,status");
+  url.searchParams.set("limit", "100");
+  url.searchParams.set("access_token", pageToken);
+  const res = await fetchImpl(url.toString());
+  const data = await res.json();
+  if (!res.ok || data?.error) {
+    throw new Error(
+      `폼 목록 조회 실패: ${String(data?.error?.message || res.status).slice(0, 160)}`,
+    );
+  }
+  return (data?.data || [])
+    .filter((f) => String(f?.status || "").toUpperCase() === "ACTIVE")
+    .map((f) => ({ id: String(f.id), name: String(f.name || "") }));
+}
+
 function emptyState(cutoverAt) {
   return {
     version: 1,
     cutoverAt,
     highWatermarkAt: cutoverAt,
     lastSuccessfulPollAt: "",
+    knownFormIds: [],
     processed: {},
   };
 }
@@ -341,9 +392,13 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
   const inspect = process.argv.includes("--inspect");
   const readOnly = dryRun || inspect;
   const token = envRequired("META_SYSTEM_USER_TOKEN");
-  const formIds = parseFormIds(envRequired("META_LEAD_FORM_IDS"));
-  if (formIds.length === 0) {
-    throw new Error("META_LEAD_FORM_IDS에 유효한 폼 ID가 없습니다.");
+  const explicitFormIds = parseFormIds(process.env.META_LEAD_FORM_IDS);
+  const pageId = String(process.env.META_LEAD_PAGE_ID || "").trim();
+  const excluded = new Set(parseFormIds(process.env.META_LEAD_FORM_EXCLUDE));
+  if (!explicitFormIds.length && !pageId) {
+    throw new Error(
+      "META_LEAD_FORM_IDS 또는 META_LEAD_PAGE_ID 중 하나는 있어야 합니다.",
+    );
   }
   const cutoverAt = envRequired("META_LEAD_CUTOVER_AT");
   const cutoverMs = parseRequiredTime("META_LEAD_CUTOVER_AT", cutoverAt);
@@ -381,6 +436,44 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
       overlapMs,
     });
 
+    // 조회 대상 폼 = 명시 목록 ∪ 페이지에서 발견한 ACTIVE 폼 − 제외목록.
+    // 발견이 실패해도(권한/일시장애) 명시 목록이 있으면 수집을 멈추지 않는다.
+    let discovered = [];
+    let discoveryNote = pageId ? "ok" : "off";
+    if (pageId) {
+      try {
+        const pageToken = await resolvePageToken({
+          token,
+          appSecret,
+          graphVersion,
+          pageId,
+          fetchImpl,
+        });
+        discovered = await discoverActiveForms({
+          pageId,
+          pageToken,
+          graphVersion,
+          fetchImpl,
+        });
+      } catch (error) {
+        discoveryNote = "fail";
+        console.error(
+          `${TAG} form-discovery ${String(error?.message || error).slice(0, 240)}`,
+        );
+        if (!explicitFormIds.length) throw error;
+      }
+    }
+    const formIds = [
+      ...new Set([...explicitFormIds, ...discovered.map((f) => f.id)]),
+    ].filter((id) => !excluded.has(id));
+    if (!formIds.length) throw new Error("조회할 폼이 없습니다.");
+
+    // 새 양식이 생기면 알린다 — 이전 실행 기록이 있을 때만(첫 실행 전체 알림 방지)
+    const knownFormIds = Array.isArray(state.knownFormIds) ? state.knownFormIds : [];
+    const newForms = discovered.filter(
+      (f) => knownFormIds.length > 0 && !knownFormIds.includes(f.id),
+    );
+
     const allLeads = [];
     for (const formId of formIds) {
       allLeads.push(
@@ -409,6 +502,12 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
     );
 
     if (inspect) {
+      console.log(
+        `${TAG} forms=${formIds.join(",")} discovery=${discoveryNote}` +
+          (discovered.length
+            ? ` (${discovered.map((f) => `${f.id}:${f.name}`).join(" | ")})`
+            : ""),
+      );
       printInspect(leads);
       return { fetched: leads.length, delivered: 0, duplicates: 0, skipped: false };
     }
@@ -435,7 +534,9 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
       processed[payload.leadId] = payload.createdTime || new Date().toISOString();
     }
 
-    const detail = `forms=${formIds.length} fetched=${leads.length} delivered=${delivered} duplicates=${duplicates}`;
+    const detail =
+      `forms=${formIds.length} fetched=${leads.length} delivered=${delivered}` +
+      ` duplicates=${duplicates} discovery=${discoveryNote}`;
     if (!dryRun) {
       // 상태 저장이 먼저 — 하트비트가 실패해도 같은 리드를 다시 보내지 않는다.
       const retentionFloor = Math.max(
@@ -447,6 +548,9 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
         cutoverAt,
         highWatermarkAt: new Date(Math.max(newestMs, nowMs)).toISOString(),
         lastSuccessfulPollAt: new Date(nowMs).toISOString(),
+        knownFormIds: discovered.length
+          ? discovered.map((f) => f.id)
+          : knownFormIds,
         processed: pruneProcessed(processed, retentionFloor),
       });
       await sendHeartbeat({
@@ -456,6 +560,19 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
         detail,
         fetchImpl,
       });
+      // 새 양식은 조용히 지나가면 안 된다 — 매핑 확인이 필요할 수 있으므로 알린다.
+      if (newForms.length) {
+        await sendTelegram({
+          botToken: String(process.env.HEALTH_TELEGRAM_BOT_TOKEN || "").trim(),
+          chatId: String(process.env.HEALTH_TELEGRAM_CHAT_ID || "").trim(),
+          message: [
+            "[day1design/meta-lead-poller] 🆕 새 리드 양식 감지",
+            ...newForms.map((f) => `· ${f.name} (${f.id})`),
+            "자동으로 수집 대상에 포함됩니다. 질문이 바뀌었으면 워커 매핑 확인 필요.",
+          ].join("\n"),
+          fetchImpl,
+        });
+      }
     }
 
     console.log(

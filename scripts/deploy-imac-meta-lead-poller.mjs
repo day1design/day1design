@@ -52,7 +52,6 @@ function parseEnv(path) {
 const sourceEnv = parseEnv(envPath);
 const required = [
   "META_SYSTEM_USER_TOKEN",
-  "META_LEAD_FORM_IDS",
   "META_LEAD_CUTOVER_AT",
   "LEAD_WEBHOOK_URL",
   "LEAD_WEBHOOK_SECRET",
@@ -63,8 +62,18 @@ for (const key of required) {
   if (!sourceEnv[key]) throw new Error(`${key} 누락: ${envPath}`);
 }
 
+// 폼 지정은 명시 목록(META_LEAD_FORM_IDS) 또는 페이지 자동발견(META_LEAD_PAGE_ID) 중 하나면 된다.
+if (!sourceEnv.META_LEAD_FORM_IDS && !sourceEnv.META_LEAD_PAGE_ID) {
+  throw new Error(
+    `META_LEAD_FORM_IDS 또는 META_LEAD_PAGE_ID 중 하나는 필요: ${envPath}`,
+  );
+}
+
 const allowed = [
   ...required,
+  "META_LEAD_FORM_IDS",
+  "META_LEAD_PAGE_ID",
+  "META_LEAD_FORM_EXCLUDE",
   "META_APP_SECRET",
   "META_GRAPH_VERSION",
   "META_LEAD_LOOKBACK_HOURS",
