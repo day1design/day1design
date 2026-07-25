@@ -31,6 +31,7 @@ const filterFrom = document.getElementById("filterFrom");
 const filterTo = document.getElementById("filterTo");
 const btnExportCsv = document.getElementById("btnExportCsv");
 const periodSeg = document.getElementById("estPeriodSeg");
+const rangePicker = document.getElementById("estRangePicker");
 
 function syncModalLock() {
   const hasOpenModal =
@@ -192,8 +193,9 @@ function startOfDay(date) {
 }
 
 // 기간 세그먼트 — N일이면 오늘 포함 최근 N일(당일=0 → 오늘 하루).
-// 별도 상태를 두지 않고 기존 기간 입력(filterFrom/To)을 직접 세팅한다.
-// 이렇게 해야 목록·접수채널·CSV 파일명까지 한 경로로 따라온다.
+// 이 화면의 기간 컨트롤은 이것 하나뿐이다. 별도 상태를 두지 않고 기간 입력
+// (filterFrom/To)을 직접 세팅하므로 접수채널·목록·CSV 가 한 경로로 따라온다.
+// '선택기간' 만 날짜 입력을 노출하고 값은 사용자가 정한다.
 function ymdLocal(date) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -201,6 +203,8 @@ function ymdLocal(date) {
 
 function applyPeriod(period) {
   if (!filterFrom || !filterTo) return;
+  // 선택기간은 날짜 입력을 열어줄 뿐, 값은 건드리지 않는다
+  if (period === "custom") return;
   if (period === "all") {
     filterFrom.value = "";
     filterTo.value = "";
@@ -224,13 +228,10 @@ function setActivePeriod(period) {
   });
 }
 
-// 기간 입력을 손으로 고치면 세그먼트 선택을 해제한다 (거짓 표시 방지)
-function clearActivePeriod() {
-  if (!periodSeg) return;
-  periodSeg.querySelectorAll("[data-period]").forEach((b) => {
-    b.classList.remove("active");
-    b.setAttribute("aria-pressed", "false");
-  });
+// 날짜 입력은 '선택기간' 일 때만 보인다 — 나머지 버튼은 기간을 스스로 계산하므로
+// 입력칸이 떠 있으면 어느 쪽이 진짜인지 헷갈린다.
+function togglePeriodPicker(period) {
+  if (rangePicker) rangePicker.hidden = period !== "custom";
 }
 
 // 접수채널 집계 — Source 컬럼 기준. 현재 필터(기간·상태·검색·유입탭)가
@@ -1164,22 +1165,14 @@ if (periodSeg) {
     const period = btn.dataset.period;
     applyPeriod(period);
     setActivePeriod(period);
+    togglePeriodPicker(period);
     render();
   });
 }
 filterSearch.addEventListener("input", render);
-if (filterFrom) {
-  filterFrom.addEventListener("change", () => {
-    clearActivePeriod();
-    render();
-  });
-}
-if (filterTo) {
-  filterTo.addEventListener("change", () => {
-    clearActivePeriod();
-    render();
-  });
-}
+// 날짜 입력은 '선택기간' 일 때만 노출되므로 여기서 세그 상태를 건드릴 일이 없다
+if (filterFrom) filterFrom.addEventListener("change", render);
+if (filterTo) filterTo.addEventListener("change", render);
 if (btnExportCsv) btnExportCsv.addEventListener("click", exportFilteredCsv);
 
 (async () => {

@@ -1629,18 +1629,56 @@
   margin-bottom: 8px;
 }
 
-/* 통계 기간 필터 — .seg/.seg-btn 은 유입통계와 공유 */
+/* 접수채널별 유입량 — 기간 세그먼트 + 채널 집계를 한 박스로 묶는다.
+   기간 컨트롤이 화면에 둘이면(툴바 날짜입력과 병존) 어느 쪽이 통계를 지배하는지
+   헷갈리므로, 이 박스 안의 세그먼트가 유일한 기간 컨트롤이다.
+   .seg/.seg-btn 은 유입통계 페이지와 공유. */
+.est-inflow-box {
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 12px 16px 14px;
+  margin-bottom: 14px;
+}
+.est-inflow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.est-inflow-head .est-stat-label {
+  margin-bottom: 0;
+}
 .est-period-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
-.est-period-bar .est-stat-label {
-  margin-bottom: 0;
+.est-range-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.est-range-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+.est-inflow-note {
+  margin: 12px 0 0;
+  color: var(--c-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 @media (max-width: 760px) {
+  .est-inflow-box {
+    padding: 12px 12px 14px;
+  }
   .est-period-bar .seg {
     width: 100%;
     justify-content: space-between;
@@ -1649,16 +1687,13 @@
     flex: 1 0 auto;
     padding: 6px 10px;
   }
+  .est-range-picker {
+    width: 100%;
+    flex-wrap: wrap;
+  }
 }
 
-/* 접수채널 집계 — 필터 반영 Source 별 건수/비중 */
-.est-channel-stats {
-  background: #fff;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius);
-  padding: 12px 16px 14px;
-  margin-bottom: 14px;
-}
+/* 채널별 건수/비중 칩 */
 .est-channel-head {
   display: flex;
   align-items: center;
@@ -1704,9 +1739,6 @@
   font-size: 12px;
 }
 @media (max-width: 760px) {
-  .est-channel-stats {
-    padding: 12px 12px 14px;
-  }
   .est-channel-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
