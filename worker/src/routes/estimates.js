@@ -220,7 +220,8 @@ function emailGridCell(label, value, width, accent = false) {
         </td>`.trim();
 }
 
-function internalEstimateEmailHtml(env, details) {
+// Meta 리드(routes/meta-lead.js)도 같은 템플릿을 쓴다 — 내부 알림 메일 스타일 일원화.
+export function internalEstimateEmailHtml(env, details) {
   const { fields, attribution, conceptCount, planCount, submittedAt } = details;
   const receivedAt = formatKstMinute(submittedAt);
   const location =

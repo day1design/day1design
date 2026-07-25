@@ -23,6 +23,8 @@ import {
   recordRejectToD1,
 } from "../lib/estimate-archive.js";
 import { appendLeadToSheet } from "../lib/sheets.js";
+import { notifyEmail } from "../lib/email.js";
+import { internalEstimateEmailHtml } from "./estimates.js";
 
 const MAX_BODY_CHARS = 65536;
 
@@ -529,6 +531,46 @@ export async function handleMetaLead(
             `[day1design/meta-lead] LMS 호출 예외\n${escapeHtml((e?.message || "").slice(0, 200))}`,
           );
         }
+        // 내부 알림 메일 — 홈페이지 접수와 동일한 템플릿·수신자.
+        // (Make→Apps Script 가 보내던 Meta 리드 알림 메일을 워커로 흡수)
+        let emailStep = "ok";
+        try {
+          await notifyEmail(env, {
+            subject: "[DAYONE] 새 상담신청 (Meta)",
+            text: [
+              `이름: ${name}`,
+              `연락처: ${prettyPhone}`,
+              location && `지역: ${location}`,
+              spaceType && `공간유형: ${spaceType}`,
+              area && `면적: ${area}`,
+              scheduledDate && `시공예정일: ${scheduledDate}`,
+              budget && `가용예산: ${budget}`,
+              `출처: Meta / ${platform}${campaign ? ` / ${campaign}` : ""}`,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            html: internalEstimateEmailHtml(env, {
+              fields: {
+                name,
+                phone: prettyPhone,
+                address: location,
+                address_detail: "",
+                branch: "",
+                space_type: spaceType,
+                space_size: area,
+                schedule: scheduledDate,
+                budget,
+                detail,
+              },
+              attribution: { platform, campaign },
+              conceptCount: 0,
+              planCount: 0,
+              submittedAt: timestamp || new Date().toISOString(),
+            }),
+          });
+        } catch {
+          emailStep = "fail";
+        }
         // 구글시트 미러링 — 홈페이지 접수와 같은 시트·같은 컬럼(출처로 구분).
         let sheetStep = "skip";
         try {
@@ -574,6 +616,7 @@ export async function handleMetaLead(
             telegram: "ok",
             lms: lmsStep,
             capi: capiStep,
+            email: emailStep,
             sheet: sheetStep,
           },
         });

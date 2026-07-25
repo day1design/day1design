@@ -346,6 +346,49 @@ test("[invariant] D1 저장 실패 시 200 금지 — 502 + R2 원문 보관", a
 
 // 폴러가 워커보다 좁은 규칙을 쓰면 새 폼('핸드폰번호' 등)에서 폴러만 전화를 못 읽는다.
 // 폴러는 별도 배포물이라 import 로 규칙 일치를 강제한다.
+// Make→Apps Script 가 보내던 Meta 리드 내부 알림 메일을 워커가 흡수했다(2026-07-25).
+// Make 를 껐으므로 이게 빠지면 담당자가 Meta 리드 메일을 못 받는다.
+test("[guard] Meta 리드도 내부 알림 메일을 보낸다(홈페이지와 같은 템플릿)", async () => {
+  const sent = [];
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u.includes("gmail.googleapis.com")) sent.push(init);
+    if (u.includes("oauth2.googleapis.com")) {
+      return Response.json({ access_token: "at" });
+    }
+    return Response.json({ ok: true });
+  };
+  const tasks = [];
+  try {
+    await handleMetaLead(
+      pollerRequest(POLLER_LEAD),
+      {
+        META_LEAD_SECRET: SECRET,
+        GMAIL_USER: "day1design.co@gmail.com",
+        GMAIL_CLIENT_ID: "cid",
+        GMAIL_CLIENT_SECRET: "csec",
+        GMAIL_REFRESH_TOKEN: "rt",
+        GMAIL_NOTIFY_TO: "gahyun.co@gmail.com",
+      },
+      { waitUntil: (t) => tasks.push(t) },
+      fakeServices(),
+    );
+    await Promise.allSettled(tasks);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+
+  assert.equal(sent.length, 1, "Meta 리드 내부 알림 메일이 나가야 함");
+  const raw = Buffer.from(
+    JSON.parse(sent[0].body).raw.replace(/-/g, "+").replace(/_/g, "/"),
+    "base64",
+  ).toString("utf8");
+  assert.match(raw, /gahyun\.co@gmail\.com/);
+  assert.match(raw, /Consultation Alert/, "홈페이지와 같은 템플릿");
+  assert.match(raw, /임혜진/);
+});
+
 test("[guard] 폴러와 워커의 전화 질문 인식 규칙이 일치한다", () => {
   for (const key of [
     "phone_number",
