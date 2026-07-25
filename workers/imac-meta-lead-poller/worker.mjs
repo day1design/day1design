@@ -215,6 +215,24 @@ async function resolvePageToken({ token, appSecret, graphVersion, pageId, fetchI
   return page.access_token;
 }
 
+// 새 폼 알림에 질문 목록을 실어 보낸다 — 매핑 손볼 게 있는지 알림만 보고 판단할 수 있게.
+export async function fetchFormQuestions({
+  formId,
+  pageToken,
+  graphVersion,
+  fetchImpl = fetch,
+}) {
+  const url = new URL(
+    `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(formId)}`,
+  );
+  url.searchParams.set("fields", "questions");
+  url.searchParams.set("access_token", pageToken);
+  const res = await fetchImpl(url.toString());
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.error) return [];
+  return (data?.questions || []).map((q) => String(q?.key || q?.label || ""));
+}
+
 export async function discoverActiveForms({
   pageId,
   pageToken,
@@ -439,10 +457,11 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
     // 조회 대상 폼 = 명시 목록 ∪ 페이지에서 발견한 ACTIVE 폼 − 제외목록.
     // 발견이 실패해도(권한/일시장애) 명시 목록이 있으면 수집을 멈추지 않는다.
     let discovered = [];
+    let pageToken = "";
     let discoveryNote = pageId ? "ok" : "off";
     if (pageId) {
       try {
-        const pageToken = await resolvePageToken({
+        pageToken = await resolvePageToken({
           token,
           appSecret,
           graphVersion,
@@ -562,14 +581,26 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
       });
       // 새 양식은 조용히 지나가면 안 된다 — 매핑 확인이 필요할 수 있으므로 알린다.
       if (newForms.length) {
+        const lines = ["[day1design/meta-lead-poller] 🆕 새 리드 양식 감지"];
+        for (const f of newForms) {
+          lines.push(`· ${f.name} (${f.id})`);
+          const questions = pageToken
+            ? await fetchFormQuestions({
+                formId: f.id,
+                pageToken,
+                graphVersion,
+                fetchImpl,
+              })
+            : [];
+          if (questions.length) {
+            lines.push(`   질문: ${questions.join(" / ")}`.slice(0, 500));
+          }
+        }
+        lines.push("자동으로 수집 대상에 포함됩니다. 질문 문구가 기존과 다르면 워커 매핑 확인.");
         await sendTelegram({
           botToken: String(process.env.HEALTH_TELEGRAM_BOT_TOKEN || "").trim(),
           chatId: String(process.env.HEALTH_TELEGRAM_CHAT_ID || "").trim(),
-          message: [
-            "[day1design/meta-lead-poller] 🆕 새 리드 양식 감지",
-            ...newForms.map((f) => `· ${f.name} (${f.id})`),
-            "자동으로 수집 대상에 포함됩니다. 질문이 바뀌었으면 워커 매핑 확인 필요.",
-          ].join("\n"),
+          message: lines.join("\n"),
           fetchImpl,
         });
       }

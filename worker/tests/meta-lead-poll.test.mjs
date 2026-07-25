@@ -14,6 +14,7 @@ import {
   handleMetaLeadHeartbeat,
   mapFieldData,
   normalizeLeadPayload,
+  normalizeQuestionKey,
 } from "../src/routes/meta-lead.js";
 
 const SECRET = "test-meta-lead-secret";
@@ -113,6 +114,85 @@ test("field_data 매핑 — 한글 질문 키를 표준 필드로, 미매핑은 
   assert.equal(mapped.area, "30~40평");
   assert.equal(mapped.scheduledDate, "2026년 9월");
   assert.deepEqual(mapped.extras, ["궁금한 점: 욕실만 따로 가능한가요"]);
+});
+
+// 실측(2026-07-25): 페이지의 ACTIVE 폼 2개는 표준 질문 key 가 서로 다르다.
+//   260428(운영중) full_name/phone_number · 260302(구형) 이름/전화번호
+// 둘 다 매핑돼야 하고, 괄호 안내문은 매칭에서 제외돼야 한다.
+test("[guard] 운영중 폼(260428) 실제 질문 key 전부 매핑", () => {
+  const m = mapFieldData(
+    [
+      "공간_형태",
+      "면적",
+      "가용_예산(프로젝트_방향성_설정을_위해_대략적으로_기입해주세요)",
+      "인테리어를_진행할_지역(시/구/동_순)",
+      "인테리어_시작일정(ex:00년_00월)",
+      "full_name",
+      "phone_number",
+    ].map((name) => ({ name, values: ["값"] })),
+  );
+  assert.equal(m.spaceType, "값");
+  assert.equal(m.area, "값");
+  assert.equal(m.budget, "값", "괄호 안내문 때문에 예산이 다른 필드로 새면 안 됨");
+  assert.equal(m.location, "값");
+  assert.equal(m.scheduledDate, "값");
+  assert.equal(m.name, "값");
+  assert.equal(m.phone, "값");
+  assert.deepEqual(m.extras, []);
+});
+
+test("[guard] 구형 폼(260302) 한글 표준 key(이름·전화번호)도 매핑", () => {
+  const m = mapFieldData(
+    ["공간_형태", "면적", "이름", "전화번호"].map((name) => ({
+      name,
+      values: ["값"],
+    })),
+  );
+  assert.equal(m.name, "값");
+  assert.equal(m.phone, "값");
+  assert.deepEqual(m.extras, []);
+});
+
+test("같은 스타일의 문구 변형(규모·착공·휴대폰·용도)도 매핑", () => {
+  const m = mapFieldData(
+    [
+      "공간_용도",
+      "규모(평형_기준)",
+      "희망_예산대",
+      "현장_주소(시/구/동)",
+      "착공_희망일",
+      "성함",
+      "휴대폰_번호",
+      "이메일_주소",
+    ].map((name) => ({ name, values: ["값"] })),
+  );
+  for (const f of [
+    "spaceType",
+    "area",
+    "budget",
+    "location",
+    "scheduledDate",
+    "name",
+    "phone",
+    "email",
+  ]) {
+    assert.equal(m[f], "값", `${f} 미매핑`);
+  }
+});
+
+test("자유 기입 질문은 매핑하지 않고 Detail 원문으로 남긴다", () => {
+  const m = mapFieldData([
+    { name: "기타_문의사항(자유_기입)", values: ["욕실만 가능한가요"] },
+  ]);
+  assert.deepEqual(m.extras, ["기타_문의사항(자유_기입): 욕실만 가능한가요"]);
+});
+
+test("질문 key 정규화 — 괄호 안내문 제거 + 밑줄을 공백으로", () => {
+  assert.equal(
+    normalizeQuestionKey("가용_예산(프로젝트_방향성_설정을_위해_기입)"),
+    "가용 예산",
+  );
+  assert.equal(normalizeQuestionKey("full_name"), "full name");
 });
 
 test("first_name/last_name 만 있는 폼도 이름을 조립한다", () => {

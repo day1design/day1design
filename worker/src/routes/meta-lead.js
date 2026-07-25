@@ -54,15 +54,32 @@ function normalizePlatform(s) {
 // ─── 폴러 경로: Graph API 원본 field_data 매핑 ───
 // 폼 질문 텍스트가 그대로 key 로 오므로(한글) 키워드 휴리스틱으로 매핑한다.
 // 매핑 안 된 항목도 버리지 않고 extras 로 보존 → Detail 에 원문 표기(유실 0).
+// 폼 질문 문구가 그대로 key 로 온다. day1design 폼 스타일:
+//   공백은 `_`, 안내문은 괄호로 붙는다 — `가용_예산(프로젝트_방향성_설정을_위해_대략적으로_기입해주세요)`
+// 괄호 안 안내문까지 매칭에 넣으면 안내 문구가 바뀔 때 엉뚱한 필드로 빠지므로 먼저 걷어낸다.
+// 표준 질문 key 는 폼마다 다르다: 최신 폼은 full_name/phone_number, 구형 폼은 이름/전화번호.
+export function normalizeQuestionKey(raw) {
+  return String(raw ?? "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 const FIELD_RULES = [
-  ["name", ["full_name", "성함", "이름"]],
-  ["phone", ["phone_number", "phone", "연락처", "전화", "휴대"]],
-  ["location", ["city", "지역", "소재지", "주소", "위치"]],
-  ["spaceType", ["공간", "유형", "종류", "형태"]],
-  ["area", ["면적", "평수", "평형", "규모"]],
-  ["scheduledDate", ["시공", "일정", "예정", "입주", "날짜"]],
-  ["budget", ["예산", "비용", "금액"]],
+  ["name", ["full name", "성함", "이름"]],
+  [
+    "phone",
+    ["phone number", "phone", "연락처", "전화", "휴대폰", "핸드폰", "mobile"],
+  ],
   ["email", ["email", "이메일", "메일"]],
+  ["location", ["city", "지역", "소재지", "주소", "위치", "현장"]],
+  ["spaceType", ["공간", "유형", "종류", "형태", "용도"]],
+  ["area", ["면적", "평수", "평형", "규모", "크기"]],
+  ["scheduledDate", ["시공", "일정", "예정", "입주", "착공", "시작일", "날짜"]],
+  ["budget", ["예산", "비용", "금액", "가격대"]],
 ];
 
 function fieldValueOf(field) {
@@ -78,11 +95,12 @@ export function mapFieldData(fieldData) {
   const firstName = {};
   for (const item of items) {
     const rawKey = String(item?.name ?? "").trim();
-    const key = rawKey.toLowerCase();
+    const rawLower = rawKey.toLowerCase();
+    const key = normalizeQuestionKey(rawKey);
     const value = fieldValueOf(item);
     if (!rawKey || !value) continue;
-    if (key === "first_name" || key === "last_name") {
-      firstName[key] = value;
+    if (rawLower === "first_name" || rawLower === "last_name") {
+      firstName[rawLower] = value;
       continue;
     }
     const hit = FIELD_RULES.find(([, tokens]) =>
