@@ -5,7 +5,7 @@ import { handlePortfolio } from "./routes/portfolio.js";
 import { handleCommunity } from "./routes/community.js";
 import { handleAuth } from "./routes/auth.js";
 import { handleUpload } from "./routes/upload.js";
-import { handleMetaLead } from "./routes/meta-lead.js";
+import { handleMetaLead, handleMetaLeadHeartbeat } from "./routes/meta-lead.js";
 import {
   handleAnalytics,
   runScheduledAnalyticsSnapshot,
@@ -30,7 +30,7 @@ import {
 } from "./routes/pixel-events.js";
 import { handleWorks } from "./routes/works.js";
 import { handleHealth } from "./routes/healthcheck.js";
-import { runAndReportHealth } from "./lib/healthcheck.js";
+import { runAndReportHealth, healthReportTarget } from "./lib/healthcheck.js";
 import { cors, preflight } from "./lib/cors.js";
 import { jsonError } from "./lib/response.js";
 import { notifyTelegram, notifyInfra } from "./lib/telegram.js";
@@ -160,6 +160,13 @@ async function handleApi(request, env, ctx, path) {
       res = jsonError(405, "Method Not Allowed");
     } else {
       res = await handleMetaLead(request, env, ctx, services);
+    }
+  } else if (path === "/api/meta-lead/heartbeat") {
+    // 아이맥 폴러 생존 신호 (같은 META_LEAD_SECRET 사용)
+    if (request.method !== "POST") {
+      res = jsonError(405, "Method Not Allowed");
+    } else {
+      res = await handleMetaLeadHeartbeat(request, env, ctx, services);
     }
   } else if (path.startsWith("/api/estimates/")) {
     const tail = path.slice("/api/estimates/".length);
@@ -339,10 +346,7 @@ export default {
           await notifyTelegram(
             env,
             `[day1design/cron] healthcheck 실패\n${(e?.message || "").slice(0, 200)}`,
-            {
-              botToken: env.HEALTHCHECK_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN,
-              chatId: env.HEALTHCHECK_CHAT_ID || env.TELEGRAM_ADMIN_CHAT_ID,
-            },
+            healthReportTarget(env) || {},
           );
         }
       })(),

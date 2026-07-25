@@ -21,6 +21,8 @@
 
 5. **불변규칙 회귀 가드 테스트** — `worker/tests/estimates-safetynet.test.mjs` 가 위 1·2 를 강제한다. 이 테스트가 깨지면 안전망 회귀이므로 코드를 고치지 말고 원인(회귀)을 되돌린다. (`npm test` 로 실행)
 
+6. **Meta 리드 멱등키(`Estimates.MetaLeadId`)** — 폴러는 48h 를 겹쳐 조회하므로 leadId 유니크가 중복 접수·중복 문자를 막는 유일한 장치다(Cache API dedup 은 10분·콜로별이라 불충분). 마이그 `0031_meta_lead_poll.sql` 의 부분 유니크 인덱스와 `worker/src/routes/meta-lead.js` 의 leadId 분기를 제거·약화 금지. 가드: `worker/tests/meta-lead-poll.test.mjs`.
+
 ## 배포
 
 - 배포는 항상 `git commit + push` 경유. Worker 는 commit 이후에만 `wrangler deploy`. (작업트리 직접 배포 금지 — `feedback_deploy_via_git_push`)

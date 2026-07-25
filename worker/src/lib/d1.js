@@ -54,6 +54,7 @@ const SCHEMA = {
     "FirstUtmSource",
     "FirstUtmMedium",
     "FirstUtmCampaign",
+    "MetaLeadId",
   ],
   EstimateMemos: ["EstimateId", "Body", "Author", "CreatedAt", "UpdatedAt"],
   Clients: ["Brand", "Phone4", "Order"],
@@ -135,6 +136,7 @@ const SCHEMA = {
     "SentBy",
   ],
   HealthChecks: ["CheckedAt", "Overall", "Results", "TriggeredBy"],
+  SystemHeartbeats: ["Source", "At", "Status", "Detail"],
   IntakeEvents: [
     "At",
     "Channel",

@@ -1,13 +1,15 @@
 // ─── Meta Lead 수신 엔드포인트 ───
-// Make → HTTP Make a request → 이 Worker 로 POST.
+// 두 갈래 입력을 같은 라우트가 받는다(전환기 동안 공존):
+//   1) Make → HTTP Make a request → 정규화된 필드({name, phone, location, ...})
+//   2) 아이맥 폴러 → Graph API 원본({leadId, createdTime, fieldData:[{name,values}]})
 // 인증: X-Meta-Lead-Secret 헤더 (서버-서버 호출 → Origin 미검증)
 // 저장: D1 `Estimates` 테이블에 Source="meta" 로 기입 → 관리자 UI에서 Meta 출처 뱃지.
-// 중복방지: phone+timestamp 10분 캐시.
+// 중복방지: leadId(D1 MetaLeadId 유니크) 우선, 없으면 phone+timestamp 10분 캐시(Make 경로).
 
 import { jsonOk, jsonError, json } from "../lib/response.js";
 import { escapeHtml } from "../lib/security.js";
 import { createServices } from "../lib/services.js";
-import { notifyTelegram } from "../lib/telegram.js";
+import { notifyTelegram, notifyInfra } from "../lib/telegram.js";
 import { edgeCacheDeleteMany } from "../lib/edge-cache.js";
 import { sendMetaCapiLead } from "../lib/meta-capi.js";
 import {
@@ -16,6 +18,7 @@ import {
   CUSTOMER_SMS_SUBJECT,
 } from "../lib/sens.js";
 import { logIntakeEvent } from "../lib/intake-log.js";
+import { archiveAttemptToR2 } from "../lib/estimate-archive.js";
 
 const MAX_BODY_CHARS = 65536;
 
@@ -43,9 +46,107 @@ async function markProcessed(key) {
 
 function normalizePlatform(s) {
   const v = String(s || "").toLowerCase();
-  if (v.includes("instagram")) return "instagram";
-  if (v.includes("facebook")) return "facebook";
+  if (v.includes("instagram") || v === "ig") return "instagram";
+  if (v.includes("facebook") || v === "fb") return "facebook";
   return "facebook";
+}
+
+// ─── 폴러 경로: Graph API 원본 field_data 매핑 ───
+// 폼 질문 텍스트가 그대로 key 로 오므로(한글) 키워드 휴리스틱으로 매핑한다.
+// 매핑 안 된 항목도 버리지 않고 extras 로 보존 → Detail 에 원문 표기(유실 0).
+const FIELD_RULES = [
+  ["name", ["full_name", "성함", "이름"]],
+  ["phone", ["phone_number", "phone", "연락처", "전화", "휴대"]],
+  ["location", ["city", "지역", "소재지", "주소", "위치"]],
+  ["spaceType", ["공간", "유형", "종류", "형태"]],
+  ["area", ["면적", "평수", "평형", "규모"]],
+  ["scheduledDate", ["시공", "일정", "예정", "입주", "날짜"]],
+  ["budget", ["예산", "비용", "금액"]],
+  ["email", ["email", "이메일", "메일"]],
+];
+
+function fieldValueOf(field) {
+  return (Array.isArray(field?.values) ? field.values : [])
+    .map((v) => String(v ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+export function mapFieldData(fieldData) {
+  const out = { extras: [] };
+  const items = Array.isArray(fieldData) ? fieldData : [];
+  const firstName = {};
+  for (const item of items) {
+    const rawKey = String(item?.name ?? "").trim();
+    const key = rawKey.toLowerCase();
+    const value = fieldValueOf(item);
+    if (!rawKey || !value) continue;
+    if (key === "first_name" || key === "last_name") {
+      firstName[key] = value;
+      continue;
+    }
+    const hit = FIELD_RULES.find(([, tokens]) =>
+      tokens.some((t) => key.includes(t)),
+    );
+    if (hit && !out[hit[0]]) {
+      out[hit[0]] = value;
+    } else if (!hit) {
+      out.extras.push(`${rawKey}: ${value}`);
+    }
+  }
+  if (!out.name) {
+    out.name = [firstName.last_name, firstName.first_name]
+      .filter(Boolean)
+      .join(" ");
+  }
+  return out;
+}
+
+// Make(정규화 필드) / 폴러(원본 field_data) 공통 페이로드로 정규화.
+// 명시 필드가 항상 우선하고, 비어있는 자리만 field_data 매핑으로 채운다.
+export function normalizeLeadPayload(body = {}) {
+  const raw = body.fieldData || body.field_data;
+  const mapped = raw ? mapFieldData(raw) : { extras: [] };
+  const pick = (...candidates) => {
+    for (const c of candidates) {
+      const v = String(c ?? "").trim();
+      if (v) return v;
+    }
+    return "";
+  };
+  return {
+    leadId: pick(body.leadId, body.lead_id, body.id),
+    name: pick(body.name, mapped.name),
+    phone: pick(body.phone, mapped.phone),
+    location: pick(body.location, mapped.location),
+    spaceType: pick(body.spaceType, mapped.spaceType),
+    area: pick(body.area, mapped.area),
+    scheduledDate: pick(body.scheduledDate, mapped.scheduledDate),
+    budget: pick(body.budget, mapped.budget),
+    email: pick(body.email, mapped.email),
+    platform: pick(body.platform),
+    // Campaign 컬럼은 Make 시절부터 '광고명'이 들어와 있다(캠페인명 아님).
+    // 폴링 전환으로 의미가 바뀌면 어드민 집계가 과거와 어긋나므로 광고명을 유지하고,
+    // 진짜 캠페인명은 campaignName 으로 따로 받아 Detail 에 덧붙인다.
+    campaign: pick(body.campaign, body.adName, body.ad_name),
+    campaignName: pick(body.campaignName, body.campaign_name),
+    timestamp: pick(body.timestamp, body.createdTime, body.created_time),
+    extras: mapped.extras,
+  };
+}
+
+// leadId 로 기존 접수 조회 (폴링 48h 겹침조회 → 중복 접수 0)
+async function findByMetaLeadId(services, leadId) {
+  if (!leadId) return null;
+  try {
+    const rows = await services.estimates.list({
+      where: { MetaLeadId: leadId },
+      limit: 1,
+    });
+    return rows?.records?.[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 // 텔레그램 메시지 빌더 — 폴라애드 스타일 (섹션 헤더 + 트리 문자)
@@ -133,40 +234,38 @@ export async function handleMetaLead(
     return jsonError(400, "Bad Request");
   }
 
-  // 5) 필수 필드 (name / phone 만 필수. 나머지는 미입력 허용)
-  const name = String(body.name || "")
-    .trim()
-    .slice(0, 50);
-  const phoneDigits = String(body.phone || "").replace(/\D/g, "");
+  // 5) 페이로드 정규화 — Make(정규화 필드) / 폴러(원본 field_data) 공통
+  const lead = normalizeLeadPayload(body);
+
+  // 6) 필수 필드 (name / phone 만 필수. 나머지는 미입력 허용)
+  const name = lead.name.slice(0, 50);
+  const phoneDigits = lead.phone.replace(/\D/g, "");
   if (!name || !phoneDigits) {
     return jsonError(400, "Missing name or phone");
   }
 
-  // 6) 중복 체크
-  const timestamp = String(body.timestamp || "");
+  // 7) 중복 체크 — leadId(영구·D1) 우선, 없으면 phone+timestamp(10분 캐시, Make 경로)
+  const leadId = lead.leadId.slice(0, 64);
+  if (leadId) {
+    const existing = await findByMetaLeadId(services, leadId);
+    if (existing) {
+      return jsonOk({ duplicate: true, id: existing.id, source: "meta" });
+    }
+  }
+  const timestamp = lead.timestamp;
   const dedupKey = `${phoneDigits}:${timestamp || "no-ts"}`;
-  if (timestamp && (await isDuplicate(dedupKey))) {
+  if (!leadId && timestamp && (await isDuplicate(dedupKey))) {
     return jsonOk({ duplicate: true });
   }
 
-  // 7) 필드 정규화 (day1design 인테리어 Lead 폼 구조)
-  const location = String(body.location || "")
-    .trim()
-    .slice(0, 100);
-  const spaceType = String(body.spaceType || "")
-    .trim()
-    .slice(0, 40); // 아파트/빌라/주택/상가/기타
-  const area = String(body.area || "")
-    .trim()
-    .slice(0, 40); // 20~30평 / 30~40평 ...
-  const scheduledDate = String(body.scheduledDate || "")
-    .trim()
-    .slice(0, 100); // 시공예정일
-  const budget = String(body.budget || "").trim(); // Meta 폼의 예산/문의내용 원문은 저장용으로 보존
-  const platform = normalizePlatform(body.platform);
-  const campaign = String(body.campaign || "")
-    .trim()
-    .slice(0, 200);
+  // 8) 필드 정규화 (day1design 인테리어 Lead 폼 구조)
+  const location = lead.location.slice(0, 100);
+  const spaceType = lead.spaceType.slice(0, 40); // 아파트/빌라/주택/상가/기타
+  const area = lead.area.slice(0, 40); // 20~30평 / 30~40평 ...
+  const scheduledDate = lead.scheduledDate.slice(0, 100); // 시공예정일
+  const budget = lead.budget; // Meta 폼의 예산/문의내용 원문은 저장용으로 보존
+  const platform = normalizePlatform(lead.platform);
+  const campaign = lead.campaign.slice(0, 200);
 
   // 8) phone → 010-xxxx-xxxx 포맷
   const prettyPhone = (() => {
@@ -179,15 +278,18 @@ export async function handleMetaLead(
   })();
 
   // 9) 중복 방지 마킹
-  if (timestamp) await markProcessed(dedupKey);
+  if (!leadId && timestamp) await markProcessed(dedupKey);
 
   // 10) Meta 폼에는 주소 상세/이메일이 없음 → Detail 에 요약 남김
+  //     폴러 경로에서 매핑되지 않은 질문(extras)도 원문 그대로 붙여 유실 0.
   const detailLines = [];
   if (spaceType) detailLines.push(`공간유형: ${spaceType}`);
   if (area) detailLines.push(`면적: ${area}`);
   if (scheduledDate) detailLines.push(`시공예정일: ${scheduledDate}`);
   if (budget) detailLines.push(`가용예산: ${budget}`);
-  const detail = detailLines.join("\n");
+  if (lead.campaignName) detailLines.push(`캠페인: ${lead.campaignName}`);
+  for (const extra of lead.extras) detailLines.push(extra);
+  const detail = detailLines.join("\n").slice(0, 2000);
 
   // 11) D1 저장 — Estimates 스키마와 자연스럽게 매핑
   //   location → Address (지역)
@@ -200,7 +302,7 @@ export async function handleMetaLead(
     const record = await services.estimates.create({
       Name: name,
       Phone: prettyPhone,
-      Email: "",
+      Email: lead.email.slice(0, 120),
       SpaceType: spaceType,
       SpaceSize: area,
       Postcode: "",
@@ -219,10 +321,27 @@ export async function handleMetaLead(
       Source: "meta",
       Platform: platform,
       Campaign: campaign,
+      MetaLeadId: leadId,
     });
     recordId = record.id;
   } catch (e) {
     saveError = e.message || "D1 create failed";
+    // 동시 폴링/재시도로 같은 leadId 가 겹치면 유니크 인덱스가 막는다 → 중복으로 처리(알림·문자 재발송 금지)
+    if (leadId && /UNIQUE constraint failed/i.test(saveError)) {
+      const existing = await findByMetaLeadId(services, leadId);
+      if (existing) {
+        return jsonOk({ duplicate: true, id: existing.id, source: "meta" });
+      }
+    }
+    // 저장 실패 원문 보관 (불변규칙 1 — 접수 누락 0)
+    await archiveAttemptToR2(env, ctx, {
+      ip: "",
+      ua: "meta-lead-poller",
+      fields: { name, phone: phoneDigits, leadId, campaign },
+      outcome: "meta_d1_failed",
+      error: saveError,
+      rawText: raw,
+    });
   }
 
   // 12) 백그라운드: 텔레그램 + 자동 SMS(LMS) + 캐시 무효화 + Meta CAPI(데이터세트 적재)
@@ -337,4 +456,72 @@ export async function handleMetaLead(
   }
 
   return jsonOk({ id: recordId, source: "meta" });
+}
+
+// ─── 폴러 하트비트 ───
+// 아이맥 폴러가 매 실행마다 1회 POST. 리드가 0건이어도 "살아있음"을 남긴다.
+// 헬스체크(checkLeadPoller)가 이 신선도로 맥 다운/런치d 정지/토큰 만료를 잡는다.
+// 실패 보고(status=fail)는 즉시 인프라봇으로.
+export async function handleMetaLeadHeartbeat(
+  request,
+  env,
+  ctx,
+  services = createServices(env),
+) {
+  if (!env.META_LEAD_SECRET) return jsonError(500, "Server misconfigured");
+  const provided = request.headers.get("x-meta-lead-secret") || "";
+  if (!timingSafeEqual(provided, env.META_LEAD_SECRET)) {
+    return jsonError(403, "Forbidden");
+  }
+  let body = {};
+  try {
+    body = JSON.parse((await request.text()) || "{}");
+  } catch {
+    return jsonError(400, "Bad Request");
+  }
+
+  const status = body.status === "fail" ? "fail" : "ok";
+  const source = String(body.source || "meta-lead-poller")
+    .trim()
+    .slice(0, 40);
+  const detail = String(body.detail || "")
+    .trim()
+    .slice(0, 300);
+  const at = new Date().toISOString();
+
+  try {
+    await services.systemHeartbeats.create({
+      Source: source,
+      At: at,
+      Status: status,
+      Detail: detail,
+    });
+  } catch (e) {
+    return json(
+      { ok: false, error: (e?.message || "insert failed").slice(0, 120) },
+      { status: 502 },
+    );
+  }
+
+  ctx.waitUntil(
+    (async () => {
+      // 7일 초과 하트비트 정리 (테이블 무한 증식 방지)
+      try {
+        await env.DB.prepare(
+          "DELETE FROM SystemHeartbeats WHERE Source = ? AND At < ?",
+        )
+          .bind(source, new Date(Date.now() - 7 * 86400000).toISOString())
+          .run();
+      } catch {}
+      if (status === "fail") {
+        await notifyInfra(
+          env,
+          `<b>[day1design/${escapeHtml(source)}]</b> 🔴 <b>리드 폴러 실패</b>\n` +
+            `└ ${escapeHtml(detail || "사유 미기재")}`,
+        );
+      }
+    })(),
+  );
+
+  return jsonOk({ at, status });
 }

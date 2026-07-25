@@ -53,7 +53,9 @@ export function classifyAccess(request, opts = {}) {
   const path = url.pathname;
   const method = effectiveMethod(request, opts);
 
-  if (path === "/api/meta-lead") return { role: "integration", method, path };
+  if (path === "/api/meta-lead" || path === "/api/meta-lead/heartbeat") {
+    return { role: "integration", method, path };
+  }
   if (path === "/" || path === "/api") return { role: "main", method, path };
   if (path.startsWith("/api/auth") || path.startsWith("/api/upload")) {
     return { role: "admin", method, path };

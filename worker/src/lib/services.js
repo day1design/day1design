@@ -83,6 +83,7 @@ export function createServices(env = {}) {
     smsLogs: createTableRepository(env, "SmsLogs"),
     healthChecks: createTableRepository(env, "HealthChecks"),
     intakeEvents: createTableRepository(env, "IntakeEvents"),
+    systemHeartbeats: createTableRepository(env, "SystemHeartbeats"),
     analyticsRaw: createObjectStore(env.IMAGES),
     media: createMediaStore(env.IMAGES, env.R2_PUBLIC_BASE),
   };

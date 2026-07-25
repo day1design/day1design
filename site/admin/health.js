@@ -11,11 +11,13 @@
 
   // 각 점검 항목의 기준 설명 (API metric/log 외 보조 안내)
   const CRITERIA = {
-    intake: "D1 쓰기 가능 · 접수 흐름 · '오류' 상태 스파이크 없음",
+    intake:
+      "D1 읽기 가능 · 평소 유입 대비 접수 끊김 없음 · '오류' 스파이크 없음",
     ga4: "OAuth refresh token 유효 · 토큰 발급 정상",
     metadata: "Graph 토큰 유효 · 광고계정(act_) 접근",
-    sens: "발신번호 등록 + 자격증명 완비",
+    sens: "발신번호 등록 + 최근 7일 실제 발송 성공(홈페이지·Meta)",
     metalead: "최근 리드 유입 + 동반 SMS 발송(불일치=누락)",
+    leadpoll: "아이맥 리드 폴러 생존 신호(20분 주기) · 90분 침묵 시 오류",
   };
 
   // 항목별 단색 SVG 아이콘 (무엇을 점검하는지 직관 표시)
@@ -28,6 +30,8 @@
     sens: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     metalead:
       '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+    leadpoll:
+      '<path d="M12 20v-6"/><path d="M8.5 17.5 12 14l3.5 3.5"/><path d="M5 12a7 7 0 0 1 14 0"/><path d="M2 12a10 10 0 0 1 20 0"/>',
   };
   const svgIcon = (k) =>
     ICON[k]
@@ -155,10 +159,10 @@
   function renderHistory(history) {
     const body = $("histBody");
     if (!history.length) {
-      body.innerHTML = `<tr><td colspan="8" class="empty">점검 이력이 없습니다.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="9" class="empty">점검 이력이 없습니다.</td></tr>`;
       return;
     }
-    const order = ["intake", "ga4", "metadata", "sens", "metalead"];
+    const order = ["intake", "ga4", "metadata", "sens", "metalead", "leadpoll"];
     body.innerHTML = history
       .map((h) => {
         const ov = ST[h.overall] || ST.ok;
