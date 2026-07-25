@@ -13,7 +13,7 @@
     />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260625-gnb" />
+    <link rel="stylesheet" href="admin.css?v=20260725-channel" />
     <script>
       window.ADMIN_PAGE = { title: "유입통계", nav: "analytics" };
     </script>
@@ -165,6 +165,19 @@
                   <div
                     class="ops-funnel-summary"
                     id="opsConversionSummary"
+                  ></div>
+                </div>
+                <div class="panel ops-panel ops-insight-panel">
+                  <div class="panel-head">
+                    <h3>접수채널</h3>
+                    <span class="panel-sub">접수 건수 기준 · Meta 포함</span>
+                  </div>
+                  <div class="ops-conversion-list" id="submissionChannels">
+                    <div class="ops-empty">불러오는 중...</div>
+                  </div>
+                  <div
+                    class="ops-funnel-summary"
+                    id="submissionChannelSummary"
                   ></div>
                 </div>
                 <div class="ops-insight-two">
@@ -638,6 +651,6 @@
     ></script>
     <script defer src="config.js?v=20260514-heatmap"></script>
     <script defer src="admin.js?v=20260626-authfast"></script>
-    <script defer src="analytics.js?v=20260723-durable-ranges"></script>
+    <script defer src="analytics.js?v=20260725-channel"></script>
   </body>
 </html>

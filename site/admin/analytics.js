@@ -2129,6 +2129,53 @@ function renderSourceConversion() {
     .join("");
 }
 
+// 접수채널 — 실제 접수 건수를 Source 기준으로 집계.
+// 위 「소스별 전환율」은 방문 분모가 필요해 Meta(인스턴트폼)를 제외하지만,
+// 접수의 대부분이 Meta 라 주력 채널이 통계에서 빠져 보인다. 여기서는 Meta 포함 전량.
+function renderSubmissionChannels() {
+  const wrap = document.getElementById("submissionChannels");
+  const summary = document.getElementById("submissionChannelSummary");
+  if (!wrap) return;
+  if (submissionRecords == null) {
+    wrap.innerHTML = '<div class="ops-empty">불러오는 중...</div>';
+    if (summary) summary.textContent = "";
+    return;
+  }
+  const total = currentSubmissionRows.length;
+  if (!total) {
+    wrap.innerHTML = '<div class="ops-empty">선택 기간에 접수가 없습니다</div>';
+    if (summary) summary.textContent = "";
+    return;
+  }
+  const counts = buildCurrentSubmissionSourceCounts();
+  const items = Object.entries(counts)
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count);
+  const max = items[0]?.count || 1;
+  wrap.innerHTML = items
+    .map(
+      (item, index) => `
+        <div class="ops-conversion-row">
+          <div class="ops-conversion-source">
+            <span class="source-kpi-dot" style="background:${sourceColor(item.key, index)}"></span>
+            <strong>${adminUtil.escapeHtml(sourceLabel(item.key))}</strong>
+            <em>접수 ${fmtInt(item.count)}건</em>
+          </div>
+          <div class="ops-conversion-rate">${fmtConversionRate(item.count, total)}</div>
+          <div class="ops-conversion-track" aria-hidden="true">
+            <i style="width:${clampPercent((item.count / max) * 100)}%"></i>
+          </div>
+        </div>`,
+    )
+    .join("");
+  if (summary) {
+    const top = items[0];
+    summary.textContent =
+      `총 ${fmtInt(total)}건 · 1위 ${sourceLabel(top.key)} ` +
+      `${fmtInt(top.count)}건(${fmtConversionRate(top.count, total)})`;
+  }
+}
+
 function renderHourlySubmissionPattern() {
   const wrap = document.getElementById("hourlySubmissions");
   const summary = document.getElementById("hourlySubmissionSummary");
@@ -2255,6 +2302,7 @@ function renderHourlySubmissionPattern() {
 function renderOpsInsights() {
   renderOpsConversionFunnel();
   renderSourceConversion();
+  renderSubmissionChannels();
   renderHourlySubmissionPattern();
 }
 

@@ -1666,6 +1666,74 @@
     font-size: 22px;
   }
 }
+/* 접수채널 집계 — 필터 반영 Source 별 건수/비중 */
+.est-channel-stats {
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 12px 16px 14px;
+  margin-bottom: 14px;
+}
+.est-channel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.est-channel-head .est-stat-label {
+  margin-bottom: 0;
+}
+.est-channel-sub {
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+.est-channel-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.est-channel-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  background: var(--c-bg, #f8fafc);
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+.est-channel-item strong {
+  color: var(--c-text);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.est-channel-item em {
+  color: var(--c-text-muted);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.est-channel-empty {
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .est-channel-stats {
+    padding: 12px 12px 14px;
+  }
+  .est-channel-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .est-channel-item {
+    border-radius: var(--radius);
+    justify-content: flex-start;
+    padding: 8px 10px;
+  }
+}
+
 .est-layout {
   display: block;
 }

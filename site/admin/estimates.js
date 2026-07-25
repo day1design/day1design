@@ -220,6 +220,49 @@ function renderQuickStats() {
   if (statMonthly) statMonthly.textContent = fmtInt(monthly);
 }
 
+// 접수채널 집계 — Source 컬럼 기준. 위 일간/주간/월간과 달리 현재 필터
+// (기간·상태·검색·유입탭)가 그대로 반영된 목록을 센다. 필터를 바꾸면 같이 움직인다.
+function fmtShare(count, total) {
+  if (!total) return "—";
+  const pct = (count / total) * 100;
+  if (pct > 0 && pct < 10) return `${pct.toFixed(1).replace(/\.0$/, "")}%`;
+  return `${Math.round(pct)}%`;
+}
+
+function renderChannelStats(list) {
+  const wrap = document.getElementById("estChannelList");
+  const sub = document.getElementById("estChannelSub");
+  if (!wrap) return;
+  const total = list.length;
+  if (!total) {
+    wrap.innerHTML =
+      '<div class="est-channel-empty">해당 조건의 접수가 없습니다</div>';
+    if (sub) sub.textContent = "—";
+    return;
+  }
+  const counts = new Map();
+  for (const r of list) {
+    const key = sourceKey(r.Source);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const items = [...counts.entries()]
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count);
+  wrap.innerHTML = items
+    .map(
+      (item) => `
+      <div class="est-channel-item">
+        <span class="src-badge src-${item.key}">${escapeHtml(SOURCE_LABEL_MAP[item.key])}</span>
+        <strong>${fmtInt(item.count)}</strong>
+        <em>${fmtShare(item.count, total)}</em>
+      </div>`,
+    )
+    .join("");
+  if (sub) {
+    sub.textContent = `현재 조건 ${fmtInt(total)}건 · ${items.length}개 채널`;
+  }
+}
+
 function filtered() {
   const st = filterStatus.value;
   const tab = sourceTabKey; // "" | "meta" | "homepage"
@@ -395,6 +438,7 @@ function detailTitleHtml(r, sessionNo) {
 function render() {
   renderQuickStats();
   const list = filtered();
+  renderChannelStats(list);
   if (!list.length) {
     body.innerHTML = '<div class="empty-state">접수 내역이 없습니다.</div>';
     return;
