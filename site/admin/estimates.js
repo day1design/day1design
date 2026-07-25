@@ -30,9 +30,7 @@ const filterSearch = document.getElementById("filterSearch");
 const filterFrom = document.getElementById("filterFrom");
 const filterTo = document.getElementById("filterTo");
 const btnExportCsv = document.getElementById("btnExportCsv");
-const statDaily = document.getElementById("statDaily");
-const statWeekly = document.getElementById("statWeekly");
-const statMonthly = document.getElementById("statMonthly");
+const periodSeg = document.getElementById("estPeriodSeg");
 
 function syncModalLock() {
   const hasOpenModal =
@@ -193,35 +191,50 @@ function startOfDay(date) {
   return d;
 }
 
-function renderQuickStats() {
-  const now = new Date();
-  const todayStart = startOfDay(now);
-  const weekStart = new Date(todayStart);
-  weekStart.setDate(weekStart.getDate() - 6);
-  const monthStart = new Date(
-    todayStart.getFullYear(),
-    todayStart.getMonth(),
-    1,
-  );
-  let daily = 0;
-  let weekly = 0;
-  let monthly = 0;
-
-  for (const r of records) {
-    const ts = Date.parse(r.SubmittedAt || "");
-    if (!Number.isFinite(ts) || ts > now.getTime()) continue;
-    if (ts >= todayStart.getTime()) daily++;
-    if (ts >= weekStart.getTime()) weekly++;
-    if (ts >= monthStart.getTime()) monthly++;
-  }
-
-  if (statDaily) statDaily.textContent = fmtInt(daily);
-  if (statWeekly) statWeekly.textContent = fmtInt(weekly);
-  if (statMonthly) statMonthly.textContent = fmtInt(monthly);
+// 기간 세그먼트 — N일이면 오늘 포함 최근 N일(당일=0 → 오늘 하루).
+// 별도 상태를 두지 않고 기존 기간 입력(filterFrom/To)을 직접 세팅한다.
+// 이렇게 해야 목록·접수채널·CSV 파일명까지 한 경로로 따라온다.
+function ymdLocal(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-// 접수채널 집계 — Source 컬럼 기준. 위 일간/주간/월간과 달리 현재 필터
-// (기간·상태·검색·유입탭)가 그대로 반영된 목록을 센다. 필터를 바꾸면 같이 움직인다.
+function applyPeriod(period) {
+  if (!filterFrom || !filterTo) return;
+  if (period === "all") {
+    filterFrom.value = "";
+    filterTo.value = "";
+    return;
+  }
+  const days = Number(period);
+  if (!Number.isFinite(days)) return;
+  const today = startOfDay(new Date());
+  const from = new Date(today);
+  if (days > 0) from.setDate(from.getDate() - (days - 1));
+  filterFrom.value = ymdLocal(from);
+  filterTo.value = ymdLocal(today);
+}
+
+function setActivePeriod(period) {
+  if (!periodSeg) return;
+  periodSeg.querySelectorAll("[data-period]").forEach((b) => {
+    const on = b.dataset.period === period;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+// 기간 입력을 손으로 고치면 세그먼트 선택을 해제한다 (거짓 표시 방지)
+function clearActivePeriod() {
+  if (!periodSeg) return;
+  periodSeg.querySelectorAll("[data-period]").forEach((b) => {
+    b.classList.remove("active");
+    b.setAttribute("aria-pressed", "false");
+  });
+}
+
+// 접수채널 집계 — Source 컬럼 기준. 현재 필터(기간·상태·검색·유입탭)가
+// 그대로 반영된 목록을 센다. 필터를 바꾸면 같이 움직인다.
 function fmtShare(count, total) {
   if (!total) return "—";
   const pct = (count / total) * 100;
@@ -436,7 +449,6 @@ function detailTitleHtml(r, sessionNo) {
 }
 
 function render() {
-  renderQuickStats();
   const list = filtered();
   renderChannelStats(list);
   if (!list.length) {
@@ -1145,9 +1157,29 @@ if (sourceTabs) {
     render();
   });
 }
+if (periodSeg) {
+  periodSeg.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-period]");
+    if (!btn) return;
+    const period = btn.dataset.period;
+    applyPeriod(period);
+    setActivePeriod(period);
+    render();
+  });
+}
 filterSearch.addEventListener("input", render);
-if (filterFrom) filterFrom.addEventListener("change", render);
-if (filterTo) filterTo.addEventListener("change", render);
+if (filterFrom) {
+  filterFrom.addEventListener("change", () => {
+    clearActivePeriod();
+    render();
+  });
+}
+if (filterTo) {
+  filterTo.addEventListener("change", () => {
+    clearActivePeriod();
+    render();
+  });
+}
 if (btnExportCsv) btnExportCsv.addEventListener("click", exportFilteredCsv);
 
 (async () => {

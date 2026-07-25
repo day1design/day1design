@@ -13,7 +13,7 @@
     />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260725-channel" />
+    <link rel="stylesheet" href="admin.css?v=20260725-period" />
     <script>
       window.ADMIN_PAGE = { title: "상담신청", nav: "estimates" };
     </script>
@@ -28,26 +28,26 @@
     <div class="admin-layout">
       <header class="admin-topbar" id="adminTopbar"></header>
       <main class="admin-content" id="adminContent">
-        <section
-          class="est-quick-stats"
-          id="estQuickStats"
-          aria-label="상담 접수량 간단 통계"
-        >
-          <article class="est-stat-card">
-            <span class="est-stat-label">일간</span>
-            <strong id="statDaily">—</strong>
-            <em>오늘 접수</em>
-          </article>
-          <article class="est-stat-card">
-            <span class="est-stat-label">주간</span>
-            <strong id="statWeekly">—</strong>
-            <em>최근 7일</em>
-          </article>
-          <article class="est-stat-card">
-            <span class="est-stat-label">월간</span>
-            <strong id="statMonthly">—</strong>
-            <em>이번 달</em>
-          </article>
+        <!-- 통계 기간 필터 — 아래 기간 입력(filterFrom/To)을 세팅해 목록·접수채널을 같이 움직인다 -->
+        <section class="est-period-bar" aria-label="통계 기간 필터">
+          <span class="est-stat-label">기간</span>
+          <div
+            class="seg"
+            id="estPeriodSeg"
+            role="tablist"
+            aria-label="통계 기간"
+          >
+            <button type="button" class="seg-btn" data-period="0">당일</button>
+            <button type="button" class="seg-btn" data-period="3">3일</button>
+            <button type="button" class="seg-btn" data-period="7">7일</button>
+            <button type="button" class="seg-btn" data-period="15">15일</button>
+            <button type="button" class="seg-btn" data-period="30">30일</button>
+            <button type="button" class="seg-btn" data-period="60">60일</button>
+            <button type="button" class="seg-btn" data-period="90">90일</button>
+            <button type="button" class="seg-btn active" data-period="all">
+              전체
+            </button>
+          </div>
         </section>
 
         <div class="admin-toolbar" style="margin-bottom: 12px">
@@ -408,6 +408,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
     <script defer src="admin.js?v=20260626-authfast"></script>
-    <script defer src="estimates.js?v=20260725-channel"></script>
+    <script defer src="estimates.js?v=20260725-period"></script>
   </body>
 </html>

@@ -1617,19 +1617,8 @@
 }
 
 /* ========== ESTIMATES DETAIL ========== */
-.est-quick-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-.est-stat-card {
-  background: #fff;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  min-width: 0;
-}
+/* 일간·주간·월간 카드는 기간 세그먼트로 대체됨 (2026-07-25).
+   라벨만 기간바·접수채널 헤더에서 계속 쓴다. */
 .est-stat-label {
   display: inline-flex;
   align-items: center;
@@ -1639,33 +1628,29 @@
   letter-spacing: 0.6px;
   margin-bottom: 8px;
 }
-.est-stat-card strong {
-  display: block;
-  color: var(--c-text);
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
+
+/* 통계 기간 필터 — .seg/.seg-btn 은 유입통계와 공유 */
+.est-period-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
 }
-.est-stat-card em {
-  display: block;
-  margin-top: 6px;
-  color: var(--c-text-muted);
-  font-size: 12px;
-  font-style: normal;
+.est-period-bar .est-stat-label {
+  margin-bottom: 0;
 }
 @media (max-width: 760px) {
-  .est-quick-stats {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+  .est-period-bar .seg {
+    width: 100%;
+    justify-content: space-between;
   }
-  .est-stat-card {
-    padding: 12px 10px;
-  }
-  .est-stat-card strong {
-    font-size: 22px;
+  .est-period-bar .seg-btn {
+    flex: 1 0 auto;
+    padding: 6px 10px;
   }
 }
+
 /* 접수채널 집계 — 필터 반영 Source 별 건수/비중 */
 .est-channel-stats {
   background: #fff;
