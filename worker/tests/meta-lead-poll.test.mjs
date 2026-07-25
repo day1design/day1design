@@ -16,6 +16,7 @@ import {
   normalizeLeadPayload,
   normalizeQuestionKey,
 } from "../src/routes/meta-lead.js";
+import { isPhoneQuestion } from "../../workers/imac-meta-lead-poller/worker.mjs";
 
 const SECRET = "test-meta-lead-secret";
 
@@ -341,6 +342,93 @@ test("[invariant] D1 저장 실패 시 200 금지 — 502 + R2 원문 보관", a
   assert.equal(res.status, 502);
   assert.equal(puts.length, 1, "저장 실패 원문이 R2 에 남아야 함");
   assert.match(puts[0].key, /estimates-attempts\/.*meta_d1_failed\.json$/);
+});
+
+// 폴러가 워커보다 좁은 규칙을 쓰면 새 폼('핸드폰번호' 등)에서 폴러만 전화를 못 읽는다.
+// 폴러는 별도 배포물이라 import 로 규칙 일치를 강제한다.
+test("[guard] 폴러와 워커의 전화 질문 인식 규칙이 일치한다", () => {
+  for (const key of [
+    "phone_number",
+    "Phone Number",
+    "전화번호",
+    "연락처",
+    "휴대폰_번호",
+    "핸드폰번호",
+    "mobile",
+  ]) {
+    assert.equal(
+      mapFieldData([{ name: key, values: ["010-6624-6615"] }]).phone,
+      "010-6624-6615",
+      `워커 미인식: ${key}`,
+    );
+    assert.ok(isPhoneQuestion(key), `폴러 미인식: ${key}`);
+  }
+});
+
+test("[invariant] 필수정보 없는 리드도 버리지 않는다 — R2 원문 + D1 '오류' 카드", async () => {
+  const created = [];
+  const puts = [];
+  const tasks = [];
+  const res = await handleMetaLead(
+    pollerRequest({
+      ...POLLER_LEAD,
+      leadId: "noPhone1",
+      fieldData: [
+        { name: "성함을 입력해주세요", values: ["임혜진"] },
+        { name: "연락_가능한_번호(휴대폰)", values: ["010-6624-6615"] },
+        { name: "궁금한 점", values: ["욕실"] },
+      ],
+    }),
+    {
+      META_LEAD_SECRET: SECRET,
+      IMAGES: {
+        put(key, body) {
+          puts.push({ key, body });
+          return Promise.resolve();
+        },
+      },
+    },
+    { waitUntil: (t) => tasks.push(t) },
+    fakeServices({ created }),
+  );
+  const body = await res.json();
+  await Promise.allSettled(tasks);
+
+  assert.equal(res.status, 400, "정상 접수로 위장하면 안 됨(불변규칙 2)");
+  assert.equal(body.captured, true, "폴러가 재시도를 멈출 근거");
+  assert.equal(puts.length, 1, "원문이 R2 에 남아야 함");
+  assert.match(puts[0].key, /estimates-attempts\/.*meta_invalid\.json$/);
+  assert.equal(created.length, 1, "접수관리에 '오류' 카드로 보여야 함");
+  assert.equal(created[0].Status, "오류");
+  assert.equal(created[0].Source, "meta");
+  assert.equal(created[0].MetaLeadId, "noPhone1", "재전송돼도 카드 1장");
+  assert.match(created[0].Detail, /meta_invalid/);
+  assert.match(created[0].Detail, /궁금한 점: 욕실/, "원문 질문이 보존돼야 함");
+});
+
+test("[guard] 캡처된 '오류' 리드가 재전송돼도 카드는 한 장", async () => {
+  const created = [];
+  const existing = [];
+  const services = fakeServices({ created, existing });
+  const tasks = [];
+  const env = { META_LEAD_SECRET: SECRET };
+  const invalid = {
+    ...POLLER_LEAD,
+    leadId: "noPhone2",
+    fieldData: [{ name: "성함", values: ["임혜진"] }],
+  };
+
+  await handleMetaLead(pollerRequest(invalid), env, {
+    waitUntil: (t) => tasks.push(t),
+  }, services);
+  await Promise.allSettled(tasks);
+  const second = await handleMetaLead(pollerRequest(invalid), env, {
+    waitUntil: (t) => tasks.push(t),
+  }, services);
+  await Promise.allSettled(tasks);
+
+  assert.equal((await second.json()).duplicate, true);
+  assert.equal(created.length, 1);
 });
 
 test("시크릿 불일치는 403 — 저장 시도 없음", async () => {

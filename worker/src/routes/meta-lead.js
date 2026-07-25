@@ -18,7 +18,11 @@ import {
   CUSTOMER_SMS_SUBJECT,
 } from "../lib/sens.js";
 import { logIntakeEvent } from "../lib/intake-log.js";
-import { archiveAttemptToR2 } from "../lib/estimate-archive.js";
+import {
+  archiveAttemptToR2,
+  recordRejectToD1,
+} from "../lib/estimate-archive.js";
+import { appendLeadToSheet } from "../lib/sheets.js";
 
 const MAX_BODY_CHARS = 65536;
 
@@ -167,6 +171,69 @@ async function findByMetaLeadId(services, leadId) {
   }
 }
 
+// ─── 필수정보 없는 리드 캡처 (불변규칙 1 — 접수 누락 0) ───
+// 이름/연락처를 못 읽은 Meta 리드도 버리지 않는다: R2 원문 + D1 'Status=오류' 카드 +
+// 텔레그램. 폼 질문 문구가 매핑과 어긋나 생기는 사고를 접수관리 화면에서 바로 본다.
+// 응답은 400(정상 접수 아님) + captured:true — 폴러는 이걸 보고 재시도를 멈춘다.
+export async function captureInvalidLead(
+  env,
+  ctx,
+  services,
+  { raw, lead, leadId, name, phoneDigits, reason },
+) {
+  const summary = [
+    lead.location && `지역: ${lead.location}`,
+    lead.spaceType && `공간유형: ${lead.spaceType}`,
+    lead.area && `면적: ${lead.area}`,
+    lead.scheduledDate && `시공예정일: ${lead.scheduledDate}`,
+    lead.budget && `가용예산: ${lead.budget}`,
+    lead.email && `이메일: ${lead.email}`,
+    lead.campaignName && `캠페인: ${lead.campaignName}`,
+    ...lead.extras,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  await archiveAttemptToR2(env, ctx, {
+    ip: "",
+    ua: "meta-lead-poller",
+    fields: { name, phone: phoneDigits, leadId, campaign: lead.campaign },
+    outcome: "meta_invalid",
+    error: reason,
+    rawText: raw,
+  });
+  await recordRejectToD1(services, ctx, {
+    name,
+    phone: phoneDigits,
+    email: lead.email,
+    fields: { referral: "Meta 광고", detail: summary },
+    ip: "",
+    outcome: "meta_invalid",
+    error: reason,
+    source: "meta",
+    extra: {
+      MetaLeadId: leadId,
+      Platform: normalizePlatform(lead.platform),
+      Campaign: lead.campaign.slice(0, 200),
+      SubmittedAt: lead.timestamp || new Date().toISOString(),
+    },
+  });
+  ctx.waitUntil(
+    Promise.resolve(
+      notifyTelegram(
+        env,
+        `<b>[day1design/meta-lead]</b> ⚠ <b>필수정보 없는 Meta 리드</b>\n` +
+          `├ 사유: ${escapeHtml(reason)}\n` +
+          `├ leadId: ${escapeHtml(leadId || "-")}\n` +
+          `├ 이름: ${escapeHtml(name || "-")}\n` +
+          `├ 연락처: ${escapeHtml(phoneDigits || "-")}\n` +
+          `└ 접수관리에 '오류' 카드로 저장됨 — 폼 질문 문구 확인 필요`,
+      ),
+    ).catch(() => {}),
+  );
+  return jsonError(400, "Missing name or phone", { captured: true });
+}
+
 // 텔레그램 메시지 빌더 — 폴라애드 스타일 (섹션 헤더 + 트리 문자)
 // parse_mode: HTML 전제. 빈 필드는 라인 자체 생략.
 function buildMetaLeadMessage({
@@ -255,14 +322,8 @@ export async function handleMetaLead(
   // 5) 페이로드 정규화 — Make(정규화 필드) / 폴러(원본 field_data) 공통
   const lead = normalizeLeadPayload(body);
 
-  // 6) 필수 필드 (name / phone 만 필수. 나머지는 미입력 허용)
-  const name = lead.name.slice(0, 50);
-  const phoneDigits = lead.phone.replace(/\D/g, "");
-  if (!name || !phoneDigits) {
-    return jsonError(400, "Missing name or phone");
-  }
-
-  // 7) 중복 체크 — leadId(영구·D1) 우선, 없으면 phone+timestamp(10분 캐시, Make 경로)
+  // 6) 중복 체크 — leadId(영구·D1) 우선. 필수필드 검증보다 먼저 본다:
+  //    캡처된 '오류' 리드가 다시 전달돼도 같은 leadId 면 카드가 두 장 생기면 안 된다.
   const leadId = lead.leadId.slice(0, 64);
   if (leadId) {
     const existing = await findByMetaLeadId(services, leadId);
@@ -270,6 +331,28 @@ export async function handleMetaLead(
       return jsonOk({ duplicate: true, id: existing.id, source: "meta" });
     }
   }
+
+  // 7) 필수 필드 (name / phone 만 필수. 나머지는 미입력 허용)
+  //    검증 실패해도 버리지 않는다(불변규칙 1 — 누락 0). R2 원문 + D1 '오류' 카드 + 알림으로
+  //    남기고 captured 를 회신 → 폴러가 같은 리드에서 계속 걸려 큐가 막히는 것을 막는다.
+  const name = lead.name.slice(0, 50);
+  const phoneDigits = lead.phone.replace(/\D/g, "");
+  if (!name || !phoneDigits) {
+    return await captureInvalidLead(env, ctx, services, {
+      raw,
+      lead,
+      leadId,
+      name,
+      phoneDigits,
+      reason:
+        !name && !phoneDigits
+          ? "이름·연락처 없음"
+          : !name
+            ? "이름 없음"
+            : "연락처 없음",
+    });
+  }
+
   const timestamp = lead.timestamp;
   const dedupKey = `${phoneDigits}:${timestamp || "no-ts"}`;
   if (!leadId && timestamp && (await isDuplicate(dedupKey))) {
@@ -446,6 +529,37 @@ export async function handleMetaLead(
             `[day1design/meta-lead] LMS 호출 예외\n${escapeHtml((e?.message || "").slice(0, 200))}`,
           );
         }
+        // 구글시트 미러링 — 홈페이지 접수와 같은 시트·같은 컬럼(출처로 구분).
+        let sheetStep = "skip";
+        try {
+          const r = await appendLeadToSheet(env, {
+            submittedAt: timestamp,
+            name,
+            phone: prettyPhone,
+            email: lead.email,
+            source: "meta",
+            platform,
+            campaign,
+            address: location,
+            spaceType,
+            spaceSize: area,
+            schedule: scheduledDate,
+            budget,
+            branch: "",
+            detail,
+            status: "접수대기",
+            id: recordId,
+          });
+          sheetStep = r?.skipped ? "skip" : "ok";
+        } catch (e) {
+          sheetStep = "fail";
+          await notifyTelegram(
+            env,
+            `[day1design/meta-lead] 구글시트 기록 실패\n` +
+              `이름: ${escapeHtml(name)}\n` +
+              `사유: ${escapeHtml((e?.message || "").slice(0, 200))}`,
+          );
+        }
         // 작동로그 기록 (메타는 지점값 없음 → 두 지점 안내 = '지점 무관')
         await logIntakeEvent(services, {
           channel: smsChannel,
@@ -455,7 +569,13 @@ export async function handleMetaLead(
           phone: prettyPhone,
           geo: "",
           estimateId: recordId,
-          steps: { d1: "ok", telegram: "ok", lms: lmsStep, capi: capiStep },
+          steps: {
+            d1: "ok",
+            telegram: "ok",
+            lms: lmsStep,
+            capi: capiStep,
+            sheet: sheetStep,
+          },
         });
       } else if (saveError) {
         await notifyTelegram(

@@ -72,12 +72,16 @@ export async function recordRejectToD1(
     outcome,
     error,
     source = "homepage",
+    // 출처별 추가 컬럼(예: Meta 리드의 MetaLeadId/Platform/Campaign).
+    // MetaLeadId 를 같이 남기면 같은 리드가 재전송돼도 '오류' 카드가 한 장만 생긴다.
+    extra = {},
   } = {},
 ) {
   if (!services || !services.estimates) return;
   const run = (async () => {
     try {
       await services.estimates.create({
+        ...extra,
         Name: String(name || "").slice(0, 50),
         Phone: String(phone || "").slice(0, 30),
         Email: String(email || "").slice(0, 100),

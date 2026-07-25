@@ -38,6 +38,11 @@ META_PIXEL_ID = "977283848476177"
 # timing(3초) 우회만. 허니팟/검증/저장/알림은 일반 고객과 100% 동일. 콤마구분, 빈값이면 미적용.
 ESTIMATE_RATE_LIMIT_ALLOWLIST = ""
 ESTIMATE_ALLOWLIST_NAMES = ""
+# 리드 미러링 구글시트. 쓰기 토큰은 secret(GOOGLE_SHEETS_REFRESH_TOKEN)으로 주입하며
+# spreadsheets 스코프가 필요하다(GA4용 analytics.readonly 토큰으로는 403).
+# 미설정이면 시트 기록만 skip 되고 접수는 정상 동작한다.
+LEADS_SHEET_ID = "1V2xNjQZPJUskHoARMRLnyVdXGFcFsdM6-H7ihDNEMcA"
+LEADS_SHEET_TAB = "고객정보"
 ESTIMATE_ALLOWLIST_PHONES = ""
 
 [[routes]]

@@ -26,6 +26,7 @@ import {
   CUSTOMER_SMS_SUBJECT,
 } from "../lib/sens.js";
 import { logIntakeEvent } from "../lib/intake-log.js";
+import { appendLeadToSheet } from "../lib/sheets.js";
 import {
   edgeCacheGet,
   edgeCachePut,
@@ -913,6 +914,40 @@ async function submitEstimate(request, env, ctx, services) {
       })
       .catch(() => {
         steps.capi = "fail";
+      }),
+  );
+  // 구글시트 미러링 — D1 저장이 확정된 뒤의 사본 1행. SoT 는 D1 이므로 시트 실패가
+  // 접수를 막지 않는다(결과는 IntakeEvents.steps.sheet + 실패 시 텔레그램).
+  notifyTasks.push(
+    appendLeadToSheet(env, {
+      submittedAt,
+      name: fields.name,
+      phone: fields.phone,
+      email: fields.email || "",
+      source: attribution.source,
+      platform: attribution.platform,
+      campaign: attribution.campaign,
+      address: addressLine,
+      spaceType: fields.space_type || "",
+      spaceSize: fields.space_size || "",
+      schedule: fields.schedule || "",
+      budget: fields.budget || "",
+      branch: fields.branch || "",
+      detail,
+      status: "접수대기",
+      id: record.id,
+    })
+      .then((r) => {
+        steps.sheet = r?.skipped ? "skip" : "ok";
+      })
+      .catch((e) => {
+        steps.sheet = "fail";
+        return notifyTelegram(
+          env,
+          `[day1design/estimates] 구글시트 기록 실패\n` +
+            `이름: ${escapeHtml(fields.name)}\n` +
+            `사유: ${escapeHtml((e?.message || "").slice(0, 200))}`,
+        );
       }),
   );
 

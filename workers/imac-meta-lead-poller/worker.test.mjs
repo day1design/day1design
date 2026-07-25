@@ -1,6 +1,9 @@
 // 폴러 단위 테스트 — 네트워크 없이 fetch 스텁으로만 검증.
 // 실행: node --test workers/imac-meta-lead-poller/worker.test.mjs
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -8,11 +11,78 @@ import {
   computeSinceMs,
   discoverActiveForms,
   formatFailureMessage,
+  isPhoneQuestion,
   normalizePhone,
   parseFormIds,
+  runPoll,
   sanitizePagingUrl,
   sendHeartbeat,
 } from "./worker.mjs";
+
+const ENV_KEYS = [
+  "META_SYSTEM_USER_TOKEN",
+  "META_LEAD_FORM_IDS",
+  "META_LEAD_PAGE_ID",
+  "META_LEAD_CUTOVER_AT",
+  "META_LEAD_STATE_FILE",
+  "META_LEAD_DRY_RUN",
+  "LEAD_WEBHOOK_URL",
+  "LEAD_WEBHOOK_SECRET",
+  "HEALTH_TELEGRAM_BOT_TOKEN",
+  "HEALTH_TELEGRAM_CHAT_ID",
+];
+
+// runPoll 통합 테스트용 — 임시 상태파일 + 환경변수 격리. 네트워크는 전부 스텁.
+async function withPoller(fn) {
+  const dir = await mkdtemp(join(tmpdir(), "day1-meta-poller-"));
+  const statePath = join(dir, "state.json");
+  const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+  Object.assign(process.env, {
+    META_SYSTEM_USER_TOKEN: "token",
+    META_LEAD_FORM_IDS: "111",
+    META_LEAD_PAGE_ID: "",
+    META_LEAD_CUTOVER_AT: "2026-07-25T00:00:00.000Z",
+    META_LEAD_STATE_FILE: statePath,
+    META_LEAD_DRY_RUN: "",
+    LEAD_WEBHOOK_URL: "https://api.example.test/api/meta-lead",
+    LEAD_WEBHOOK_SECRET: "s3cr3t",
+    HEALTH_TELEGRAM_BOT_TOKEN: "",
+    HEALTH_TELEGRAM_CHAT_ID: "",
+  });
+  try {
+    return await fn({
+      statePath,
+      readState: async () => JSON.parse(await readFile(statePath, "utf8")),
+    });
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+function stubFetch(leads, onPost) {
+  return async (url, init) => {
+    const u = String(url);
+    if (u.startsWith("https://graph.facebook.com")) {
+      return Response.json({ data: leads, paging: {} });
+    }
+    if (u.endsWith("/heartbeat")) return Response.json({ ok: true });
+    return onPost(JSON.parse(init.body));
+  };
+}
+
+function leadFixture(id, createdTime, fieldData) {
+  return {
+    id,
+    created_time: createdTime,
+    platform: "ig",
+    form_id: "111",
+    field_data: fieldData,
+  };
+}
 
 test("폼 ID 파싱 — 공백/중복/비숫자 제거", () => {
   assert.deepEqual(parseFormIds(" 123, 123 ,abc,456 ,"), ["123", "456"]);
@@ -140,6 +210,103 @@ test("폼 자동 발견 실패는 예외로 드러난다(조용한 누락 금지
     }),
     /폼 목록 조회 실패/,
   );
+});
+
+// 폴러의 전화 인식이 워커보다 좁으면 새 폼('핸드폰번호' 등)에서 폴러만 못 읽는다.
+// 워커와의 동기화 가드는 worker/tests/meta-lead-poll.test.mjs 에 함께 있다.
+test("전화 질문 인식 — 표준키·한글 변형·영문 변형 전부", () => {
+  for (const key of [
+    "phone_number",
+    "Phone Number",
+    "전화번호",
+    "연락처",
+    "휴대폰_번호",
+    "핸드폰번호",
+    "mobile",
+    "휴대폰_번호(필수)",
+  ]) {
+    assert.ok(isPhoneQuestion(key), `미인식: ${key}`);
+  }
+  for (const key of ["성함", "면적", "가용_예산", "공간_형태"]) {
+    assert.ok(!isPhoneQuestion(key), `오인식: ${key}`);
+  }
+  // 괄호 안 안내문은 워커와 동일하게 매칭에서 제외한다(안내문이 바뀌어도 매핑이 안 흔들리게).
+  // 이런 폼이 생기면 이제 큐를 막지 않고 '오류' 카드 + 알림으로 드러난다.
+  assert.ok(!isPhoneQuestion("연락_가능한_번호(휴대폰)"));
+});
+
+test("[guard] 전화번호를 못 읽은 리드가 뒤 리드를 막지 않는다", async () => {
+  await withPoller(async ({ readState }) => {
+    const posted = [];
+    const result = await runPoll({
+      fetchImpl: stubFetch(
+        [
+          leadFixture("noPhone", "2026-07-25T01:00:00+0000", [
+            { name: "성함", values: ["임혜진"] },
+            { name: "궁금한_점", values: ["욕실"] },
+          ]),
+          leadFixture("good", "2026-07-25T02:00:00+0000", [
+            { name: "성함", values: ["임혜진"] },
+            { name: "핸드폰번호", values: ["010-6624-6615"] },
+          ]),
+        ],
+        (payload) => {
+          posted.push(payload.leadId);
+          // 워커: 필수정보 없는 리드는 캡처하고 400 + captured 로 회신
+          return payload.phone
+            ? Response.json({ ok: true, id: "rec1" })
+            : Response.json(
+                { ok: false, error: "Missing name or phone", captured: true },
+                { status: 400 },
+              );
+        },
+      ),
+    });
+
+    assert.deepEqual(posted, ["noPhone", "good"], "뒤 리드까지 전달돼야 함");
+    assert.equal(result.captured, 1);
+    assert.equal(result.delivered, 1, "'핸드폰번호' 폼도 정상 전달");
+    const state = await readState();
+    assert.ok(
+      state.processed.noPhone && state.processed.good,
+      "캡처된 리드는 재전송하지 않는다(무한 재시도 금지)",
+    );
+  });
+});
+
+test("[guard] 전달 실패건은 워터마크를 되돌려 다음 실행이 반드시 다시 잡는다", async () => {
+  await withPoller(async ({ readState }) => {
+    await assert.rejects(
+      runPoll({
+        fetchImpl: stubFetch(
+          [
+            leadFixture("fails", "2026-07-25T01:00:00+0000", [
+              { name: "성함", values: ["임혜진"] },
+              { name: "연락처", values: ["010-1111-2222"] },
+            ]),
+            leadFixture("ok", "2026-07-25T02:00:00+0000", [
+              { name: "성함", values: ["김철수"] },
+              { name: "연락처", values: ["010-3333-4444"] },
+            ]),
+          ],
+          (payload) =>
+            payload.leadId === "fails"
+              ? Response.json({ ok: false, error: "boom" }, { status: 500 })
+              : Response.json({ ok: true, id: "rec1" }),
+        ),
+      }),
+      /리드 전달 실패/,
+    );
+
+    const state = await readState();
+    assert.equal(
+      state.highWatermarkAt,
+      "2026-07-25T01:00:00.000Z",
+      "실패한 리드 시각으로 워터마크가 고정돼야 재조회된다",
+    );
+    assert.ok(!state.processed.fails, "실패건은 processed 에 남으면 안 됨");
+    assert.ok(state.processed.ok, "성공건은 재전송되면 안 됨");
+  });
 });
 
 test("실패 메시지에 네임태그가 붙는다", () => {

@@ -66,6 +66,35 @@ export function normalizePhone(raw) {
   return digits;
 }
 
+// 전화 질문 key 인식 — 워커 FIELD_RULES 의 phone 행과 **같은 규칙**을 쓴다.
+// (SSoT: worker/src/routes/meta-lead.js FIELD_RULES / normalizeQuestionKey)
+// 폴러 쪽이 더 좁으면 새 폼이 '핸드폰번호'·'mobile' 로 물었을 때 폴러만 못 읽는다.
+// 가드: worker/tests/meta-lead-poll.test.mjs 의 [guard] 폴러-워커 전화 키워드 동기화
+export const PHONE_TOKENS = [
+  "phone number",
+  "phone",
+  "연락처",
+  "전화",
+  "휴대폰",
+  "핸드폰",
+  "mobile",
+];
+
+export function normalizeQuestionKey(raw) {
+  return String(raw ?? "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+export function isPhoneQuestion(rawKey) {
+  const key = normalizeQuestionKey(rawKey);
+  return PHONE_TOKENS.some((t) => key.includes(t));
+}
+
 // 워커로 보내는 페이로드 — 매핑하지 않고 원본을 그대로 싣는다.
 // phone 만 전화형식 정규화해서 함께 보낸다(워커 필수값 검증 + 폴러 단계 사전 점검용).
 export function buildLeadPayload(lead) {
@@ -77,16 +106,7 @@ export function buildLeadPayload(lead) {
         : [],
     }),
   );
-  const phoneField = fieldData.find((f) => {
-    const k = f.name.toLowerCase();
-    return (
-      k === "phone_number" ||
-      k.includes("phone") ||
-      k.includes("연락처") ||
-      k.includes("전화") ||
-      k.includes("휴대")
-    );
-  });
+  const phoneField = fieldData.find((f) => isPhoneQuestion(f.name));
   return {
     leadId: String(lead?.id || "").trim(),
     createdTime: String(lead?.created_time || "").trim(),
@@ -329,6 +349,11 @@ async function postLead({ webhookUrl, webhookSecret, payload, fetchImpl = fetch 
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data?.error) {
+    // 워커가 captured 로 회신하면 원문(R2)·'오류' 카드(D1)·알림까지 이미 남긴 뒤다.
+    // 재시도해도 결과가 같으므로 실패로 보지 않는다 — 이 한 건 때문에 뒤 리드가 밀리면 안 된다.
+    if (data?.captured) {
+      return { captured: true, reason: String(data?.error || "").slice(0, 120) };
+    }
     throw new Error(
       `lead=${payload.leadId} webhook 실패: ${String(
         data?.error || `HTTP ${response.status}`,
@@ -533,51 +558,69 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
 
     let delivered = 0;
     let duplicates = 0;
+    let captured = 0;
+    const failures = [];
     let newestMs = Math.max(
       cutoverMs,
       Number.isFinite(highWatermarkMs) ? highWatermarkMs : 0,
     );
+    // 전달 실패한 리드 중 가장 오래된 것. 워터마크를 이 시각으로 되돌려
+    // "성공할 때까지 조회 창 안에 계속 남게" 한다(누락 0).
+    let oldestFailureMs = Infinity;
     const processed = { ...state.processed };
     for (const lead of leads) {
       const payload = buildLeadPayload(lead);
       const createdMs = Date.parse(payload.createdTime);
       newestMs = Math.max(newestMs, Number.isFinite(createdMs) ? createdMs : 0);
       if (processed[payload.leadId]) continue;
-      if (!payload.phone) {
-        throw new Error(`lead=${payload.leadId} 전화번호 필드가 없어 전달할 수 없습니다.`);
-      }
       if (dryRun) continue;
-      const result = await postLead({ webhookUrl, webhookSecret, payload, fetchImpl });
-      if (result?.duplicate) duplicates += 1;
-      else delivered += 1;
-      processed[payload.leadId] = payload.createdTime || new Date().toISOString();
+      // 전화번호를 못 읽어도 여기서 막지 않는다. 워커가 R2 원문 + D1 '오류' 카드로
+      // 캡처하고 captured 를 회신하므로 흔적은 남고 큐는 계속 흐른다.
+      try {
+        const result = await postLead({
+          webhookUrl,
+          webhookSecret,
+          payload,
+          fetchImpl,
+        });
+        if (result?.captured) captured += 1;
+        else if (result?.duplicate) duplicates += 1;
+        else delivered += 1;
+        processed[payload.leadId] = payload.createdTime || new Date().toISOString();
+      } catch (error) {
+        // 워커 장애·네트워크 오류 등 일시적 실패. processed 에 넣지 않으므로 다음 실행이 재시도한다.
+        failures.push(String(error?.message || error).slice(0, 200));
+        if (Number.isFinite(createdMs)) {
+          oldestFailureMs = Math.min(oldestFailureMs, createdMs);
+        }
+      }
     }
 
     const detail =
       `forms=${formIds.length} fetched=${leads.length} delivered=${delivered}` +
-      ` duplicates=${duplicates} discovery=${discoveryNote}`;
+      ` duplicates=${duplicates} captured=${captured} failed=${failures.length}` +
+      ` discovery=${discoveryNote}`;
     if (!dryRun) {
       // 상태 저장이 먼저 — 하트비트가 실패해도 같은 리드를 다시 보내지 않는다.
+      // 실패건이 있으면 워터마크를 그 리드 시각으로 되돌린다. 실패가 며칠 이어져도
+      // 다음 조회 창(워터마크 − 48h)에 반드시 포함되므로 유실되지 않는다.
       const retentionFloor = Math.max(
         cutoverMs,
         nowMs - Math.max(lookbackMs, overlapMs) * 2,
       );
+      const watermarkMs = Math.min(
+        Math.max(newestMs, nowMs),
+        oldestFailureMs,
+      );
       await writeState(statePath, {
         version: 1,
         cutoverAt,
-        highWatermarkAt: new Date(Math.max(newestMs, nowMs)).toISOString(),
+        highWatermarkAt: new Date(watermarkMs).toISOString(),
         lastSuccessfulPollAt: new Date(nowMs).toISOString(),
         knownFormIds: discovered.length
           ? discovered.map((f) => f.id)
           : knownFormIds,
         processed: pruneProcessed(processed, retentionFloor),
-      });
-      await sendHeartbeat({
-        webhookUrl,
-        webhookSecret,
-        status: "ok",
-        detail,
-        fetchImpl,
       });
       // 새 양식은 조용히 지나가면 안 된다 — 매핑 확인이 필요할 수 있으므로 알린다.
       if (newForms.length) {
@@ -604,12 +647,32 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
           fetchImpl,
         });
       }
+      // 전달 실패는 반드시 드러낸다 — main() 이 fail 하트비트 + 인프라봇 알림을 맡는다.
+      // 상태는 이미 저장했으므로 성공한 리드는 재전송되지 않고, 실패한 리드만 다음 실행이 재시도한다.
+      if (failures.length) {
+        throw new Error(
+          `리드 전달 실패 ${failures.length}/${leads.length}건 — ${failures[0]}`,
+        );
+      }
+      await sendHeartbeat({
+        webhookUrl,
+        webhookSecret,
+        status: "ok",
+        detail,
+        fetchImpl,
+      });
     }
 
     console.log(
       `${TAG} ok dryRun=${dryRun} ${detail} since=${new Date(sinceMs).toISOString()}`,
     );
-    return { fetched: leads.length, delivered, duplicates, skipped: false };
+    return {
+      fetched: leads.length,
+      delivered,
+      duplicates,
+      captured,
+      skipped: false,
+    };
   } finally {
     await lock.close();
     await rm(lockPath, { force: true });
