@@ -99,13 +99,16 @@ export async function handleMetaAds(request, env, ctx) {
     return listBreakdown(request, env);
   }
 
-  // GET /api/meta-ads/thumb/{creativeId} — 광고 썸네일 영구 프록시
-  // D1 에 저장된 fbcdn URL 은 서명 URL(oe 파라미터, 발급 ~7일 후 만료)이라
-  // 며칠만 지나면 어드민 미리보기가 전부 깨졌다. R2 에 한 번 복사해두고
-  // 이후로는 R2 에서만 읽는다. 캐시 미스일 때만 Graph 로 새 URL 을 받아온다.
-  const thumbMatch = path.match(/^\/thumb\/([A-Za-z0-9_-]{1,64})$/);
-  if (thumbMatch && request.method === "GET") {
-    return getAdThumb(thumbMatch[1], env, ctx);
+  // GET /api/meta-ads/thumbs?ids=a,b,c — 크리에이티브 썸네일의 R2 공개 URL
+  // D1 의 fbcdn URL 은 서명 URL(oe, 발급 ~7일)이라 며칠이면 전부 깨진다.
+  // R2 로 한 번 복사해 고정하고, 어드민은 R2 공개 URL 을 <img src> 로 쓴다.
+  //
+  // 왜 이미지 프록시가 아니라 URL 목록인가: <img> 는 Authorization 헤더를 못 보내고
+  // 어드민 인증은 localStorage 토큰 경로에 의존한다. 인증이 필요한 URL 을 src 로
+  // 쓰면 이미지 요청만 401 로 떨어져 아무것도 안 보인다. 그래서 인증이 되는
+  // fetch 로 URL 만 받아오고 이미지는 공개 버킷에서 읽는다.
+  if (path === "/thumbs" && request.method === "GET") {
+    return getAdThumbUrls(request, env);
   }
 
   // GET /api/meta-ads/dow?range=30 — 요일별 집계
@@ -1144,26 +1147,14 @@ function imageContentType(value) {
   return /^image\/(jpeg|png|webp|gif|avif)$/.test(ct) ? ct : "image/jpeg";
 }
 
-async function getAdThumb(creativeId, env, ctx) {
-  if (!env?.IMAGES) return jsonError(500, "Server misconfigured");
-  const key = `${THUMB_R2_PREFIX}${creativeId}`;
+const THUMB_MAX_IDS = 40;
+// 미스 1건당 외부요청 2회(Graph + 원본). CF Free subrequest 50 한도를 넘지 않도록 제한.
+const THUMB_MAX_FETCH_PER_CALL = 15;
 
-  try {
-    const hit = await env.IMAGES.get(key);
-    if (hit) {
-      return new Response(hit.body, {
-        headers: {
-          "content-type": imageContentType(hit.httpMetadata?.contentType),
-          "cache-control": THUMB_CACHE_CONTROL,
-        },
-      });
-    }
-  } catch {}
-
+// 크리에이티브 1건을 R2 로 복사. 성공하면 true.
+async function mirrorCreativeThumb(env, creativeId, key) {
   const token = String(env.META_AD_ACCESS_TOKEN || "").trim();
-  if (!token) return jsonError(500, "Server misconfigured");
-
-  // 캐시 미스 → Graph 에서 지금 유효한 URL 을 받아온다 (크리에이티브당 1회)
+  if (!token) return false;
   let srcUrl = "";
   try {
     const params = new URLSearchParams({
@@ -1176,31 +1167,58 @@ async function getAdThumb(creativeId, env, ctx) {
     const data = await res.json();
     if (res.ok) srcUrl = String(data?.thumbnail_url || data?.image_url || "");
   } catch {}
-  if (!/^https:\/\//.test(srcUrl)) return jsonError(404, "Not Found");
-
-  let buf;
-  let contentType;
+  if (!/^https:\/\//.test(srcUrl)) return false;
   try {
     const img = await fetch(srcUrl);
-    if (!img.ok) return jsonError(404, "Not Found");
-    contentType = imageContentType(img.headers.get("content-type"));
-    buf = await img.arrayBuffer();
+    if (!img.ok) return false;
+    const contentType = imageContentType(img.headers.get("content-type"));
+    const buf = await img.arrayBuffer();
+    if (!buf.byteLength || buf.byteLength > THUMB_MAX_BYTES) return false;
+    await env.IMAGES.put(key, buf, {
+      httpMetadata: { contentType, cacheControl: THUMB_CACHE_CONTROL },
+    });
+    return true;
   } catch {
-    return jsonError(404, "Not Found");
+    return false;
   }
-  if (!buf.byteLength || buf.byteLength > THUMB_MAX_BYTES) {
-    return jsonError(404, "Not Found");
-  }
+}
 
-  ctx?.waitUntil?.(
-    env.IMAGES.put(key, buf, { httpMetadata: { contentType } }).catch(() => {}),
-  );
-  return new Response(buf, {
-    headers: {
-      "content-type": contentType,
-      "cache-control": THUMB_CACHE_CONTROL,
-    },
-  });
+async function getAdThumbUrls(request, env) {
+  const base = String(env.R2_PUBLIC_BASE || "").replace(/\/$/, "");
+  if (!env?.IMAGES || !base) return jsonError(500, "Server misconfigured");
+  const raw = new URL(request.url).searchParams.get("ids") || "";
+  const ids = [
+    ...new Set(
+      raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => /^[A-Za-z0-9_-]{1,64}$/.test(s)),
+    ),
+  ].slice(0, THUMB_MAX_IDS);
+
+  const urls = {};
+  let fetched = 0;
+  for (const id of ids) {
+    const key = `${THUMB_R2_PREFIX}${id}`;
+    let exists = false;
+    try {
+      exists = !!(await env.IMAGES.head(key));
+    } catch {}
+    if (exists) {
+      urls[id] = `${base}/${key}`;
+      continue;
+    }
+    // 한 번에 다 받지 않는다 — 남은 건 다음 호출에서 채워진다
+    if (fetched >= THUMB_MAX_FETCH_PER_CALL) {
+      urls[id] = null;
+      continue;
+    }
+    fetched += 1;
+    urls[id] = (await mirrorCreativeThumb(env, id, key))
+      ? `${base}/${key}`
+      : null;
+  }
+  return jsonOk({ urls });
 }
 
 async function fetchAdMeta(token, accountId) {

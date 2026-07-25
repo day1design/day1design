@@ -233,14 +233,37 @@
     return `<div class="mads-thumb mads-thumb-icon" style="background:linear-gradient(135deg,${c1},${c2})">${icon}</div>`;
   }
 
-  // 썸네일은 워커 프록시(/api/meta-ads/thumb/{creativeId})로만 읽는다.
-  // D1 의 fbcdn URL 은 서명 URL 이라 ~7일이면 만료돼 전부 깨졌다 — 직접 쓰지 말 것.
-  // 로드 실패 시 img 를 폴백 아이콘으로 교체한다(깨진 이미지 아이콘 노출 방지).
+  // 썸네일 자리 — 처음엔 폴백 아이콘을 그리고, loadThumbs 가 R2 공개 URL 을
+  // 받아오면 이미지로 교체한다.
+  // D1 의 fbcdn URL(ad.thumbnailUrl)은 서명 URL 이라 ~7일이면 만료돼 전부 깨진다.
+  // 그렇다고 인증이 필요한 워커 URL 을 src 로 쓸 수도 없다 — <img> 는 Authorization
+  // 헤더를 못 보내서 이미지 요청만 401 이 된다. 그래서 URL 은 인증되는 fetch 로 받고
+  // 이미지는 R2 공개 버킷에서 읽는다.
   function thumbCell(ad) {
-    if (!ad.creativeId) return thumbIcon(ad);
-    const src = `${adminUtil.API_BASE}/api/meta-ads/thumb/${encodeURIComponent(ad.creativeId)}`;
-    return `<img src="${adminUtil.escapeHtml(src)}" alt="" class="mads-thumb" loading="lazy"
-      onerror="this.outerHTML=this.dataset.fb" data-fb="${adminUtil.escapeHtml(thumbIcon(ad))}" />`;
+    const cid = ad.creativeId || "";
+    return `<span class="mads-thumb-slot" data-creative="${adminUtil.escapeHtml(cid)}">${thumbIcon(ad)}</span>`;
+  }
+
+  async function loadThumbs(rows) {
+    const ids = [
+      ...new Set((rows || []).map((r) => r.creativeId).filter(Boolean)),
+    ];
+    if (!ids.length) return;
+    try {
+      const d = await adminUtil.api(
+        `/api/meta-ads/thumbs?ids=${encodeURIComponent(ids.join(","))}`,
+      );
+      const urls = (d && d.urls) || {};
+      document
+        .querySelectorAll(".mads-thumb-slot[data-creative]")
+        .forEach((slot) => {
+          const url = urls[slot.dataset.creative];
+          if (!url) return;
+          slot.innerHTML = `<img src="${adminUtil.escapeHtml(url)}" alt="" class="mads-thumb" loading="lazy" />`;
+        });
+    } catch {
+      // 실패해도 폴백 아이콘이 이미 자리를 지키고 있다
+    }
   }
 
   function renderAds(rows) {
@@ -281,6 +304,8 @@
         </tr>`;
       })
       .join("");
+    // 표를 먼저 그리고 썸네일은 뒤따라 채운다 (표 렌더를 붙잡지 않는다)
+    loadThumbs(rows);
   }
 
   // ─── 효율 변화 추이 (CPM/CPC/CPL + 시계열 + 진단) ──

@@ -617,3 +617,8 @@
 .table-wrap {
   overflow-x: auto;
 }
+
+/* 썸네일 자리 — 아이콘/이미지 교체용 래퍼. 부모 flex 레이아웃에 영향 주지 않는다 */
+.mads-thumb-slot {
+  display: contents;
+}
