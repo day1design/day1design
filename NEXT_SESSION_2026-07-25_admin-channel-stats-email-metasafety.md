@@ -1,56 +1,92 @@
-# NEXT SESSION — 접수채널 통계 + 이메일 수신자 + Meta 저장체계 점검 (2026-07-25)
+# NEXT SESSION — 접수채널 유입량 + 이메일 수신자 + Meta 저장체계 (2026-07-25)
 
-## 이번 세션 결과 (완료)
+커밋 7개, 전부 push·배포 완료. 워커 소스는 무변경(재배포 불필요).
 
-### 1. 접수채널(Source) 기준 통계 추가 — 배포 완료
+```
+a8beda0 feat(admin)  접수채널(Source) 기준 통계 추가
+ee239e2 fix(deploy)  .codegraph 113MB → Vercel 배포 전면 차단 해제
+af25c55 docs         세션 핸드오프(이 문서)
+2413914 test(upload) 업로드 정책 가드를 현행 기준으로 정정
+ce0ab24 test(worker) 저장소 밖에 있던 가드 테스트 4개 편입
+62920ae feat(admin)  상담신청 통계를 기간 필터로 전환
+584e716 refactor     기간 컨트롤 일원화 + 「접수채널별 유입량」 박스 통합
+```
+
+---
+
+## 1. 접수채널 유입량 통계 (완료·배포)
 
 사용자 결정: **채널 기준 = `Estimates.Source`** (Meta / 홈페이지 / 네이버 / 구글 / 기타).
 Referral(고객 직접입력)·Platform(FB/IG 세분화)은 채택하지 않음 — Platform 은 D1 의
-meta 373건이 전부 `facebook` 이라 세분화 값이 사실상 없음, Referral 은 미입력 83건으로
+meta 373건이 전부 `facebook` 이라 세분화 값이 사실상 없고, Referral 은 미입력 83건으로
 커버리지 구멍.
 
-배경: 유입통계의 「소스별 전환율」은 방문 분모가 필요해 `keys.delete("meta")` 로
-Meta 를 제외한다(`site/admin/analytics.js`). 그런데 전체 접수 474건 중 Meta 가
-373건(79%)이라 주력 채널이 통계에서 통째로 빠져 보였다. 그래서 **기존 전환율 카드는
-그대로 두고 접수 건수 기준 카드를 따로 신설**하는 방향으로 갔다.
+**왜 별도 카드를 만들었나**: 유입통계의 「소스별 전환율」은 방문 분모가 필요해
+`keys.delete("meta")` 로 Meta 를 제외한다(`site/admin/analytics.js`). 그런데 전체 접수
+474건 중 Meta 가 373건(79%)이라 주력 채널이 통계에서 통째로 빠져 보였다. **이 둘을
+합치려 하지 말 것 — 분모가 다르다.**
 
-| 화면 | 추가된 것 | 위치 |
-| --- | --- | --- |
-| 유입통계 | 「접수채널」 패널 (Meta 포함 전량, 건수·비중) | 전환 퍼널 바로 아래 |
-| 상담신청 | 접수채널 집계 밴드 (현재 필터 반영) | 유입탭 아래, 목록 위 |
+| 화면 | 함수 | DOM id | 집계 대상 |
+| --- | --- | --- | --- |
+| 유입통계 | `renderSubmissionChannels()` (`analytics.js`) | `submissionChannels` | `currentSubmissionRows` (선택 기간) |
+| 상담신청 | `renderChannelStats(list)` (`estimates.js`) | `estChannelList` | `filtered()` (기간·상태·검색·유입탭) |
 
-- `site/admin/analytics.js` — `renderSubmissionChannels()` 신설, `renderOpsInsights()` 에서 호출
-- `site/admin/estimates.js` — `renderChannelStats(list)` + `fmtShare()` 신설, `render()` 에서 호출
-- `site/admin/analytics.html` / `estimates.html` — 패널 마크업
-- `site/admin/admin.css` — `.est-channel-*` 스타일 (모바일은 grid 2컬럼)
-- 전 admin HTML `admin.css?v=20260725-channel` 일괄 갱신
+실측 분포: `Meta 373(79%) / 홈페이지 95(20%) / Naver 5(1.1%) / Google 1(0.2%)`
 
-**중요 — 상담신청 밴드의 집계 기준**: 상단 일간·주간·월간 3칸은 전체 records 기준이지만,
-접수채널 밴드는 `filtered()` 결과를 센다. 즉 기간·상태·검색·유입탭이 그대로 반영된다.
-유입탭 "홈페이지" 는 `Source !== "meta"` 라 네이버·구글도 섞여 나온다(기존 탭 의미 그대로).
+**비중 포맷 주의**: `fmtPercent()` 는 정수 반올림이라 0.2% 가 `0%` 로 뭉개진다.
+10% 미만 소수 1자리를 살리는 `fmtConversionRate()`/`fmtShare()` 를 쓸 것.
 
-드라이런 검증(라이브 미접촉, `node` 하네스로 D1 실측 분포 재현):
+### 상담신청 화면 최종 구조 (584e716)
+
 ```
-Meta 373 (79%) / 홈페이지 95 (20%) / Naver 5 (1.1%) / Google 1 (0.2%)
+┌─ 접수채널별 유입량 ─────────  현재 조건 474건 · 4개 채널 ─┐
+│ [당일][3일][7일][15일][30일][60일][90일][전체●][선택기간] │
+│  Meta 373 79%  홈페이지 95 20%  Naver 5 1.1%  Google 1 0.2%│
+│  선택한 기간이 아래 접수카드 목록과 엑셀에도 함께 적용됩니다. │
+└────────────────────────────────────────────────────────────┘
+[상태▾] [엑셀 다운로드] [검색            ]
+유입 [전체][Meta][홈페이지]
+─ 접수카드 목록 (선택 기간 기준) ─
 ```
-1%·0.2% 같은 소수 비중이 0% 로 뭉개지지 않는지, 빈 결과·미지정 Source 폴백까지 확인함.
 
-커밋 `a8beda0` · 라이브 검증 완료 (admin.day1design.co.kr/estimates·/analytics 에서
-`estChannelList`·`submissionChannels`·새 `?v` 응답 확인).
+**설계 의도 — 되돌리지 말 것:**
 
-### 2. Vercel 배포 전면 차단 해제 — 원인은 `.codegraph`
+- **기간 컨트롤은 이 화면에 하나뿐이다.** 처음엔 세그먼트를 넣고 툴바 날짜입력을
+  그대로 뒀는데, 컨트롤이 둘이라 "어느 쪽이 통계를 지배하나" 로 혼동이 생겼다.
+  툴바 날짜입력을 없애고 세그먼트에 `[선택기간]` 을 넣어 일원화했다.
+  **툴바에 기간 입력을 다시 추가하지 말 것.**
+- **날짜칸(`estRangePicker`)은 `선택기간` 일 때만 노출.** 다른 버튼은 기간을 스스로
+  계산하므로 입력칸이 떠 있으면 어느 값이 진짜인지 헷갈린다 (`togglePeriodPicker`).
+- **별도 상태를 두지 않는다.** 세그먼트가 기존 `filterFrom`/`filterTo` 를 직접
+  세팅하므로 접수채널·목록·CSV 파일명이 한 경로로 따라온다. 별도 periodKey 상태를
+  만들면 통계와 목록이 어긋날 여지가 생긴다.
+- N일 = **오늘 포함** 최근 N일 (당일=0 → 오늘 하루). 기본값은 `전체`.
+- 일간·주간·월간 3카드는 제거됨(사용자 요청). `.est-stat-label` 만 남아 재사용 중.
+- 유입탭 "홈페이지" 는 `Source !== "meta"` 라 네이버·구글도 섞여 나온다(기존 탭 의미).
+
+드라이런 검증(라이브 미접촉): 9개 버튼의 from~to·건수·날짜칸 노출 여부 전부 일치.
+선택기간 왕복(`30일 → 선택기간 값 유지 → 직접입력 10건 → 7일 복귀 시 재계산·날짜칸
+숨김`)까지 통과. 자정 경계(00:00:10 / 23:59:50) 포함 확인.
+
+---
+
+## 2. Vercel 배포 전면 차단 해제 (ee239e2)
 
 `vercel --prod` 가 `File size limit exceeded (100 MB)` 로 실패. 업로드 총량 112.9MB 가
-**`.codegraph/codegraph.db` 113MB 단일 파일** 이었다 (code-review-graph MCP 산출물).
-`.vercelignore` 에 없어서 그대로 업로드됨.
+**`.codegraph/codegraph.db` 113MB 단일 파일** 이었다(code-review-graph MCP 산출물).
+100MB 한도는 총량이 아니라 **단일 파일**에도 걸린다.
 
 - `.vercelignore`: `.codegraph`, `test-results`(401MB), `_backup`, `_fav_tmp`,
   `blog-infographic-gangnam`, `workers` 제외
 - `.gitignore`: `.codegraph/`, `test-results/`, `_fav_tmp/` 추가
 
-커밋 `ee239e2`. **MCP 를 다시 쓰면 이 파일이 재생성되지만 이제는 무시된다.**
+**진단 요령**: `vercel` 출력의 `Uploading (NNN MB)` 총량을 적어두고
+`find . -type f -size +50M -not -path "./.git/*"` 로 대조. 총량과 일치하는 단일 파일이
+범인이다. MCP 를 다시 쓰면 `.codegraph` 는 재생성되지만 이제 무시된다.
 
-### 3. 내부 알림 이메일 수신자 — 실제로 1개뿐
+---
+
+## 3. 내부 알림 이메일 수신자 — 실효 1개뿐
 
 사용자 질문("mkt@polar.co.kr 이랑 다른 이메일들도 있지?") → **없다.**
 
@@ -59,16 +95,21 @@ Meta 373 (79%) / 홈페이지 95 (20%) / Naver 5 (1.1%) / Google 1 (0.2%)
 - 시크릿 실측: `GMAIL_NOTIFY_TO` 등록됨 · `NOTIFY_EMAIL_TO` **미설정** · `GMAIL_USER` 있음
 - Gmail 보낸편지함 실측 3건(7/24 23:48 Meta · 23:26 홈페이지 · 7/21) 전부
   `To: day1design.co@gmail.com` **단일**
-- 즉 `GMAIL_NOTIFY_TO` 값이 GMAIL_USER 와 같거나 빈 값 → 실효 수신처 1개
 
-**수신자 추가 방법**: `GMAIL_NOTIFY_TO` 를 콤마구분으로 갱신하면 된다. `sendEmail()` 이
-`To:` 헤더에 `join(", ")` 하므로 다중수신 그대로 동작. 코드 수정 불필요.
+**수신자 추가**: 코드 수정 불필요. `sendEmail()` 이 `To:` 헤더에 `join(", ")` 하므로
+콤마구분 문자열이 그대로 다중수신으로 동작한다.
 ```
 printf "%s" "a@x.com,b@y.com" | wrangler secret put GMAIL_NOTIFY_TO
 ```
 (`echo` 금지 — 개행이 섞인다)
 
-### 4. Meta 접수 저장체계 점검 — 이상 없음
+**시크릿 값 확인법**: CF 시크릿은 write-only 라 이름만 보인다. 실제 수신자는
+**Gmail API 로 보낸편지함 `To:` 헤더를 읽어** 확인한다 (`GMAIL_REFRESH_TOKEN` 스코프가
+`https://mail.google.com/` 이라 읽기 가능). 테스트 메일을 보낼 필요 없다.
+
+---
+
+## 4. Meta 접수 저장체계 — 이상 없음
 
 사용자 요구: "meta 접수되는건 절대 누락안되게, 오류 나는것까지도 잡아서 저장".
 **테스트 리드 주입 0건**, 코드·기존 로그·가드테스트만으로 검증.
@@ -85,37 +126,68 @@ printf "%s" "a@x.com,b@y.com" | wrangler secret put GMAIL_NOTIFY_TO
    (`workers/imac-meta-lead-poller/worker.mjs:590-614`) → 다음 조회창(−48h)에 반드시 재포함
 2. `MetaLeadId` 유니크 인덱스 → 재시도해도 카드 1장
 
-`worker/tests/estimates-safetynet.test.mjs` + `meta-lead-poll.test.mjs` **27/27 통과**.
-
 D1 저장 실패 시 D1 '오류' 카드가 없는 건 D1 자체가 불가한 상황이라 그렇고,
 R2 + 텔레그램 + 폴러 재시도로 커버된다. **폴러가 죽으면 이 재시도가 안 도는데,
 하트비트 → `checkLeadPoller` 헬스체크가 잡는다.**
 
-배포 상태: Worker HEAD `9672312` 가 07-25 06:48:10 라이브. 그 이전 facebook 리드
-IntakeEvents 로그에 `email` 스텝이 없는 건 배포 전이라 정상 (이번 커밋에서 Meta 리드
-내부 알림 메일이 워커로 흡수됨).
+Worker HEAD `9672312` 가 07-25 06:48:10 라이브. 그 이전 facebook 리드 IntakeEvents 에
+`email` 스텝이 없는 건 배포 전이라 정상.
 
-## 남은 것 / 주의
+---
 
-- **`worker/tests/upload-policy.test.mjs` 3건 실패** — `npm test` 92건 중 89 pass.
-  실패한 3건은 전부 **미커밋(untracked) 로컬 테스트 파일**이고 접수·Meta 안전망과 무관.
-  WebP 전용 업로드 정책이 415 대신 200 을 반환한다는 주장인데, 이 테스트가 맞는지
-  (= 실제 정책 회귀인지) 아니면 테스트가 낡은 건지 **다음 세션에서 확인 필요.**
-- Meta `Platform` 컬럼이 373건 전부 `facebook` — instagram 리드도 facebook 으로
-  기록되는지 확인 필요. 확인되면 FB/IG 세분화 통계도 의미가 생긴다.
-  (`normalizePlatform()` in `worker/src/routes/meta-lead.js`)
+## 5. 테스트 — 97/97 통과 (직전 세션의 미해결 항목 해소)
+
+### upload-policy 실패 3건 → **회귀 아님, 낡은 테스트였다** (2413914)
+
+`upload-policy.js` 는 커밋이 단 1개이고, 그게 정책을 **의도적으로 푼** 커밋이다:
+
+> `986f9d7` (2026-05-20) — 업로드 정책 완화 (히어로 슬라이드 한정):
+> worker upload-policy.js: 이미지 타입이면 webp 외(jpg/png/gif/avif)도 통과.
+
+시점도 맞는다 — 테스트 파일 mtime **2026-05-12**, 완화 커밋 **05-20** (8일 뒤).
+완화는 지금도 유효: `site/admin/hero-slides.js` 3곳에서 `skipCompressUnder: 5MB` 사용 중.
+5MB 이하 히어로는 admin 에서 webp 변환 없이 원본을 올리므로 워커가 jpg/png 를 받아야 한다.
+
+**⚠ "이미지는 webp 만" 으로 조이면 그게 회귀다.** 테스트를 현행 기준으로 다시 썼고
+파일 상단에 경위와 "되돌리지 말 것" 을 박아뒀다. `isWebpImageUpload()` 는 export 만 되고
+업로드 게이트로 쓰이지 않는 헬퍼라는 것도 테스트로 고정.
+
+### untracked 테스트 4개 편입 (ce0ab24)
+
+`access`(5) · `index-access`(9) · `portfolio-route`(2) · `services`(3). 전부 통과하는데
+저장소 밖이라 `git clean` 한 번이면 사라지고 환경마다 `npm test` 결과가 달랐다.
+오리진별 접근제어·관리자 로그인·호스트별 에셋 서빙·D1/R2 주입 계약을 지킨다.
+더미 자격증명만 사용(`secret-pass`·`jwt-secret`·`test-secret`).
+
+---
+
+## 남은 것 / 다음 세션
+
+- **Meta `Platform` 이 373건 전부 `facebook`** — 인스타 리드도 facebook 으로 기록되는지
+  확인 필요. `normalizePlatform()` (`worker/src/routes/meta-lead.js`).
+  확인되면 FB/IG 세분화 통계가 비로소 의미를 가진다.
+- **업로드 정책의 ext-only 통과 구멍** (급하지 않음): `isImageUpload` 가
+  `type.startsWith("image/") || ext 매칭` 이라 `x.png` + `type: text/html` 이 통과하고,
+  `upload.js` 가 그 type 을 R2 contentType 으로 그대로 쓴다. `verifyAdmin()` 뒤라
+  관리자 인증이 전제이고 R2 는 다른 오리진이라 세션 탈취로는 안 이어진다.
+  닫으려면 두 조건을 AND 로 묶으면 된다. 테스트에는 주석으로만 기록(구멍을 정상으로
+  못박지 않기 위해).
 - `git stash list` 의 `stash@{0}`(2026-05-26 WIP)는 **증거·복구 원본이라 drop 금지**
   (CLAUDE.md 불변규칙 3).
 - Vercel CLI 출력에 `VERCEL_TOKEN` 이 평문 노출된다 — 로그·스크린샷 공유 시 마스킹.
 
-## 사용자 작업 방식 (이번 세션에서 확인)
+## 사용자 작업 방식 (이번 세션 확인)
 
-- **라이브 테스트 리드 주입 금지.** 작동 여부는 드라이런(코드·기존 로그·가드테스트)으로만 검증.
-- 작업 보고는 이 세션 터미널에만. 텔레그램·외부 채널 발송 금지.
+- **라이브 테스트 리드 주입 금지.** 작동 여부는 드라이런(코드·기존 로그·가드테스트·
+  read-only API)으로만 검증한다. 테스트 접수가 접수관리를 오염시키고 SMS·CAPI·시트까지
+  같이 발화된다.
+- 작업 보고는 세션 터미널에만. 텔레그램·외부 채널 발송 금지.
 
 ## 참고 경로
 
 - 안전망 불변규칙: `F:\day1design_homepage\CLAUDE.md` §불변규칙 1·2·6
-- 가드 테스트: `worker/tests/estimates-safetynet.test.mjs`, `worker/tests/meta-lead-poll.test.mjs`
+- 가드 테스트: `worker/tests/estimates-safetynet.test.mjs`, `meta-lead-poll.test.mjs`,
+  `upload-policy.test.mjs`, `access.test.mjs`, `index-access.test.mjs`
 - 배포: `scripts/deploy.ps1 main` (admin 은 main Vercel 프로젝트에 통합됨).
   `npx vercel` 이 깨지면 전역 `vercel` 직접 호출.
+- 캐시버전: admin.css 는 전 admin HTML 일괄(`?v=20260725-inflow`), 변경된 JS 만 개별 갱신.
