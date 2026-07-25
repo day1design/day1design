@@ -99,6 +99,15 @@ export async function handleMetaAds(request, env, ctx) {
     return listBreakdown(request, env);
   }
 
+  // GET /api/meta-ads/thumb/{creativeId} — 광고 썸네일 영구 프록시
+  // D1 에 저장된 fbcdn URL 은 서명 URL(oe 파라미터, 발급 ~7일 후 만료)이라
+  // 며칠만 지나면 어드민 미리보기가 전부 깨졌다. R2 에 한 번 복사해두고
+  // 이후로는 R2 에서만 읽는다. 캐시 미스일 때만 Graph 로 새 URL 을 받아온다.
+  const thumbMatch = path.match(/^\/thumb\/([A-Za-z0-9_-]{1,64})$/);
+  if (thumbMatch && request.method === "GET") {
+    return getAdThumb(thumbMatch[1], env, ctx);
+  }
+
   // GET /api/meta-ads/dow?range=30 — 요일별 집계
   if (path === "/dow" && request.method === "GET") {
     return listDow(request, env);
@@ -1115,6 +1124,83 @@ async function fetchCampaignMeta(token, accountId) {
     map[c.id] = c;
   }
   return map;
+}
+
+// ─── 광고 썸네일 영구 보관 ───
+// Meta 의 thumbnail_url 은 서명 URL 이다(oe=만료 타임스탬프, 발급 ~7일).
+// 동기화 시점에 D1 에 박아두면 일주일 뒤 전부 깨진다 — 실제로 2026-03~07 행이
+// 전부 만료 상태였다. 그래서 URL 을 저장하지 않고 이미지를 R2 에 복사해 고정한다.
+// 크리에이티브는 32개뿐이라 미스는 크리에이티브당 최초 1회만 발생한다.
+const THUMB_R2_PREFIX = "meta-ads/thumbs/";
+const THUMB_MAX_BYTES = 3 * 1024 * 1024;
+const THUMB_CACHE_CONTROL = "public, max-age=604800, immutable";
+
+function imageContentType(value) {
+  const ct = String(value || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  // 원본 헤더를 그대로 믿지 않는다 — 이미지 외 타입은 서빙하지 않는다
+  return /^image\/(jpeg|png|webp|gif|avif)$/.test(ct) ? ct : "image/jpeg";
+}
+
+async function getAdThumb(creativeId, env, ctx) {
+  if (!env?.IMAGES) return jsonError(500, "Server misconfigured");
+  const key = `${THUMB_R2_PREFIX}${creativeId}`;
+
+  try {
+    const hit = await env.IMAGES.get(key);
+    if (hit) {
+      return new Response(hit.body, {
+        headers: {
+          "content-type": imageContentType(hit.httpMetadata?.contentType),
+          "cache-control": THUMB_CACHE_CONTROL,
+        },
+      });
+    }
+  } catch {}
+
+  const token = String(env.META_AD_ACCESS_TOKEN || "").trim();
+  if (!token) return jsonError(500, "Server misconfigured");
+
+  // 캐시 미스 → Graph 에서 지금 유효한 URL 을 받아온다 (크리에이티브당 1회)
+  let srcUrl = "";
+  try {
+    const params = new URLSearchParams({
+      fields: "thumbnail_url,image_url",
+      access_token: token,
+    });
+    const res = await fetch(
+      `https://graph.facebook.com/${META_API_VERSION}/${creativeId}?${params}`,
+    );
+    const data = await res.json();
+    if (res.ok) srcUrl = String(data?.thumbnail_url || data?.image_url || "");
+  } catch {}
+  if (!/^https:\/\//.test(srcUrl)) return jsonError(404, "Not Found");
+
+  let buf;
+  let contentType;
+  try {
+    const img = await fetch(srcUrl);
+    if (!img.ok) return jsonError(404, "Not Found");
+    contentType = imageContentType(img.headers.get("content-type"));
+    buf = await img.arrayBuffer();
+  } catch {
+    return jsonError(404, "Not Found");
+  }
+  if (!buf.byteLength || buf.byteLength > THUMB_MAX_BYTES) {
+    return jsonError(404, "Not Found");
+  }
+
+  ctx?.waitUntil?.(
+    env.IMAGES.put(key, buf, { httpMetadata: { contentType } }).catch(() => {}),
+  );
+  return new Response(buf, {
+    headers: {
+      "content-type": contentType,
+      "cache-control": THUMB_CACHE_CONTROL,
+    },
+  });
 }
 
 async function fetchAdMeta(token, accountId) {

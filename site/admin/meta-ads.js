@@ -215,13 +215,11 @@
     return { grade: "✗ 부진", cls: "bad" };
   }
 
-  function thumbCell(ad) {
+  // 폴백 아이콘 — 썸네일이 없거나 로드에 실패했을 때 자리를 채운다
+  function thumbIcon(ad) {
     const t = ad.creativeType || "image";
     const isVideo = t === "VIDEO" || /video/i.test(t);
     const icon = isVideo ? "▶" : "▣";
-    if (ad.thumbnailUrl) {
-      return `<img src="${adminUtil.escapeHtml(ad.thumbnailUrl)}" alt="" class="mads-thumb" />`;
-    }
     const seed = (ad.adId || "").charCodeAt(0) || 0;
     const colors = [
       ["#a78bfa", "#f9a8d4"],
@@ -233,6 +231,16 @@
     ];
     const [c1, c2] = colors[seed % colors.length];
     return `<div class="mads-thumb mads-thumb-icon" style="background:linear-gradient(135deg,${c1},${c2})">${icon}</div>`;
+  }
+
+  // 썸네일은 워커 프록시(/api/meta-ads/thumb/{creativeId})로만 읽는다.
+  // D1 의 fbcdn URL 은 서명 URL 이라 ~7일이면 만료돼 전부 깨졌다 — 직접 쓰지 말 것.
+  // 로드 실패 시 img 를 폴백 아이콘으로 교체한다(깨진 이미지 아이콘 노출 방지).
+  function thumbCell(ad) {
+    if (!ad.creativeId) return thumbIcon(ad);
+    const src = `${adminUtil.API_BASE}/api/meta-ads/thumb/${encodeURIComponent(ad.creativeId)}`;
+    return `<img src="${adminUtil.escapeHtml(src)}" alt="" class="mads-thumb" loading="lazy"
+      onerror="this.outerHTML=this.dataset.fb" data-fb="${adminUtil.escapeHtml(thumbIcon(ad))}" />`;
   }
 
   function renderAds(rows) {
