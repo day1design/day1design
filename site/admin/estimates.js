@@ -128,10 +128,34 @@ function sourceKey(src) {
   return SOURCE_LABEL_MAP[s] ? s : "other";
 }
 
+// 네이버는 서비스별로 갈라서 보여준다 — "첫 Naver"만으로는 블로그를 보고 온 건지
+// 통합검색으로 찾아온 건지 알 수 없어 어느 채널이 리드를 만드는지 판단이 안 된다.
+// 판별 근거는 FirstReferrer 호스트(=꼬리표 앞부분)이며 이미 저장돼 있던 값이다.
+const NAVER_SERVICE_LABELS = [
+  [/(^|\.)search\.naver\.com$/, "네이버검색"],
+  [/(^|\.)blog\.naver\.com$/, "네이버블로그"],
+  [/(^|\.)blog\.naverblogwidget\.com$/, "네이버블로그"],
+  [/(^|\.)place\.naver\.com$/, "네이버플레이스"],
+  [/(^|\.)cafe\.naver\.com$/, "네이버카페"],
+  [/(^|\.)shopping\.naver\.com$/, "네이버쇼핑"],
+];
+function sourceLabelDetailed(key, referrerHost) {
+  if (key !== "naver") return SOURCE_LABEL_MAP[key];
+  const host = String(referrerHost || "")
+    .trim()
+    .toLowerCase();
+  for (const [re, label] of NAVER_SERVICE_LABELS) {
+    if (re.test(host)) return label;
+  }
+  return SOURCE_LABEL_MAP[key];
+}
+
 // 첫 진입 출처 — Worker가 자체 트래커 SessionId 의 최초 page_view 에서 추출
-function firstSourceBadge(src) {
+function firstSourceBadge(src, referrerHost) {
   const key = sourceKey(src);
-  return `<span class="src-badge src-actual src-first src-${key}" title="첫 진입 출처 (자체 트래커 SessionId 의 최초 page_view 기준)">첫 ${escapeHtml(SOURCE_LABEL_MAP[key])}</span>`;
+  const label = sourceLabelDetailed(key, referrerHost);
+  const detail = referrerHost ? ` · ${referrerHost}` : "";
+  return `<span class="src-badge src-actual src-first src-${key}" title="첫 진입 출처 (자체 트래커 SessionId 기준)${escapeHtml(detail)}">첫 ${escapeHtml(label)}</span>`;
 }
 
 // 마지막 진입 출처 — 폼 제출 시점의 utm/슬러그 쿠키 기반 (광고→폼 직접 이동 등)
@@ -153,8 +177,15 @@ function sourceBadges(record) {
   const inputBadge = inputSourceBadge(record.Referral);
   const firstRaw = String(record.FirstSource || "").trim();
   const lastRaw = String(record.Source || "homepage").trim();
-  if (firstRaw && firstRaw !== lastRaw) {
-    return `${inputBadge} ${firstSourceBadge(firstRaw)} ${lastSourceBadge(lastRaw)}`;
+  const refHost = String(record.FirstReferrer || "").trim();
+  if (firstRaw) {
+    const firstLabel = sourceLabelDetailed(sourceKey(firstRaw), refHost);
+    const lastLabel = SOURCE_LABEL_MAP[sourceKey(lastRaw)];
+    // 세부 라벨까지 같을 때만 생략한다. 첫=끝=naver 라도 "첫 네이버블로그"는
+    // "끝 Naver"가 담지 못하는 정보라 남긴다
+    if (firstLabel !== lastLabel) {
+      return `${inputBadge} ${firstSourceBadge(firstRaw, refHost)} ${lastSourceBadge(lastRaw)}`;
+    }
   }
   // 첫=끝 또는 첫 없음 → 끝 하나만 (라벨은 "실제")
   return `${inputBadge} ${lastSourceBadge(lastRaw)}`;

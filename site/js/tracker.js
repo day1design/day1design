@@ -93,6 +93,19 @@
       return "";
     }
   }
+  // 꼬리표 뒷부분(path + query) — 호스트만으로는 "네이버 블로그 중 어느 글인지",
+  // "통합검색에서 어떤 검색어였는지"를 알 수 없어 별도 필드로 같이 보낸다.
+  // 서버는 이 값을 RefPath 컬럼에 넣는다(기존 Referrer=호스트 집계는 그대로 유지).
+  function getReferrerPath() {
+    try {
+      if (!document.referrer) return "";
+      var u = new URL(document.referrer);
+      if (u.hostname === location.hostname) return "";
+      return (u.pathname + u.search).slice(0, 200);
+    } catch (_) {
+      return "";
+    }
+  }
   function getUtm() {
     var p = new URLSearchParams(location.search);
     return {
@@ -104,6 +117,7 @@
 
   var UTM = getUtm();
   var REFERRER = getReferrerHost();
+  var REFERRER_PATH = getReferrerPath();
 
   // ─── 큐 + 전송 ────────────────────────────────────────
   var queue = [];
@@ -130,6 +144,7 @@
       viewport_h: window.innerHeight,
       session_id: SESSION_ID,
       referrer: REFERRER,
+      referrer_path: REFERRER_PATH,
       utm: UTM,
       ts: Date.now(),
     };

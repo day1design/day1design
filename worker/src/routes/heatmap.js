@@ -9,7 +9,7 @@ import { buildAnalyticsRollupStatements } from "../lib/analytics-rollups.js";
 const HEATMAP_RATE_LIMIT_PER_HOUR = 1000;
 const MAX_EVENTS_PER_REQUEST = 50;
 const MAX_D1_BOUND_PARAMETERS = 100;
-const HEATMAP_INSERT_COLUMN_COUNT = 22;
+const HEATMAP_INSERT_COLUMN_COUNT = 23;
 
 function buildHeatmapInsertStatements(env, rows) {
   const chunkSize = Math.floor(
@@ -19,7 +19,7 @@ function buildHeatmapInsertStatements(env, rows) {
   for (let index = 0; index < rows.length; index += chunkSize) {
     const chunk = rows.slice(index, index + chunkSize);
     const values = chunk
-      .map(() => "(?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?)")
+      .map(() => "(?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?)")
       .join(", ");
     statements.push(
       env.DB.prepare(
@@ -27,7 +27,7 @@ function buildHeatmapInsertStatements(env, rows) {
           (id, Page, EventType, Device, XPct, YPct, ScrollDepthPct,
            PageW, PageH, ViewportW, ViewportH,
            SessionId, IP, Country, Region, City,
-           Referrer, UtmSource, UtmMedium, UtmCampaign, CreatedAt, IsBot)
+           Referrer, RefPath, UtmSource, UtmMedium, UtmCampaign, CreatedAt, IsBot)
          VALUES ${values}`,
       ).bind(...chunk.flat()),
     );
@@ -103,6 +103,15 @@ function safeStr(s, max = 100) {
 
 function safeDevice(s) {
   return s === "mobile" ? "mobile" : s === "pc" ? "pc" : "";
+}
+
+// 꼬리표 뒷부분(path + query). 클라이언트가 이미 잘라 보내지만 서버에서도 방어적으로
+// 상한을 건다. 호스트는 Referrer 컬럼에 그대로 두고 이 값만 RefPath 로 분리 저장한다
+// — 기존 유입통계/봇필터가 "Referrer = 호스트" 전제라 한 컬럼에 합치면 회귀한다.
+function safeReferrerPath(s) {
+  const raw = String(s || "").trim();
+  if (!raw || raw[0] !== "/") return "";
+  return raw.replace(/[\r\n\t]+/g, "").slice(0, 200);
 }
 
 function safeReferrerHost(s) {
@@ -187,10 +196,9 @@ async function persistAnalyticsRollups(env, events) {
     if (statements.length > 0) await env.DB.batch(statements);
   } catch (error) {
     try {
-      const code = escapeHtml(String(error?.message || error || "unknown")).slice(
-        0,
-        240,
-      );
+      const code = escapeHtml(
+        String(error?.message || error || "unknown"),
+      ).slice(0, 240);
       await notifyInfra(
         env,
         `<b>Analytics rollup write failed</b>\n• Code: ${code}\n• Raw heatmap events remain stored; run the rollup repair script.`,
@@ -282,6 +290,7 @@ async function trackEvents(request, env, ctx) {
 
     const id = generateId();
     const refHost = safeReferrerHost(e.referrer);
+    const refPath = refHost ? safeReferrerPath(e.referrer_path) : "";
     const sessionId = safeStr(e.session_id, 64);
     const utmSource = safeStr(e?.utm?.source, 100);
     const utmMedium = safeStr(e?.utm?.medium, 100);
@@ -311,6 +320,7 @@ async function trackEvents(request, env, ctx) {
       region,
       city,
       refHost,
+      refPath,
       utmSource,
       utmMedium,
       utmCampaign,

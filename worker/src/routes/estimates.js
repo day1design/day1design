@@ -112,17 +112,26 @@ async function fetchFirstTouch(env, sessionId) {
     platform: "",
     campaign: "",
     referrer: "",
+    refPath: "",
     utmSource: "",
     utmMedium: "",
     utmCampaign: "",
   };
   if (!sessionId || !env?.DB) return empty;
   try {
+    // 정렬 1순위 = "출처가 실린 진입" 우선, 2순위 = 시간순.
+    //   맨 처음 진입이 direct(꼬리표 없음)여도 같은 세션의 뒤쪽 진입에 네이버/광고
+    //   꼬리표가 있으면 그것을 첫 출처로 쓴다. 맨 처음 진입에 이미 출처가 있으면
+    //   그 행이 곧 "가장 오래된 출처 있는 행"이라 기존 동작과 동일하다.
+    //   (이 폴백 이전에는 direct 로 시작한 세션의 유입경로가 통째로 버려졌다)
     const row = await env.DB.prepare(
-      `SELECT Referrer, UtmSource, UtmMedium, UtmCampaign
+      `SELECT Referrer, RefPath, UtmSource, UtmMedium, UtmCampaign
        FROM HeatmapEvents
        WHERE SessionId = ? AND EventType = 'page_view'
-       ORDER BY CreatedAt ASC
+       ORDER BY
+         CASE WHEN COALESCE(Referrer,'') <> '' OR COALESCE(UtmSource,'') <> ''
+              THEN 0 ELSE 1 END,
+         CreatedAt ASC
        LIMIT 1`,
     )
       .bind(sessionId)
@@ -139,6 +148,7 @@ async function fetchFirstTouch(env, sessionId) {
       platform: norm.platform,
       campaign: norm.campaign,
       referrer: String(row.Referrer || ""),
+      refPath: String(row.RefPath || ""),
       utmSource: String(row.UtmSource || ""),
       utmMedium: String(row.UtmMedium || ""),
       utmCampaign: String(row.UtmCampaign || ""),
@@ -753,6 +763,7 @@ async function submitEstimate(request, env, ctx, services) {
     FirstPlatform: firstTouch.platform,
     FirstCampaign: firstTouch.campaign,
     FirstReferrer: firstTouch.referrer,
+    FirstRefPath: firstTouch.refPath,
     FirstUtmSource: firstTouch.utmSource,
     FirstUtmMedium: firstTouch.utmMedium,
     FirstUtmCampaign: firstTouch.utmCampaign,

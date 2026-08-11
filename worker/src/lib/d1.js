@@ -51,6 +51,7 @@ const SCHEMA = {
     "FirstPlatform",
     "FirstCampaign",
     "FirstReferrer",
+    "FirstRefPath",
     "FirstUtmSource",
     "FirstUtmMedium",
     "FirstUtmCampaign",
