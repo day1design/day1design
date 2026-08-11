@@ -80,16 +80,23 @@ function normalizeEstimateAttribution(fields) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+  // 한글 키워드도 같이 본다 — 마케팅 슬러그의 UtmSource 는 SourceLabel 을 그대로
+  // 슬러그화한 값이라 "네이버-블로그-견적문의"처럼 한글로 들어온다(marketing.js
+  // deriveUtm). 영문만 매칭하던 동안 슬러그 유입이 전부 'other'(기타)로 떨어졌다.
   let source = "homepage";
-  if (/(facebook|instagram|meta|fbclid|fb\.|ig\.|threads)/.test(raw)) {
+  if (
+    /(facebook|instagram|meta|fbclid|fb\.|ig\.|threads|메타|페이스북|페북|인스타)/.test(
+      raw,
+    )
+  ) {
     source = "meta";
-  } else if (/(youtube|youtu\.be)/.test(raw)) {
+  } else if (/(youtube|youtu\.be|유튜브)/.test(raw)) {
     source = "youtube";
-  } else if (/(naver|nclid)/.test(raw)) {
+  } else if (/(naver|nclid|네이버)/.test(raw)) {
     source = "naver";
-  } else if (/(google|gclid|doubleclick|adwords)/.test(raw)) {
+  } else if (/(google|gclid|doubleclick|adwords|구글)/.test(raw)) {
     source = "google";
-  } else if (/(kakao|daum|tistory)/.test(raw)) {
+  } else if (/(kakao|daum|tistory|카카오|카톡|다음)/.test(raw)) {
     source = "kakao";
   } else if (/(referral|social|search)/.test(raw)) {
     source = "referral";

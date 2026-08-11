@@ -164,17 +164,63 @@ function lastSourceBadge(src) {
   return `<span class="src-badge src-actual src-last src-${key}" title="마지막 진입 출처 (폼 제출 직전 utm/쿠키 기준)">끝 ${escapeHtml(SOURCE_LABEL_MAP[key])}</span>`;
 }
 
-// 입력 출처 (Referral 컬럼, 폼에서 고객이 직접 선택/입력)
-function inputSourceBadge(referral) {
-  const raw = String(referral || "").trim();
-  const label = raw || "unknown";
-  return `<span class="src-badge src-input" title="입력 출처 (고객이 폼에서 직접 선택)">입력 ${escapeHtml(label)}</span>`;
+// 마케팅 슬러그 경유 유입 (/go/{slug} 단축링크). 슬러그는 리다이렉트 때
+// utm_campaign 을 SourceLabel 과 같은 값으로 심으므로 Referral === Campaign 이면
+// 슬러그 유입이다. Meta 리드는 Referral="Meta 광고" · Campaign=광고캠페인명이라 갈린다.
+// (옛 폼의 고객 직접입력 값은 Campaign 이 비어 있어 역시 구분된다)
+function isSlugLead(record) {
+  const referral = String(record?.Referral || "").trim();
+  const campaign = String(record?.Campaign || "").trim();
+  return Boolean(referral) && referral === campaign;
+}
+// 검색어는 유입 주소 뒷부분(query)에 실려 온다. 네이버 query / 구글 q 등
+// 검색엔진마다 파라미터 이름이 달라 후보를 순서대로 본다. 값이 없으면 빈 문자열
+// — 검색엔진이 검색어를 안 실어 보내는 경우가 있어 "없음"이 정상 결과일 수 있다.
+const SEARCH_QUERY_KEYS = ["query", "q", "search_query", "keyword", "wd"];
+function extractSearchKeyword(refPath) {
+  const raw = String(refPath || "");
+  const qs = raw.indexOf("?");
+  if (qs < 0) return "";
+  try {
+    const params = new URLSearchParams(raw.slice(qs + 1));
+    for (const key of SEARCH_QUERY_KEYS) {
+      const value = (params.get(key) || "").trim();
+      if (value) return value;
+    }
+  } catch {}
+  return "";
 }
 
-// 카드용 출처 뱃지 — [입력] [첫] [끝] 3종 inline
+// 상세 모달의 유입 정보 — 첫 진입 주소 전체(호스트+뒷부분)와 검색어.
+// 블로그 유입이면 "어느 글에서 왔는지"가 이 링크로 바로 열린다.
+// RefPath 는 2026-08-11 부터 쌓이므로 그 이전 접수건은 호스트까지만 나온다.
+function inflowDetailRows(r) {
+  const host = String(r.FirstReferrer || "").trim();
+  if (!host) return "";
+  const path = String(r.FirstRefPath || "").trim();
+  const keyword = extractSearchKeyword(path);
+  const url = `https://${host}${path}`;
+  const linkCell = path
+    ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url.length > 90 ? url.slice(0, 90) + "…" : url)}</a>`
+    : `${escapeHtml(host)} <span class="muted">(상세 주소는 2026-08-11 이전 접수라 미수집)</span>`;
+  return `
+          <dt>유입 링크</dt><dd class="est-inflow-link">${linkCell}</dd>
+          ${keyword ? `<dt>검색어</dt><dd><b>${escapeHtml(keyword)}</b></dd>` : ""}`;
+}
+
+function slugBadge(record) {
+  if (!isSlugLead(record)) return "";
+  const label = String(record.Referral || "").trim();
+  return `<span class="src-badge src-slug" title="마케팅 슬러그(/go/) 경유 유입 · utm_campaign=${escapeHtml(label)}">슬러그 ${escapeHtml(label)}</span>`;
+}
+
+// 카드용 출처 뱃지 — [슬러그] [첫] [끝] inline
+// 예전의 "입력 ○○" 뱃지는 뺐다. 접수 폼에 고객이 유입경로를 고르는 항목이
+// 없어졌는데도(간소화) Referral 에 마케팅 슬러그 라벨이 들어오면서
+// "고객이 직접 선택"이라는 설명이 사실과 달라졌기 때문이다.
 // First*가 없으면(예: 마이그 전 기존 데이터) Source(끝)만 표시
 function sourceBadges(record) {
-  const inputBadge = inputSourceBadge(record.Referral);
+  const slug = slugBadge(record);
   const firstRaw = String(record.FirstSource || "").trim();
   const lastRaw = String(record.Source || "homepage").trim();
   const refHost = String(record.FirstReferrer || "").trim();
@@ -184,11 +230,11 @@ function sourceBadges(record) {
     // 세부 라벨까지 같을 때만 생략한다. 첫=끝=naver 라도 "첫 네이버블로그"는
     // "끝 Naver"가 담지 못하는 정보라 남긴다
     if (firstLabel !== lastLabel) {
-      return `${inputBadge} ${firstSourceBadge(firstRaw, refHost)} ${lastSourceBadge(lastRaw)}`;
+      return `${slug} ${firstSourceBadge(firstRaw, refHost)} ${lastSourceBadge(lastRaw)}`.trim();
     }
   }
   // 첫=끝 또는 첫 없음 → 끝 하나만 (라벨은 "실제")
-  return `${inputBadge} ${lastSourceBadge(lastRaw)}`;
+  return `${slug} ${lastSourceBadge(lastRaw)}`.trim();
 }
 
 // ===== KST 변환 헬퍼 (D1 SubmittedAt = UTC ISO, 표시는 KST) =====
@@ -285,26 +331,46 @@ function renderChannelStats(list) {
     if (sub) sub.textContent = "—";
     return;
   }
+  // 채널 키는 Source 기준이되, 네이버는 첫 진입 호스트로 갈라 센다
+  // (통합검색/블로그/플레이스가 한 덩어리면 어느 채널이 리드를 만드는지 안 보인다).
+  // 마케팅 슬러그 경유분은 매체 분류와 별개로 한 줄 더 세어 준다 — 슬러그를
+  // 뿌린 쪽의 성과를 매체 집계에 섞지 않고 따로 보기 위함.
   const counts = new Map();
+  let slugCount = 0;
   for (const r of list) {
     const key = sourceKey(r.Source);
-    counts.set(key, (counts.get(key) || 0) + 1);
+    const label =
+      key === "naver"
+        ? sourceLabelDetailed(key, r.FirstReferrer)
+        : SOURCE_LABEL_MAP[key];
+    const entry = counts.get(label) || { key, label, count: 0 };
+    entry.count += 1;
+    counts.set(label, entry);
+    if (isSlugLead(r)) slugCount += 1;
   }
-  const items = [...counts.entries()]
-    .map(([key, count]) => ({ key, count }))
-    .sort((a, b) => b.count - a.count);
-  wrap.innerHTML = items
-    .map(
-      (item) => `
+  const items = [...counts.values()].sort((a, b) => b.count - a.count);
+  const slugItem = slugCount
+    ? `
+      <div class="est-channel-item est-channel-slug" title="마케팅 슬러그(/go/) 경유 — 위 매체 집계와 중복 집계됩니다">
+        <span class="src-badge src-slug">슬러그 경유</span>
+        <strong>${fmtInt(slugCount)}</strong>
+        <em>${fmtShare(slugCount, total)}</em>
+      </div>`
+    : "";
+  wrap.innerHTML =
+    items
+      .map(
+        (item) => `
       <div class="est-channel-item">
-        <span class="src-badge src-${item.key}">${escapeHtml(SOURCE_LABEL_MAP[item.key])}</span>
+        <span class="src-badge src-${item.key}">${escapeHtml(item.label)}</span>
         <strong>${fmtInt(item.count)}</strong>
         <em>${fmtShare(item.count, total)}</em>
       </div>`,
-    )
-    .join("");
+      )
+      .join("") + slugItem;
   if (sub) {
-    sub.textContent = `현재 조건 ${fmtInt(total)}건 · ${items.length}개 채널`;
+    const slugNote = slugCount ? ` · 슬러그 경유 ${fmtInt(slugCount)}건` : "";
+    sub.textContent = `현재 조건 ${fmtInt(total)}건 · ${items.length}개 채널${slugNote}`;
   }
 }
 
@@ -767,7 +833,12 @@ async function openDetail(id) {
               : ""
           }
           ${r.Schedule ? `<dt>일정</dt><dd>${escapeHtml(r.Schedule)}</dd>` : ""}
-          ${r.Referral ? `<dt>경로</dt><dd>${escapeHtml(r.Referral)}</dd>` : ""}
+          ${
+            r.Referral
+              ? `<dt>${isSlugLead(r) ? "마케팅 슬러그" : "경로"}</dt><dd>${escapeHtml(r.Referral)}</dd>`
+              : ""
+          }
+          ${inflowDetailRows(r)}
           ${
             (r.Source || "").toLowerCase() === "meta"
               ? `
