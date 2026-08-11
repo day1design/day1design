@@ -191,6 +191,18 @@ function extractSearchKeyword(refPath) {
   return "";
 }
 
+// 카드 목록에도 검색어를 노출한다 — 상세를 열지 않고 어떤 말로 찾아온 고객인지
+// 훑을 수 있어야 검색 채널 판단이 된다. 검색어가 없으면 줄 자체를 안 그린다.
+function cardKeywordHtml(r) {
+  const keyword = extractSearchKeyword(r?.FirstRefPath);
+  if (!keyword) return "";
+  return `
+        <span>
+          <b>검색어</b>
+          <em class="est-card-keyword">${escapeHtml(keyword)}</em>
+        </span>`;
+}
+
 // 상세 모달의 유입 정보 — 첫 진입 주소 전체(호스트+뒷부분)와 검색어.
 // 블로그 유입이면 "어느 글에서 왔는지"가 이 링크로 바로 열린다.
 // RefPath 는 2026-08-11 부터 쌓이므로 그 이전 접수건은 호스트까지만 나온다.
@@ -206,6 +218,23 @@ function inflowDetailRows(r) {
   return `
           <dt>유입 링크</dt><dd class="est-inflow-link">${linkCell}</dd>
           ${keyword ? `<dt>검색어</dt><dd><b>${escapeHtml(keyword)}</b></dd>` : ""}`;
+}
+
+// 채널 집계의 기준 — 끝(Source)이 아니라 첫 유입(FirstSource) 이다.
+// 끝 기준이면 홈페이지를 거쳐 문의한 고객이 전부 "홈페이지"로 뭉쳐 네이버·구글이
+// 묻힌다(8월 실측: 네이버 유입 3건 중 1건만 잡혔다). Meta 리드는 홈페이지를
+// 거치지 않아 FirstSource 가 없으므로 Source(meta) 로 떨어진다.
+function channelEntry(r) {
+  const raw =
+    String(r?.FirstSource || "").trim() ||
+    String(r?.Source || "homepage").trim();
+  const key = sourceKey(raw);
+  if (key === "naver") {
+    return { key, label: sourceLabelDetailed(key, r?.FirstReferrer) };
+  }
+  // 첫 유입이 홈페이지 = 꼬리표 없는 직접 진입. 매체와 구분되게 라벨을 붙인다
+  if (key === "homepage") return { key, label: "홈페이지(직접)" };
+  return { key, label: SOURCE_LABEL_MAP[key] };
 }
 
 function slugBadge(record) {
@@ -331,18 +360,14 @@ function renderChannelStats(list) {
     if (sub) sub.textContent = "—";
     return;
   }
-  // 채널 키는 Source 기준이되, 네이버는 첫 진입 호스트로 갈라 센다
+  // 채널 키는 첫 유입(FirstSource) 기준이되, 네이버는 첫 진입 호스트로 갈라 센다
   // (통합검색/블로그/플레이스가 한 덩어리면 어느 채널이 리드를 만드는지 안 보인다).
   // 마케팅 슬러그 경유분은 매체 분류와 별개로 한 줄 더 세어 준다 — 슬러그를
   // 뿌린 쪽의 성과를 매체 집계에 섞지 않고 따로 보기 위함.
   const counts = new Map();
   let slugCount = 0;
   for (const r of list) {
-    const key = sourceKey(r.Source);
-    const label =
-      key === "naver"
-        ? sourceLabelDetailed(key, r.FirstReferrer)
-        : SOURCE_LABEL_MAP[key];
+    const { key, label } = channelEntry(r);
     const entry = counts.get(label) || { key, label, count: 0 };
     entry.count += 1;
     counts.set(label, entry);
@@ -604,6 +629,7 @@ function render() {
           <b>유입</b>
           <em>${sourceBadges(r)} ${sessionBadgeHtml(sessionNo)}</em>
         </span>
+        ${cardKeywordHtml(r)}
       </span>
       <span class="est-card-summary">
         <b>접수내용</b>

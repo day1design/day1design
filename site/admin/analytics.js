@@ -2597,6 +2597,7 @@ function applyRange(key) {
   loadTrafficAnalytics(range);
   loadVisitorLocations(range);
   loadFunnel(range);
+  loadSearchKeywords();
   renderSubmissionStats(range);
 }
 
@@ -2865,5 +2866,65 @@ async function loadFunnel(range) {
   } catch (e) {
     console.error("funnel load failed:", e);
     renderFunnel(null);
+  }
+}
+
+// 검색어 유입 — 수집된 검색어가 없으면 섹션을 통째로 숨긴다.
+// 검색엔진이 검색어를 주소에 실어 보내지 않으면 영영 0건일 수 있어서
+// 빈 표를 띄워두지 않는다(2026-08-11 부터 RefPath 수집 시작).
+const SEARCH_ENGINE_LABELS = {
+  naver: "네이버",
+  google: "구글",
+  daum: "다음",
+  bing: "Bing",
+  other: "기타",
+};
+
+function renderSearchKeywords(data) {
+  const section = document.getElementById("searchKeywordSection");
+  const body = document.getElementById("searchKeywordBody");
+  const sub = document.getElementById("searchKeywordSub");
+  if (!section || !body) return;
+  const rows = Array.isArray(data?.keywords) ? data.keywords : [];
+  if (!rows.length) {
+    section.hidden = true;
+    body.innerHTML = "";
+    return;
+  }
+  const max = rows[0].visits || 1;
+  body.innerHTML = rows
+    .map((row, i) => {
+      const pct = Math.max(3, Math.round((row.visits / max) * 100));
+      const engine = SEARCH_ENGINE_LABELS[row.engine] || row.engine || "기타";
+      return `
+      <tr>
+        <td class="skw-rank">${i + 1}</td>
+        <td class="skw-kw">${adminUtil.escapeHtml(row.keyword)}</td>
+        <td class="skw-engine">${adminUtil.escapeHtml(engine)}</td>
+        <td class="skw-num">${fmtInt(row.visits)}</td>
+        <td class="skw-num">${row.leads ? `<b>${fmtInt(row.leads)}</b>` : "—"}</td>
+        <td class="skw-bar"><span class="skw-bar-fill" style="width:${pct}%"></span></td>
+      </tr>`;
+    })
+    .join("");
+  if (sub) {
+    const days = Number(data?.days) || 30;
+    const leads = rows.reduce((sum, r) => sum + (Number(r.leads) || 0), 0);
+    sub.textContent = `최근 ${days}일 · 검색어 ${fmtInt(rows.length)}개 · 접수 ${fmtInt(leads)}건`;
+  }
+  section.hidden = false;
+}
+
+async function loadSearchKeywords() {
+  try {
+    await adminUtil.ensureAuth();
+    const data = await adminUtil.apiCached(
+      "/api/analytics/search-keywords?days=30",
+      { ttl: 300_000 },
+    );
+    renderSearchKeywords(data);
+  } catch (e) {
+    console.error("search keywords load failed:", e);
+    renderSearchKeywords(null);
   }
 }

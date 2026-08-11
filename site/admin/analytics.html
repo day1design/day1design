@@ -460,7 +460,44 @@
           </div>
         </section>
 
-        <section class="analytics-row funnel-section" data-order="6">
+        <!-- 검색어 유입 — 수집된 검색어가 하나도 없으면 통째로 숨긴다(빈 표 방지).
+             표시 여부는 analytics.js 가 /api/analytics/search-keywords 응답의
+             total 로 판단한다. RefPath 수집 시작일은 2026-08-11. -->
+        <section
+          class="analytics-row search-keyword-section"
+          data-order="6"
+          id="searchKeywordSection"
+          hidden
+        >
+          <div class="panel">
+            <div class="panel-head">
+              <h3>
+                검색어 유입
+                <span class="badge-source badge-self">자체측정</span>
+              </h3>
+              <span class="panel-sub" id="searchKeywordSub"
+                >검색으로 들어온 방문과 그중 접수까지 이어진 수</span
+              >
+            </div>
+            <div class="search-keyword-table-wrap">
+              <table class="search-keyword-table">
+                <thead>
+                  <tr>
+                    <th class="skw-rank">#</th>
+                    <th>검색어</th>
+                    <th class="skw-engine">검색</th>
+                    <th class="skw-num">유입</th>
+                    <th class="skw-num">문의</th>
+                    <th class="skw-bar">비중</th>
+                  </tr>
+                </thead>
+                <tbody id="searchKeywordBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="analytics-row funnel-section" data-order="7">
           <div class="panel">
             <div class="panel-head">
               <h3>
@@ -651,6 +688,6 @@
     ></script>
     <script defer src="config.js?v=20260514-heatmap"></script>
     <script defer src="admin.js?v=20260626-authfast"></script>
-    <script defer src="analytics.js?v=20260725-channel"></script>
+    <script defer src="analytics.js?v=20260811-keywords"></script>
   </body>
 </html>

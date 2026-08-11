@@ -928,6 +928,65 @@
   padding-top: 6px;
   margin-top: 2px;
 }
+/* 검색어 유입 (유입통계) */
+.search-keyword-table-wrap {
+  overflow-x: auto;
+}
+.search-keyword-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.search-keyword-table th {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: normal;
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+.search-keyword-table td {
+  font-size: 13.5px;
+  padding: 9px 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.search-keyword-table tr:last-child td {
+  border-bottom: none;
+}
+.search-keyword-table .skw-rank {
+  width: 34px;
+  color: #94a3b8;
+}
+.search-keyword-table .skw-kw {
+  font-weight: 600;
+  word-break: break-all;
+}
+.search-keyword-table .skw-engine {
+  width: 62px;
+  color: #64748b;
+  font-size: 12.5px;
+}
+.search-keyword-table .skw-num {
+  width: 64px;
+  text-align: right;
+}
+.search-keyword-table .skw-bar {
+  width: 130px;
+}
+.skw-bar-fill {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: #dcfce7;
+}
+.est-card-keyword {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
 .est-inflow-link a {
   color: #2563eb;
   word-break: break-all;
