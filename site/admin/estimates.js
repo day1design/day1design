@@ -115,6 +115,8 @@ function statusBadge(s) {
 
 const SOURCE_LABEL_MAP = {
   homepage: "홈페이지",
+  instagram_official: "인스타 오피셜",
+  instagram_mkt: "인스타 마케팅",
   meta: "Meta",
   google: "Google",
   naver: "Naver",
@@ -445,6 +447,8 @@ function filtered() {
 // ===== CSV 다운로드 (UTF-8 BOM, 엑셀 호환) =====
 const SOURCE_LABELS_EXPORT = {
   homepage: "홈페이지",
+  instagram_official: "인스타 오피셜(오가닉)",
+  instagram_mkt: "인스타 마케팅(오가닉)",
   meta: "Meta 광고",
   google: "Google",
   naver: "Naver",

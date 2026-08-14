@@ -53,6 +53,8 @@ const ALLOWED_DOCUMENT_TYPES = [
 ];
 const SOURCE_LABELS = {
   homepage: "Homepage",
+  instagram_official: "IG오피셜",
+  instagram_mkt: "IG마케팅",
   meta: "Meta",
   google: "Google",
   naver: "Naver",
@@ -84,7 +86,15 @@ function normalizeEstimateAttribution(fields) {
   // 슬러그화한 값이라 "네이버-블로그-견적문의"처럼 한글로 들어온다(marketing.js
   // deriveUtm). 영문만 매칭하던 동안 슬러그 유입이 전부 'other'(기타)로 떨어졌다.
   let source = "homepage";
-  if (
+  // 인스타 프로필(리틀리) 링크는 Meta 유료광고와 완전히 다른 채널이고, 오피셜
+  // 계정과 마케팅 계정도 성과를 따로 봐야 해서 계정 단위로 가른다. 아래 meta
+  // 분기의 /instagram|인스타/ 가 이 값을 먼저 삼켜 "끝 Meta"로 찍히던 오분류
+  // 방지 — 판별 토큰은 ig-organic-* / ig-mkt-* 슬러그가 심는 utm 값이다.
+  if (/(instagram-official|인스타그램 오피셜)/.test(raw)) {
+    source = "instagram_official";
+  } else if (/(instagram-marketing|인스타그램 마케팅)/.test(raw)) {
+    source = "instagram_mkt";
+  } else if (
     /(facebook|instagram|meta|fbclid|fb\.|ig\.|threads|메타|페이스북|페북|인스타)/.test(
       raw,
     )

@@ -26,6 +26,8 @@ const STATUS_COLORS = {
 const SOURCE_LABELS = {
   homepage: "홈페이지",
   instagram_ad: "[AD]IG",
+  instagram_official: "IG오피셜",
+  instagram_mkt: "IG마케팅",
   instagram: "IG",
   facebook_ad: "[AD]FB",
   facebook: "FB",
@@ -50,6 +52,8 @@ const SOURCE_LABELS = {
 const SOURCE_COLORS = {
   homepage: "#1a2f4e",
   instagram_ad: "#833AB4",
+  instagram_official: "#A66BC9",
+  instagram_mkt: "#D98CB3",
   instagram: "#C8A2D6",
   facebook_ad: "#1877F2",
   facebook: "#8AB4F8",
@@ -66,10 +70,20 @@ const SOURCE_COLORS = {
   other: "#B8C0CC",
 };
 
+// 유료 광고로 들어온 접수의 Source 키. Meta 리드폼과 Meta 광고 슬러그가 여기
+// 해당한다. google/naver 는 검색 유입도 같은 키라 광고로 볼 수 없어 뺀다.
+const PAID_SUBMISSION_SOURCES = new Set([
+  "meta",
+  "instagram_ad",
+  "facebook_ad",
+]);
+
 const SUBMISSION_SOURCE_ORDER = [
   "homepage",
   "instagram_ad",
   "facebook_ad",
+  "instagram_official",
+  "instagram_mkt",
   "instagram",
   "facebook",
   "threads",
@@ -2437,8 +2451,14 @@ function renderSubmissionStats(range) {
     const src = normalizeSubmissionSource(r.Source);
     rowsInRange.push({ ...r, sourceKey: src });
     sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+    // 광고 캠페인 집계("광고별 효율" · "캠페인 TOP 5")는 유료 채널 접수만 센다.
+    // 마케팅 슬러그는 오가닉(인스타 프로필·네이버 블로그)이어도 라벨이 Campaign
+    // 에 실려 오는데, 같이 세면 광고가 아닌 유입이 광고 실적으로 잡힌다.
+    // 오가닉 슬러그별 성과는 마케팅 링크 페이지의 슬러그 전환수에서 본다.
     const c = (r.Campaign || "").trim();
-    if (c) campaigns[c] = (campaigns[c] || 0) + 1;
+    if (c && PAID_SUBMISSION_SOURCES.has(src)) {
+      campaigns[c] = (campaigns[c] || 0) + 1;
+    }
     const st = r.Status || "접수대기";
     statusCount[st] = (statusCount[st] || 0) + 1;
   }

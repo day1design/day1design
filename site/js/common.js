@@ -25,6 +25,14 @@
 
   function classifySource(raw) {
     const text = String(raw || "").toLowerCase();
+    // 인스타 프로필(리틀리) 링크 = 오가닉. 계정별로 갈라 보고, Meta 유료광고보다
+    // 먼저 판별한다 (아래 meta 분기의 instagram 이 이 값을 먼저 삼킨다).
+    if (/instagram-official/.test(text)) {
+      return { source: "instagram_official", platform: "IG오피셜" };
+    }
+    if (/instagram-marketing/.test(text)) {
+      return { source: "instagram_mkt", platform: "IG마케팅" };
+    }
     if (/(facebook|instagram|meta|fbclid|fb\.|ig\.|threads)/.test(text)) {
       return { source: "meta", platform: "Meta" };
     }
