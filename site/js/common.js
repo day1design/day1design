@@ -52,6 +52,29 @@
     return { source: "homepage", platform: "Homepage" };
   }
 
+  // 마케팅 슬러그 꼬리표를 "이번 방문(탭)" 범위로 붙잡아 둔다. 접수 폼은 30일짜리
+  // d1d_src 쿠키를 그대로 last-touch 로 읽어서, 과거에 누른 슬러그가 오늘 접수에
+  // 도장 찍히는 오염이 있었다 (2026-08-14 실측: 구글 검색으로 들어온 접수가 며칠 전
+  // 네이버 블로그 슬러그로 기록). 랜딩 페이지가 어디든 잡히도록 common.js 에 둔다
+  // — estimates.js 는 견적 페이지에서만 실행돼 다른 페이지 랜딩을 놓친다.
+  (function captureMarketingTag() {
+    try {
+      const qs = new URLSearchParams(location.search);
+      const label = qs.get("src") || "";
+      const utmSource = qs.get("utm_source") || "";
+      if (!label && !utmSource) return;
+      sessionStorage.setItem(
+        "day1_marketing_attr",
+        JSON.stringify({
+          label,
+          utm_source: utmSource,
+          utm_medium: qs.get("utm_medium") || "",
+          utm_campaign: qs.get("utm_campaign") || "",
+        }),
+      );
+    } catch {}
+  })();
+
   function readStoredAttribution() {
     try {
       return JSON.parse(sessionStorage.getItem(ATTRIBUTION_KEY) || "null");

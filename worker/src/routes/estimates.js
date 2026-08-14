@@ -121,8 +121,14 @@ function normalizeEstimateAttribution(fields) {
   };
 }
 
-// First-touch 출처 — 자체 트래커 SessionId로 D1 HeatmapEvents 의
-// 가장 오래된 page_view 이벤트에서 referrer/utm 추출하고 정규화
+// 방문 경계 — 30분 이상 활동이 끊기면 다른 방문으로 본다(GA 관행과 동일).
+const VISIT_GAP_MS = 30 * 60 * 1000;
+
+// First-touch 출처 — 자체 트래커 SessionId로 D1 HeatmapEvents 에서 추출·정규화.
+// 범위는 "접수 시점이 속한 방문" 하나다. SessionId 는 30일 TTL 을 방문마다
+// 갱신하는 슬라이딩이라 재방문자는 ID 가 사실상 영구다. 세션 전체를 훑으면
+// 몇 달 전 진입이 오늘 접수의 첫 유입으로 찍힌다(2026-08-14 실측: 85일 전
+// 구글 방문이 "첫 google" 로 기록).
 async function fetchFirstTouch(env, sessionId) {
   const empty = {
     source: "",
@@ -136,23 +142,41 @@ async function fetchFirstTouch(env, sessionId) {
   };
   if (!sessionId || !env?.DB) return empty;
   try {
-    // 정렬 1순위 = "출처가 실린 진입" 우선, 2순위 = 시간순.
-    //   맨 처음 진입이 direct(꼬리표 없음)여도 같은 세션의 뒤쪽 진입에 네이버/광고
-    //   꼬리표가 있으면 그것을 첫 출처로 쓴다. 맨 처음 진입에 이미 출처가 있으면
-    //   그 행이 곧 "가장 오래된 출처 있는 행"이라 기존 동작과 동일하다.
-    //   (이 폴백 이전에는 direct 로 시작한 세션의 유입경로가 통째로 버려졌다)
-    const row = await env.DB.prepare(
-      `SELECT Referrer, RefPath, UtmSource, UtmMedium, UtmCampaign
+    // 최신순으로 받아 30분 공백이 나오는 지점까지가 "이번 방문"이다.
+    // 방문 경계 계산은 JS 로 한다 — D1(SQLite)에서 CTE·윈도우 함수로 짜면
+    // silent fail 이 나기 쉬워 결과가 조용히 비는 사고가 있었다.
+    const recent = await env.DB.prepare(
+      `SELECT Referrer, RefPath, UtmSource, UtmMedium, UtmCampaign, CreatedAt
        FROM HeatmapEvents
        WHERE SessionId = ? AND EventType = 'page_view'
-       ORDER BY
-         CASE WHEN COALESCE(Referrer,'') <> '' OR COALESCE(UtmSource,'') <> ''
-              THEN 0 ELSE 1 END,
-         CreatedAt ASC
-       LIMIT 1`,
+       ORDER BY CreatedAt DESC
+       LIMIT 200`,
     )
       .bind(sessionId)
-      .first();
+      .all();
+    const rows = recent?.results || [];
+    if (!rows.length) return empty;
+
+    const visitDesc = [];
+    let prevTs = null;
+    for (const r of rows) {
+      const ts = Date.parse(r.CreatedAt || "");
+      if (!Number.isFinite(ts)) continue;
+      if (prevTs !== null && prevTs - ts > VISIT_GAP_MS) break;
+      visitDesc.push(r);
+      prevTs = ts;
+    }
+    const visitAsc = visitDesc.reverse();
+    // 이번 방문 안에서 "출처가 실린" 가장 이른 진입. 방문 중간 페이지의 referrer
+    // 는 트래커가 같은 호스트면 빈값으로 남기므로 사실상 진입 행만 걸린다.
+    // 하나도 없으면(=꼬리표 없는 직접 진입) 방문의 첫 행을 그대로 써서 기존처럼
+    // homepage(직접)로 떨어지게 둔다 — 빈값으로 반환하면 채널 집계가 끝(Source)
+    // 기준으로 넘어가 의미가 달라진다.
+    const row =
+      visitAsc.find(
+        (r) =>
+          String(r.Referrer || "") !== "" || String(r.UtmSource || "") !== "",
+      ) || visitAsc[0];
     if (!row) return empty;
     const norm = normalizeEstimateAttribution({
       utm_source: row.UtmSource || "",

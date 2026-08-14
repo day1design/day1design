@@ -40,6 +40,21 @@ function deriveUtm(label) {
   return slug || "marketing";
 }
 
+// 광고관리자·비즈니스관리자에서 소재를 확인하려고 누른 클릭은 실제 유입이
+// 아니다. 클릭 수·출처 쿠키·UTM 을 모두 건너뛴다 — 2026-08-14 실측으로
+// meta-traffic-campaign-01 의 클릭 837 에 내부 미리보기가 섞여 있었고, 그때 심긴
+// 쿠키가 나중에 들어온 접수의 유입경로로 찍히는 오염까지 만들었다.
+const PREVIEW_REFERRER_RE = /(^|\.)(adsmanager|business)\.facebook\.com$/i;
+function isInternalPreview(request) {
+  try {
+    const referer = request.headers.get("referer") || "";
+    if (!referer) return false;
+    return PREVIEW_REFERRER_RE.test(new URL(referer).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function isHttpUrl(value) {
   if (!value) return false;
   try {
@@ -100,6 +115,15 @@ export async function handleSlugRedirect(request, env, ctx, slug) {
   } catch {
     dest = new URL(HOME_FALLBACK);
   }
+
+  // 미리보기 클릭은 랜딩만 보여주고 계측은 전부 건너뛴다.
+  if (isInternalPreview(request)) {
+    const headers = new Headers();
+    headers.set("location", dest.toString());
+    headers.set("cache-control", "no-store");
+    return new Response(null, { status: 302, headers });
+  }
+
   if (!dest.searchParams.get("utm_source")) {
     dest.searchParams.set("utm_source", utmSource);
   }

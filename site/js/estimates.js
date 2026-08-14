@@ -198,35 +198,64 @@
   });
 
   // ---------- Marketing Attribution (슬러그/utm 보존) ----------
-  function readMarketingAttribution() {
-    const result = {
-      label: "",
-      utm_source: "",
-      utm_medium: "",
-      utm_campaign: "",
-    };
+  // 꼬리표는 "이번 방문"에만 유효하다. d1d_src 쿠키는 30일짜리라 그대로 읽으면
+  // 며칠 전에 누른 슬러그가 오늘 접수의 유입경로로 찍힌다(데이터 오염).
+  // 우선순위 ① 이번 진입 URL ② 이번 방문 중 잡아둔 값(common.js) ③ 방금 누른 쿠키.
+  const MARKETING_ATTR_KEY = "day1_marketing_attr";
+  const SLUG_COOKIE_FRESH_MS = 30 * 60 * 1000;
+
+  function emptyAttribution() {
+    return { label: "", utm_source: "", utm_medium: "", utm_campaign: "" };
+  }
+
+  // 쿠키에는 슬러그를 누른 시각(ts)이 이미 들어있다. 그 시각이 오래됐으면
+  // 이번 방문의 출처가 아니므로 버린다.
+  function readFreshSlugCookie() {
     try {
       const raw = document.cookie
         .split(/;\s*/)
         .find((p) => p.startsWith("d1d_src="));
-      if (raw) {
-        const obj = JSON.parse(
-          decodeURIComponent(raw.slice("d1d_src=".length)),
-        );
-        result.label = String(obj.label || "");
-        result.utm_source = String(obj.utm?.source || "");
-        result.utm_medium = String(obj.utm?.medium || "");
-        result.utm_campaign = String(obj.utm?.campaign || "");
-      }
-    } catch {}
+      if (!raw) return null;
+      const obj = JSON.parse(decodeURIComponent(raw.slice("d1d_src=".length)));
+      const clickedAt = Date.parse(obj.ts || "");
+      if (!Number.isFinite(clickedAt)) return null;
+      if (Date.now() - clickedAt > SLUG_COOKIE_FRESH_MS) return null;
+      return {
+        label: String(obj.label || ""),
+        utm_source: String(obj.utm?.source || ""),
+        utm_medium: String(obj.utm?.medium || ""),
+        utm_campaign: String(obj.utm?.campaign || ""),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function readMarketingAttribution() {
     try {
       const qs = new URLSearchParams(location.search);
-      if (qs.get("utm_source")) result.utm_source = qs.get("utm_source");
-      if (qs.get("utm_medium")) result.utm_medium = qs.get("utm_medium");
-      if (qs.get("utm_campaign")) result.utm_campaign = qs.get("utm_campaign");
-      if (qs.get("src")) result.label = qs.get("src");
+      const label = qs.get("src") || "";
+      const utmSource = qs.get("utm_source") || "";
+      if (label || utmSource) {
+        return {
+          label,
+          utm_source: utmSource,
+          utm_medium: qs.get("utm_medium") || "",
+          utm_campaign: qs.get("utm_campaign") || "",
+        };
+      }
     } catch {}
-    return result;
+
+    try {
+      const saved = JSON.parse(
+        sessionStorage.getItem(MARKETING_ATTR_KEY) || "null",
+      );
+      if (saved && (saved.label || saved.utm_source)) {
+        return { ...emptyAttribution(), ...saved };
+      }
+    } catch {}
+
+    return readFreshSlugCookie() || emptyAttribution();
   }
 
   function buildSubmitPayload() {
