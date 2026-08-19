@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ─── day1design Meta 리드 폴러 (아이맥 LaunchAgent, one-shot) ───
+// ─── day1design Meta 리드 폴러 (아이맥 LaunchAgent, 상주 데몬) ───
 // Meta 인스턴트폼 리드를 시스템 사용자 토큰으로 조회해 day1design 워커로 전달한다.
 // Make 시나리오 대체용. 폴라애드/자수성가 폴러와 동일 패턴.
 //
@@ -9,10 +9,15 @@
 //    조회 구간이 겹쳐도 중복 접수/중복 문자는 서버가 막는다.
 //  - 매 실행마다 하트비트 1회 → 리드가 0건이어도 "살아있음"이 서버에 남는다.
 //    실패 시에는 하트비트(status=fail) + 텔레그램 인프라봇 양쪽으로 알린다.
+//  - --daemon: 상주하며 20분 간격 내부 루프. 폴링 주기를 launchd 에 맡기지 않는 이유는
+//    2026-08-20 사고 — 아이맥 gui/501 도메인이 StartInterval 스폰을 통째로 거부(domain
+//    response 36)해 이 맥의 폴러 8개가 동시에 멈췄다. 상주 프로세스는 그 영향을 안 받는다.
+//    한 번의 폴링이 매달리면(타임아웃 없음) 워치독이 프로세스를 죽이고 KeepAlive 가 새로 띄운다.
 //
 // 검증: node --check worker.mjs / node --test worker.test.mjs
-//       META_LEAD_DRY_RUN=1 node worker.mjs   (조회만, 전달·발송 없음)
+//       META_LEAD_DRY_RUN=1 node worker.mjs   (1회 조회만, 전달·발송 없음)
 //       node worker.mjs --inspect             (폼 질문 key 확인용, 값은 마스킹)
+//       node worker.mjs                       (인자 없으면 1회 폴링 후 종료 — 수동 점검용)
 
 import { createHmac } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -29,6 +34,12 @@ const DEFAULT_STATE_FILE = resolve(
   "state.json",
 );
 const LOCK_STALE_MS = 10 * 60 * 1000;
+const DEFAULT_LOOP_MS = 20 * 60 * 1000;
+// 한 번의 폴링이 이보다 오래 걸리면 매달린 것으로 보고 프로세스를 재시작한다.
+// (락 만료와 같은 값 — 죽은 프로세스의 락은 다음 기동이 곧바로 회수한다)
+const RUN_WATCHDOG_MS = LOCK_STALE_MS;
+
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 function envRequired(name) {
   const value = String(process.env[name] || "").trim();
@@ -317,15 +328,43 @@ function pruneProcessed(processed, floorMs) {
   return next;
 }
 
+// 락 파일에 적힌 PID가 아직 살아있는지 본다.
+// 판단이 서지 않으면 살아있다고 본다 — 돌고 있는 폴러를 잘못 밀어내는 것보다
+// 늦게 회수하는 편이 안전하고, 그 경우 아래 mtime 규칙이 받아준다.
+async function lockOwnerAlive(path) {
+  try {
+    const pid = Number((await readFile(path, "utf8")).trim());
+    if (!Number.isInteger(pid) || pid <= 0) return true;
+    if (pid === process.pid) return true;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return error?.code === "EPERM"; // 권한만 없을 뿐 프로세스는 있다
+    }
+  } catch (_) {
+    return true;
+  }
+}
+
 async function acquireLock(path) {
-  const tryOpen = () => open(path, "wx", 0o600);
+  const tryOpen = async () => {
+    const handle = await open(path, "wx", 0o600);
+    // 소유 프로세스를 남긴다. 재부팅으로 프로세스가 사라지면 다음 실행이 곧바로 회수한다.
+    try {
+      await handle.writeFile(String(process.pid));
+    } catch (_) {}
+    return handle;
+  };
   try {
     return await tryOpen();
   } catch (error) {
     if (error?.code !== "EEXIST") throw error;
     try {
       const info = await stat(path);
-      if (Date.now() - info.mtimeMs > LOCK_STALE_MS) {
+      const expired = Date.now() - info.mtimeMs > LOCK_STALE_MS;
+      const orphaned = !(await lockOwnerAlive(path));
+      if (expired || orphaned) {
         await rm(path, { force: true });
         return await tryOpen();
       }
@@ -719,6 +758,33 @@ async function main() {
   }
 }
 
+// 폴링 1회를 워치독과 함께 돌린다. 매달리면 프로세스를 끝내고 launchd(KeepAlive)에 맡긴다.
+// fetch 에 타임아웃이 없어 응답 없는 소켓 하나가 루프 전체를 멈출 수 있기 때문이다.
+async function runOnceGuarded() {
+  let timer;
+  const stalled = new Promise((done) => {
+    timer = setTimeout(() => done("stalled"), RUN_WATCHDOG_MS);
+  });
+  const outcome = await Promise.race([main().then(() => "done"), stalled]);
+  clearTimeout(timer);
+  if (outcome === "stalled") {
+    console.error(`${TAG} watchdog 폴링이 ${RUN_WATCHDOG_MS}ms 를 넘겨 프로세스를 재시작한다`);
+    process.exit(1);
+  }
+}
+
+async function loopForever() {
+  const intervalMs = envNumber("META_LEAD_LOOP_MS", DEFAULT_LOOP_MS);
+  console.log(`${TAG} daemon start pid=${process.pid} intervalMs=${intervalMs}`);
+  for (;;) {
+    const startedAt = Date.now();
+    process.exitCode = 0; // 실패해도 데몬은 계속 돈다(실패 알림은 main 이 이미 보냈다)
+    await runOnceGuarded();
+    await sleep(Math.max(60_000, intervalMs - (Date.now() - startedAt)));
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  await main();
+  if (process.argv.includes("--daemon")) await loopForever();
+  else await main();
 }

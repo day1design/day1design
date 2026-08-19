@@ -1,16 +1,31 @@
 # 아이맥 Meta 리드 폴러 (day1design)
 
 Meta 인스턴트폼 리드를 시스템 사용자 토큰으로 직접 조회해 day1design 워커로
-전달하는 one-shot LaunchAgent. **Make 시나리오 대체**용이며 폴라애드·자수성가
+전달하는 상주 LaunchAgent. **Make 시나리오 대체**용이며 폴라애드·자수성가
 폴러와 같은 패턴이다.
 
 ## 실행 모델
 
 - label: `com.day1design.meta-lead-poller`
 - host: `imac`(192.168.0.210, user `pola`) / remote dir: `/Users/pola/day1design-meta-lead-poller`
-- interval: 20분(`StartInterval 1200`), 로그인·재부팅 후 즉시 1회
+- interval: 20분 — **`worker.mjs --daemon` 내부 루프**가 쥔다(`KeepAlive` 상주). 주기를
+  `StartInterval` 에 맡기지 않는 이유는 아래 "왜 상주인가" 참고
 - logs: `logs/worker.log`, `logs/worker.err.log`
 - recovery: 마지막 성공 시각에서 48시간을 겹쳐 조회하고 `leadId` 로 중복 제거
+
+### 왜 상주인가 (2026-08-20 사고)
+
+아이맥 사용자세션 launchd(`gui/501`)가 StartInterval 스폰을 통째로 거부하는 상태에
+빠져(`interval event: domain response: 36` → `pended nondemand spawn`) 이 맥의 리드 폴러
+8개가 05:12~06:03 사이 동시에 멈췄다. 맥은 켜져 있었고 폴러도 정상 종료(exit 0) 상태였다.
+상주 프로세스는 새 스폰을 필요로 하지 않으므로 이 스톨에 영향받지 않는다.
+
+- 한 번의 폴링이 10분을 넘기면(요청에 타임아웃이 없다) 워치독이 프로세스를 끝내고
+  `KeepAlive` 가 새로 띄운다. 남은 락은 PID 확인으로 다음 기동이 즉시 회수한다.
+- 즉시 죽는 상태여도 `ThrottleInterval 300` 이라 5분에 한 번만 재기동한다(크래시 리스폰
+  폭주로 launchd 도메인을 밀지 않기 위함 — 위 사고의 배경이 그 폭주였다).
+- 수동 점검은 인자 없이: `node worker.mjs`(1회 폴링 후 종료).
+- 살았는지 보기: `launchctl print gui/501/com.day1design.meta-lead-poller | grep -E "state|pid"`
 
 ## 중복 방지 (2중)
 

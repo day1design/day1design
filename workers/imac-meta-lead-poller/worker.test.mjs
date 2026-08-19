@@ -84,6 +84,11 @@ function leadFixture(id, createdTime, fieldData) {
   };
 }
 
+// runPoll 가드 테스트의 리드 시각은 실행 시점 기준이어야 한다.
+// processed 보존창이 now−96h 라서 고정 날짜를 쓰면 그 날짜가 지나는 순간
+// "재전송하지 않는다" 가드가 코드와 무관하게 항상 깨진다(2026-08-20 실제로 깨져 있었음).
+const hoursAgoIso = (hours) => new Date(Date.now() - hours * 3600000).toISOString();
+
 test("폼 ID 파싱 — 공백/중복/비숫자 제거", () => {
   assert.deepEqual(parseFormIds(" 123, 123 ,abc,456 ,"), ["123", "456"]);
   assert.deepEqual(parseFormIds(""), []);
@@ -241,11 +246,11 @@ test("[guard] 전화번호를 못 읽은 리드가 뒤 리드를 막지 않는�
     const result = await runPoll({
       fetchImpl: stubFetch(
         [
-          leadFixture("noPhone", "2026-07-25T01:00:00+0000", [
+          leadFixture("noPhone", hoursAgoIso(2), [
             { name: "성함", values: ["임혜진"] },
             { name: "궁금한_점", values: ["욕실"] },
           ]),
-          leadFixture("good", "2026-07-25T02:00:00+0000", [
+          leadFixture("good", hoursAgoIso(1), [
             { name: "성함", values: ["임혜진"] },
             { name: "핸드폰번호", values: ["010-6624-6615"] },
           ]),
@@ -276,15 +281,16 @@ test("[guard] 전화번호를 못 읽은 리드가 뒤 리드를 막지 않는�
 
 test("[guard] 전달 실패건은 워터마크를 되돌려 다음 실행이 반드시 다시 잡는다", async () => {
   await withPoller(async ({ readState }) => {
+    const failsAt = hoursAgoIso(2);
     await assert.rejects(
       runPoll({
         fetchImpl: stubFetch(
           [
-            leadFixture("fails", "2026-07-25T01:00:00+0000", [
+            leadFixture("fails", failsAt, [
               { name: "성함", values: ["임혜진"] },
               { name: "연락처", values: ["010-1111-2222"] },
             ]),
-            leadFixture("ok", "2026-07-25T02:00:00+0000", [
+            leadFixture("ok", hoursAgoIso(1), [
               { name: "성함", values: ["김철수"] },
               { name: "연락처", values: ["010-3333-4444"] },
             ]),
@@ -301,7 +307,7 @@ test("[guard] 전달 실패건은 워터마크를 되돌려 다음 실행이 반
     const state = await readState();
     assert.equal(
       state.highWatermarkAt,
-      "2026-07-25T01:00:00.000Z",
+      failsAt,
       "실패한 리드 시각으로 워터마크가 고정돼야 재조회된다",
     );
     assert.ok(!state.processed.fails, "실패건은 processed 에 남으면 안 됨");

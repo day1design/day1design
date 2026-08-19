@@ -8,11 +8,15 @@
     <string>/usr/local/bin/node</string>
     <string>--env-file=/Users/pola/day1design-meta-lead-poller/.env</string>
     <string>/Users/pola/day1design-meta-lead-poller/worker.mjs</string>
+    <string>--daemon</string>
   </array>
   <key>WorkingDirectory</key><string>/Users/pola/day1design-meta-lead-poller</string>
   <key>RunAtLoad</key><true/>
-  <key>StartInterval</key><integer>1200</integer>
-  <key>ThrottleInterval</key><integer>30</integer>
+  <!-- 폴링 주기는 worker.mjs 내부 루프(20분)가 쥔다. StartInterval 을 쓰면 launchd 도메인
+       스폰 스톨(2026-08-20 gui/501 domain response 36)에 폴링이 통째로 멈춘다. -->
+  <key>KeepAlive</key><true/>
+  <!-- 즉시 죽는 상태여도 5분에 한 번만 재기동 — 크래시 리스폰 폭주로 도메인을 밀지 않는다. -->
+  <key>ThrottleInterval</key><integer>300</integer>
   <key>StandardOutPath</key><string>/Users/pola/day1design-meta-lead-poller/logs/worker.log</string>
   <key>StandardErrPath</key><string>/Users/pola/day1design-meta-lead-poller/logs/worker.err.log</string>
   <key>EnvironmentVariables</key>
