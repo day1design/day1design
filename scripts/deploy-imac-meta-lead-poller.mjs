@@ -121,8 +121,9 @@ exec("ssh", [
     `mv ${remoteWorkerStage} ${remoteDir}/worker.mjs`,
     `mv ${remotePlistStage} ${launchDir}/${plistName}`,
     `launchctl bootout gui/501 ${launchDir}/${plistName} 2>/dev/null || true`,
+    // bootstrap 이 RunAtLoad 로 곧바로 띄운다. 여기에 kickstart -k 를 덧붙이면
+    // 방금 뜬 데몬을 죽였다 되살리는 꼴이라 ThrottleInterval(300s) 만큼 멈춰 선다.
     `launchctl bootstrap gui/501 ${launchDir}/${plistName}`,
-    `launchctl kickstart -k gui/501/com.day1design.meta-lead-poller`,
   ].join("; "),
 ]);
 console.log("[deploy] 아이맥 Meta 리드 폴러 배포/재시작 완료");
