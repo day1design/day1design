@@ -81,6 +81,7 @@ const allowed = [
   "META_LEAD_MAX_PAGES",
   "META_LEAD_STATE_FILE",
   "META_LEAD_DRY_RUN",
+  "META_LEAD_LOOP_MS", // 상주 데몬 폴링 간격 override (기본 20분)
 ];
 const remoteEnv = `${allowed
   .filter((key) => sourceEnv[key] !== undefined && sourceEnv[key] !== "")
