@@ -906,8 +906,11 @@ export async function handleMetaFormSchema(
       : `└ ✅ 이름·연락처 매핑 정상 — 별도 조치 없이 자동 반영됩니다`,
   );
 
+  // 인프라봇으로 보낸다 — 접수 알림 채널에 섞이면 신규 상담 신청이 묻힌다.
+  // 폼 구조 변경은 운영자가 봐야 할 시스템 신호이지 고객 접수 건이 아니다.
+  // (아이맥 폴러의 폼 감지·조회실패 알림도 같은 인프라 채널을 쓴다)
   ctx.waitUntil(
-    Promise.resolve(notifyTelegram(env, lines.join("\n"))).catch(() => {}),
+    Promise.resolve(notifyInfra(env, lines.join("\n"))).catch(() => {}),
   );
 
   return jsonOk({

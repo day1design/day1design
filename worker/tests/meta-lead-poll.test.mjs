@@ -639,16 +639,22 @@ test("[guard] 새 질문은 D1 원문(MetaFieldData)과 텔레그램 알림에 �
 
 test("[guard] 폼 질문 변경 감지 — 최초는 조용, 변경 시에만 알린다", async () => {
   const sent = [];
+  const leadChannel = [];
   globalThis.fetch = async (url, init) => {
-    if (String(url).includes("api.telegram.org")) {
-      sent.push(JSON.parse(init?.body || "{}").text || "");
+    const u = String(url);
+    if (u.includes("api.telegram.org")) {
+      const text = JSON.parse(init?.body || "{}").text || "";
+      if (u.includes("infra-token")) sent.push(text);
+      else leadChannel.push(text);
     }
     return Response.json({ ok: true });
   };
   const env = {
     META_LEAD_SECRET: SECRET,
-    TELEGRAM_BOT_TOKEN: "bot-token",
+    TELEGRAM_BOT_TOKEN: "lead-token",
     TELEGRAM_CHAT_ID: "-100123",
+    INFRA_BOT_TOKEN: "infra-token",
+    INFRA_CHAT_ID: "-100999",
   };
   const services = fakeServices();
   const tasks = [];
@@ -695,14 +701,20 @@ test("[guard] 폼 질문 변경 감지 — 최초는 조용, 변경 시에만 �
   assert.match(msg, /추가: 반려동물을 키우시나요/);
   assert.match(msg, /삭제: 지역/);
   assert.match(msg, /이름·연락처 매핑 정상/);
+  // 접수 알림 채널에 섞이면 신규 상담 신청이 폼 공지에 묻힌다 — 인프라봇 전용이어야 한다.
+  assert.deepEqual(leadChannel, [], "폼 구조 알림이 접수 채널로 새면 안 된다");
 });
 
 test("[guard] 이름·연락처를 못 찾는 폼은 최초 보고에서도 즉시 경고한다", async () => {
   // 이 폼의 리드는 전량 '오류' 카드가 된다. 조용히 넘어가면 접수가 통째로 멈춘 걸 뒤늦게 안다.
   const sent = [];
+  const leadChannel = [];
   globalThis.fetch = async (url, init) => {
-    if (String(url).includes("api.telegram.org")) {
-      sent.push(JSON.parse(init?.body || "{}").text || "");
+    const u = String(url);
+    if (u.includes("api.telegram.org")) {
+      const text = JSON.parse(init?.body || "{}").text || "";
+      if (u.includes("infra-token")) sent.push(text);
+      else leadChannel.push(text);
     }
     return Response.json({ ok: true });
   };
@@ -722,8 +734,10 @@ test("[guard] 이름·연락처를 못 찾는 폼은 최초 보고에서도 즉�
     }),
     {
       META_LEAD_SECRET: SECRET,
-      TELEGRAM_BOT_TOKEN: "bot-token",
+      TELEGRAM_BOT_TOKEN: "lead-token",
       TELEGRAM_CHAT_ID: "-100123",
+      INFRA_BOT_TOKEN: "infra-token",
+      INFRA_CHAT_ID: "-100999",
     },
     { waitUntil: (t) => tasks.push(t) },
     fakeServices(),
@@ -732,6 +746,7 @@ test("[guard] 이름·연락처를 못 찾는 폼은 최초 보고에서도 즉�
   await Promise.allSettled(tasks);
   assert.deepEqual(body.critical, ["name", "phone"]);
   assert.match(sent.join("\n"), /전량 '오류' 카드로 저장됩니다/);
+  assert.deepEqual(leadChannel, [], "폼 구조 경고도 인프라봇 전용");
 });
 
 test("[guard] 매핑 판정은 워커 규칙 한 곳에서만 한다", () => {
