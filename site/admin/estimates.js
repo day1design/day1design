@@ -228,6 +228,23 @@ function metaAnswerMap(r) {
 // Meta 인스턴트폼 응답 원문(질문·답변 그대로). Meta 쪽 입력폼 질문이 바뀌어도
 // 이 목록이 새 질문을 그대로 보여주므로 상담카드를 손볼 필요가 없다.
 // 표준 8필드로 매핑된 항목(이름·연락처·공간 등)은 위쪽에 이미 나오므로 여기서는 생략한다.
+// Meta 폼 질문 key 를 사람이 읽는 라벨로 정리한다.
+// Meta 는 공백을 `_` 로 바꾸고 안내문을 괄호로 붙여 보낸다:
+//   `가용_예산(프로젝트_방향성_설정을_위해_대략적으로_기입해주세요)` → `가용 예산`
+function formLabel(question) {
+  const cleaned = String(question || "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/_+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || String(question || "");
+}
+
+// 표준 요약 필드로 흡수되지 않은 폼 응답을 접수 정보 dl 의 **정식 항목**으로 편입한다.
+// 질문 문구가 그대로 항목 라벨이 되므로, 폼을 조정하면 상담카드의 항목 구성도 같이 바뀐다.
+// (D1 컬럼을 새로 만들지는 않는다 — 질문이 사라져도 죽은 컬럼이 남고, 통계·필터가 쓰는
+//  기존 컬럼과 섞이면 접수 집계가 오염된다. 원본은 MetaFieldData JSON 한 곳에 있다.)
 function metaFormRows(r) {
   let pairs = [];
   try {
@@ -236,16 +253,17 @@ function metaFormRows(r) {
   } catch {
     return "";
   }
-  const rows = pairs.filter((p) => p && p.q && p.a && !p.f);
-  if (!rows.length) return "";
-  const body = rows
-    .map(
-      (p) =>
-        `<div class="form-answer"><span class="q">${escapeHtml(String(p.q))}</span>` +
-        `<span class="a">${escapeHtml(String(p.a))}</span></div>`,
-    )
+  return pairs
+    .filter((p) => p && p.q && p.a && !p.f)
+    .map((p) => {
+      const label = formLabel(p.q);
+      const short = label.length > 24 ? `${label.slice(0, 24)}…` : label;
+      return (
+        `<dt class="form-dt" title="${escapeHtml(label)}">${escapeHtml(short)}</dt>` +
+        `<dd>${escapeHtml(String(p.a))}</dd>`
+      );
+    })
     .join("");
-  return `<dt>폼 응답</dt><dd><div class="detail-note">${body}</div></dd>`;
 }
 
 function inflowDetailRows(r) {
@@ -534,7 +552,7 @@ function exportFilteredCsv() {
     "담당자",
     "메모",
     "유입경로",
-    ...formCols,
+    ...formCols.map(formLabel),
   ];
   const rows = list.map((r, i) => {
     const srcKey = (r.Source || "homepage").toLowerCase();
