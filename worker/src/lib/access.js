@@ -53,7 +53,10 @@ export function classifyAccess(request, opts = {}) {
   const path = url.pathname;
   const method = effectiveMethod(request, opts);
 
-  if (path === "/api/meta-lead" || path === "/api/meta-lead/heartbeat") {
+  // 서버-서버(아이맥 폴러) 경로는 Origin 이 없다. 시크릿 헤더로만 검증하므로
+  // origin 가드에서 걸리면 안 된다. meta-lead 하위 경로를 새로 추가할 때 여기에
+  // 같이 등록하지 않으면 핸들러에 닿기도 전에 403 origin_required 로 막힌다.
+  if (path === "/api/meta-lead" || path.startsWith("/api/meta-lead/")) {
     return { role: "integration", method, path };
   }
   if (path === "/" || path === "/api") return { role: "main", method, path };

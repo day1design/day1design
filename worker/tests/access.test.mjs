@@ -123,3 +123,21 @@ test("keeps server-to-server integration endpoint behind its route secret", () =
   assert.equal(access.ok, true);
   assert.equal(access.rule.role, "integration");
 });
+
+test("[guard] meta-lead 하위 서버-서버 경로는 Origin 없이 통과한다", () => {
+  // 폴러는 Origin 헤더가 없다. 새 하위 경로를 access.js 예외에 등록하지 않으면
+  // 핸들러에 닿기도 전에 403 origin_required 로 막혀 조용히 죽는다.
+  // (실제 사고: /api/meta-lead/form-schema 최초 배포분이 이 이유로 전량 403)
+  for (const path of [
+    "/api/meta-lead",
+    "/api/meta-lead/heartbeat",
+    "/api/meta-lead/form-schema",
+  ]) {
+    const access = authorizeRequest(
+      new Request(`https://api.example.test${path}`, { method: "POST" }),
+      env,
+    );
+    assert.equal(access.ok, true, `${path} 가 origin 가드에서 막히면 안 된다`);
+    assert.equal(access.rule.role, "integration", path);
+  }
+});
