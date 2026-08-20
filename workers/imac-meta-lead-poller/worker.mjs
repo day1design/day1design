@@ -677,7 +677,9 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
       }
     }
 
-    const detail =
+    // 폼 스키마 보고 결과는 아래에서 덧붙인다 — 헬스체크 detail 한 줄로 "감지가 돌고 있는가"를
+    // 상시 확인하기 위해서다. 성공 로그가 없으면 호출을 안 한 것과 구분되지 않는다.
+    let detail =
       `forms=${formIds.length} fetched=${leads.length} delivered=${delivered}` +
       ` duplicates=${duplicates} captured=${captured} failed=${failures.length}` +
       ` discovery=${discoveryNote}` +
@@ -721,6 +723,8 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
       // 입력폼 질문 변경 감지 — 폼이 조정되면 상담카드·알림이 따라가야 한다.
       // 질문 목록을 가공 없이 워커로 넘기고 판정은 워커가 한다(불변식 6과 같은 이유).
       // 폼별 try/catch + 전체가 리드 처리 이후이므로, 여기서 실패해도 수집은 이미 끝나 있다.
+      let schemaReported = 0;
+      let schemaChanged = 0;
       if (pageToken) {
         const nameById = new Map(discovered.map((f) => [f.id, f.name]));
         for (const formId of formIds) {
@@ -732,7 +736,7 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
               fetchImpl,
             });
             if (!questions.length) continue;
-            await reportFormSchema({
+            const result = await reportFormSchema({
               webhookUrl,
               webhookSecret,
               formId,
@@ -740,6 +744,8 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
               questions,
               fetchImpl,
             });
+            schemaReported += 1;
+            if (result?.changed) schemaChanged += 1;
           } catch (error) {
             console.error(
               `${TAG} form-schema ${formId} ${String(error?.message || error).slice(0, 200)}`,
@@ -747,6 +753,9 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
           }
         }
       }
+      detail += ` formSchema=${schemaReported}/${formIds.length}`;
+      if (schemaChanged) detail += ` formSchemaChanged=${schemaChanged}`;
+
       // 새 양식은 조용히 지나가면 안 된다 — 매핑 확인이 필요할 수 있으므로 알린다.
       if (newForms.length) {
         const lines = ["[day1design/meta-lead-poller] 🆕 새 리드 양식 감지"];
