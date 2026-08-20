@@ -23,6 +23,16 @@
 
 6. **Meta 리드 멱등키(`Estimates.MetaLeadId`)** — 폴러는 48h 를 겹쳐 조회하므로 leadId 유니크가 중복 접수·중복 문자를 막는 유일한 장치다(Cache API dedup 은 10분·콜로별이라 불충분). 마이그 `0031_meta_lead_poll.sql` 의 부분 유니크 인덱스와 `worker/src/routes/meta-lead.js` 의 leadId 분기를 제거·약화 금지. 가드: `worker/tests/meta-lead-poll.test.mjs`.
 
+7. **Meta 입력폼 변경 자동대응** — 폼 질문이 조정돼도 코드 수정 없이 상담카드·알림이 따라가야 한다.
+   - 리드 원문 응답은 `Estimates.MetaFieldData`(JSON `[{q,a,f}]`)에 전량 보관하고, 상담카드의 '폼 응답'과
+     텔레그램의 `📋 폼 응답` 블록이 이 원문을 렌더한다. **매핑(FIELD_RULES)에 안 걸리는 질문을 버리는 코드 금지.**
+   - 매핑 판정(`matchStandardField`)은 **워커 한 곳에서만** 한다. 폴러는 폼 질문 목록을 가공 없이
+     `/api/meta-lead/form-schema` 로 넘길 뿐이다(폴러가 따로 판정하면 두 규칙이 어긋난다).
+   - 폼 질문 변경은 워커가 `MetaFormSchemas` 스냅샷과 비교해 감지하고, 이름·연락처가 어느 질문에도
+     안 걸리면 즉시 경고한다(그 폼 리드는 전량 '오류' 카드가 된다).
+   - 폼별 리드 조회는 try/catch 로 격리한다 — 폼 하나의 오류가 나머지 폼 수집을 멈추면 안 된다.
+   - 가드: `worker/tests/meta-lead-poll.test.mjs` 의 "입력폼 변경 자동대응 가드" 6종.
+
 ## 배포
 
 - 배포는 항상 `git commit + push` 경유. Worker 는 commit 이후에만 `wrangler deploy`. (작업트리 직접 배포 금지 — `feedback_deploy_via_git_push`)

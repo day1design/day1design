@@ -84,6 +84,7 @@ export function createServices(env = {}) {
     healthChecks: createTableRepository(env, "HealthChecks"),
     intakeEvents: createTableRepository(env, "IntakeEvents"),
     systemHeartbeats: createTableRepository(env, "SystemHeartbeats"),
+    metaFormSchemas: createTableRepository(env, "MetaFormSchemas"),
     analyticsRaw: createObjectStore(env.IMAGES),
     media: createMediaStore(env.IMAGES, env.R2_PUBLIC_BASE),
   };

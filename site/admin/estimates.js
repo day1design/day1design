@@ -208,6 +208,46 @@ function cardKeywordHtml(r) {
 // 상세 모달의 유입 정보 — 첫 진입 주소 전체(호스트+뒷부분)와 검색어.
 // 블로그 유입이면 "어느 글에서 왔는지"가 이 링크로 바로 열린다.
 // RefPath 는 2026-08-11 부터 쌓이므로 그 이전 접수건은 호스트까지만 나온다.
+// 표준 필드로 흡수되지 않은 폼 응답만 { 질문: 답변 } 으로 추린다.
+// 엑셀 열·상담카드 행이 이 결과를 그대로 따라가므로, 폼에 질문이 늘면 열과 행도 같이 는다.
+function metaAnswerMap(r) {
+  let parsed = [];
+  try {
+    parsed = JSON.parse(r.MetaFieldData || "[]");
+  } catch {
+    return {};
+  }
+  if (!Array.isArray(parsed)) return {};
+  const map = {};
+  for (const p of parsed) {
+    if (p && p.q && p.a && !p.f) map[String(p.q)] = String(p.a);
+  }
+  return map;
+}
+
+// Meta 인스턴트폼 응답 원문(질문·답변 그대로). Meta 쪽 입력폼 질문이 바뀌어도
+// 이 목록이 새 질문을 그대로 보여주므로 상담카드를 손볼 필요가 없다.
+// 표준 8필드로 매핑된 항목(이름·연락처·공간 등)은 위쪽에 이미 나오므로 여기서는 생략한다.
+function metaFormRows(r) {
+  let pairs = [];
+  try {
+    const parsed = JSON.parse(r.MetaFieldData || "[]");
+    if (Array.isArray(parsed)) pairs = parsed;
+  } catch {
+    return "";
+  }
+  const rows = pairs.filter((p) => p && p.q && p.a && !p.f);
+  if (!rows.length) return "";
+  const body = rows
+    .map(
+      (p) =>
+        `<div class="form-answer"><span class="q">${escapeHtml(String(p.q))}</span>` +
+        `<span class="a">${escapeHtml(String(p.a))}</span></div>`,
+    )
+    .join("");
+  return `<dt>폼 응답</dt><dd><div class="detail-note">${body}</div></dd>`;
+}
+
 function inflowDetailRows(r) {
   const host = String(r.FirstReferrer || "").trim();
   if (!host) return "";
@@ -468,6 +508,14 @@ function exportFilteredCsv() {
     adminUtil.toast?.("내보낼 접수 데이터가 없습니다", "error");
     return;
   }
+  // Meta 입력폼이 조정되면 새 질문이 그대로 열로 붙는다. 열 순서는 실제 응답 등장 순서.
+  const answerMaps = list.map(metaAnswerMap);
+  const formCols = [];
+  for (const map of answerMaps) {
+    for (const question of Object.keys(map)) {
+      if (!formCols.includes(question)) formCols.push(question);
+    }
+  }
   const headers = [
     "접수일시",
     "이름",
@@ -486,8 +534,9 @@ function exportFilteredCsv() {
     "담당자",
     "메모",
     "유입경로",
+    ...formCols,
   ];
-  const rows = list.map((r) => {
+  const rows = list.map((r, i) => {
     const srcKey = (r.Source || "homepage").toLowerCase();
     return [
       fmtDateTime(r.SubmittedAt) || "",
@@ -507,6 +556,7 @@ function exportFilteredCsv() {
       r.Assignee || "",
       r.Memo || "",
       r.Referral || "",
+      ...formCols.map((question) => answerMaps[i][question] || ""),
     ];
   });
   const csv = [headers, ...rows]
@@ -877,6 +927,7 @@ async function openDetail(id) {
         `
               : ""
           }
+          ${metaFormRows(r)}
           ${r.Detail ? `<dt>상세내용</dt><dd><div class="detail-note">${escapeHtml(r.Detail)}</div></dd>` : ""}
           ${
             Array.isArray(r.ConceptFiles) && r.ConceptFiles.length

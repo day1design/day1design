@@ -5,7 +5,11 @@ import { handlePortfolio } from "./routes/portfolio.js";
 import { handleCommunity } from "./routes/community.js";
 import { handleAuth } from "./routes/auth.js";
 import { handleUpload } from "./routes/upload.js";
-import { handleMetaLead, handleMetaLeadHeartbeat } from "./routes/meta-lead.js";
+import {
+  handleMetaLead,
+  handleMetaLeadHeartbeat,
+  handleMetaFormSchema,
+} from "./routes/meta-lead.js";
 import {
   handleAnalytics,
   runScheduledAnalyticsSnapshot,
@@ -160,6 +164,13 @@ async function handleApi(request, env, ctx, path) {
       res = jsonError(405, "Method Not Allowed");
     } else {
       res = await handleMetaLead(request, env, ctx, services);
+    }
+  } else if (path === "/api/meta-lead/form-schema") {
+    // 폴러가 보고한 입력폼 질문 목록 → 변경 감지·매핑 판정 (같은 META_LEAD_SECRET)
+    if (request.method !== "POST") {
+      res = jsonError(405, "Method Not Allowed");
+    } else {
+      res = await handleMetaFormSchema(request, env, ctx, services);
     }
   } else if (path === "/api/meta-lead/heartbeat") {
     // 아이맥 폴러 생존 신호 (같은 META_LEAD_SECRET 사용)

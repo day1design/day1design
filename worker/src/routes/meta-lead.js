@@ -74,19 +74,61 @@ export function normalizeQuestionKey(raw) {
     .toLowerCase();
 }
 
-const FIELD_RULES = [
-  ["name", ["full name", "성함", "이름"]],
+// 폼 질문을 표준 필드로 흡수하는 규칙. 폼 문구가 바뀌어도 같은 뜻이면 자동으로 잡히도록
+// 동의어를 넓게 잡는다. 여기서 안 잡힌 질문도 버려지지 않고 '폼 응답'으로 그대로 노출된다
+// (상담카드 행·엑셀 열·텔레그램 블록이 자동 생성). 토큰이 짧고 흔하면 엉뚱한 질문을
+// 끌어오므로("번호" → 동호수 번호) 오탐이 날 만한 조각은 넣지 않는다.
+export const FIELD_RULES = [
+  ["name", ["full name", "성함", "이름", "함자", "고객명", "신청자"]],
   [
     "phone",
-    ["phone number", "phone", "연락처", "전화", "휴대폰", "핸드폰", "mobile"],
+    [
+      "phone number",
+      "phone",
+      "연락처",
+      "전화",
+      "휴대폰",
+      "핸드폰",
+      "휴대전화",
+      "mobile",
+    ],
   ],
   ["email", ["email", "이메일", "메일"]],
-  ["location", ["city", "지역", "소재지", "주소", "위치", "현장"]],
+  [
+    "location",
+    ["city", "지역", "소재지", "주소", "위치", "현장", "거주지", "address"],
+  ],
   ["spaceType", ["공간", "유형", "종류", "형태", "용도"]],
-  ["area", ["면적", "평수", "평형", "규모", "크기"]],
-  ["scheduledDate", ["시공", "일정", "예정", "입주", "착공", "시작일", "날짜"]],
-  ["budget", ["예산", "비용", "금액", "가격대"]],
+  ["area", ["면적", "평수", "평형", "규모", "크기", "제곱미터", "㎡"]],
+  [
+    "scheduledDate",
+    [
+      "시공",
+      "일정",
+      "예정",
+      "입주",
+      "착공",
+      "시작일",
+      "날짜",
+      "시기",
+      "시점",
+      "언제",
+      "희망일",
+    ],
+  ],
+  ["budget", ["예산", "비용", "금액", "가격대", "얼마"]],
 ];
+
+// D1 보관용 직렬화. 개별 값 상한을 먼저 걸고 JSON.stringify 하므로 문자열이 잘려
+// JSON 이 깨지는 일이 없다(뒤에서 통째로 slice 하면 파싱 불가가 된다).
+export function serializeFormFields(pairs) {
+  const items = (Array.isArray(pairs) ? pairs : []).slice(0, 40).map((p) => ({
+    q: String(p?.q ?? "").slice(0, 200),
+    a: String(p?.a ?? "").slice(0, 500),
+    f: String(p?.f ?? ""),
+  }));
+  return items.length ? JSON.stringify(items) : "";
+}
 
 function fieldValueOf(field) {
   return (Array.isArray(field?.values) ? field.values : [])
@@ -95,27 +137,44 @@ function fieldValueOf(field) {
     .join(", ");
 }
 
+// 폼 질문 하나가 어느 표준 필드로 들어가는지 판정한다. 폼 스키마 변경 알림도 같은 규칙을
+// 쓰기 때문에 "알림은 매핑된다고 했는데 실제로는 안 되는" 어긋남이 생기지 않는다.
+export function matchStandardField(rawKey) {
+  const key = normalizeQuestionKey(rawKey);
+  if (!key) return "";
+  const lower = String(rawKey ?? "").trim().toLowerCase();
+  if (lower === "first_name" || lower === "last_name") return "name";
+  const hit = FIELD_RULES.find(([, tokens]) =>
+    tokens.some((t) => key.includes(t)),
+  );
+  return hit ? hit[0] : "";
+}
+
+// 반환값의 pairs 는 폼 응답 원문 전량이다: [{ q: 질문, a: 답변, f: 매핑된 표준필드|"" }].
+// 폼 질문이 바뀌어도 상담카드·알림이 이 원문을 렌더하므로 코드를 고칠 필요가 없다.
 export function mapFieldData(fieldData) {
-  const out = { extras: [] };
+  const out = { extras: [], pairs: [] };
   const items = Array.isArray(fieldData) ? fieldData : [];
   const firstName = {};
   for (const item of items) {
     const rawKey = String(item?.name ?? "").trim();
     const rawLower = rawKey.toLowerCase();
-    const key = normalizeQuestionKey(rawKey);
     const value = fieldValueOf(item);
     if (!rawKey || !value) continue;
     if (rawLower === "first_name" || rawLower === "last_name") {
       firstName[rawLower] = value;
+      out.pairs.push({ q: rawKey, a: value, f: "name" });
       continue;
     }
-    const hit = FIELD_RULES.find(([, tokens]) =>
-      tokens.some((t) => key.includes(t)),
-    );
-    if (hit && !out[hit[0]]) {
-      out[hit[0]] = value;
-    } else if (!hit) {
+    const field = matchStandardField(rawKey);
+    // 표준필드가 이미 찼는데 같은 자리에 걸리는 질문이 또 오면(폼에 질문을 추가하면 흔히
+    // 생긴다) 예전에는 그 답변이 아무 데도 안 남고 사라졌다. extras 로 살린다(유실 0).
+    if (field && !out[field]) {
+      out[field] = value;
+      out.pairs.push({ q: rawKey, a: value, f: field });
+    } else {
       out.extras.push(`${rawKey}: ${value}`);
+      out.pairs.push({ q: rawKey, a: value, f: "" });
     }
   }
   if (!out.name) {
@@ -156,6 +215,7 @@ export function normalizeLeadPayload(body = {}) {
     campaignName: pick(body.campaignName, body.campaign_name),
     timestamp: pick(body.timestamp, body.createdTime, body.created_time),
     extras: mapped.extras,
+    formFields: mapped.pairs,
   };
 }
 
@@ -217,6 +277,7 @@ export async function captureInvalidLead(
       MetaLeadId: leadId,
       Platform: normalizePlatform(lead.platform),
       Campaign: lead.campaign.slice(0, 200),
+      MetaFieldData: serializeFormFields(lead.formFields),
       SubmittedAt: lead.timestamp || new Date().toISOString(),
     },
   });
@@ -248,6 +309,7 @@ function buildMetaLeadMessage({
   budget,
   platform,
   campaign,
+  extras = [],
 }) {
   const platformLabel = platform === "instagram" ? "Instagram" : "Facebook";
   const spaceLabel = (spaceType || "").replace(/_/g, " ");
@@ -279,6 +341,13 @@ function buildMetaLeadMessage({
   if (scheduledDate) space.push(`시공예정: ${escapeHtml(scheduledDate)}`);
   if (budget) space.push(`가용예산: ${escapeHtml(budget)}`);
   pushBlock(out, `🏘 <b>공간/일정</b>`, space);
+
+  // 폼 응답 — 표준 8필드로 매핑되지 않은 질문을 원문 그대로 싣는다.
+  // 폼 질문이 조정돼도 알림이 따라가는 자리다. 지우면 새 질문 답변이 알림에서 사라진다.
+  const extraRows = (Array.isArray(extras) ? extras : [])
+    .slice(0, 12)
+    .map((line) => escapeHtml(String(line).slice(0, 200)));
+  pushBlock(out, `📋 <b>폼 응답</b>`, extraRows);
 
   // 광고정보 — 플랫폼은 항상, 캠페인은 있을 때만
   const ads = [`플랫폼: ${escapeHtml(platformLabel)}`];
@@ -425,6 +494,8 @@ export async function handleMetaLead(
       Platform: platform,
       Campaign: campaign,
       MetaLeadId: leadId,
+      // 폼 원문 응답 전량. 상담카드가 이걸 렌더하므로 폼 질문이 바뀌어도 코드 수정이 없다.
+      MetaFieldData: serializeFormFields(lead.formFields),
     });
     recordId = record.id;
   } catch (e) {
@@ -485,6 +556,7 @@ export async function handleMetaLead(
             budget,
             platform,
             campaign,
+            extras: lead.extras,
           }),
         );
         // Meta lead 도 홈페이지 직접접수와 동일한 안내 SMS 발송 + SmsLogs 기록.
@@ -705,4 +777,146 @@ export async function handleMetaLeadHeartbeat(
   );
 
   return jsonOk({ at, status });
+}
+
+// ─── 입력폼 질문 변경 감지 ───
+// 폴러가 매 실행 각 폼의 질문 목록을 "가공 없이" 보고한다. 매핑 판정과 변경 비교는 워커에서만
+// 한다: 매핑 규칙(FIELD_RULES)의 주인이 워커이므로 "알림은 매핑된다는데 실제로는 안 되는"
+// 어긋남이 생길 수 없다(폴러·워커 이중 판정 금지와 같은 이유).
+// 변경이 없으면 조용히 200 — 20분마다 오는 보고가 알림을 도배하지 않는다.
+export async function handleMetaFormSchema(
+  request,
+  env,
+  ctx,
+  services = createServices(env),
+) {
+  if (!env.META_LEAD_SECRET) return jsonError(500, "Server misconfigured");
+  const provided = request.headers.get("x-meta-lead-secret") || "";
+  if (!timingSafeEqual(provided, env.META_LEAD_SECRET)) {
+    return jsonError(403, "Forbidden");
+  }
+  let body = {};
+  try {
+    body = JSON.parse((await request.text()) || "{}");
+  } catch {
+    return jsonError(400, "Bad Request");
+  }
+
+  const formId = String(body.formId || "")
+    .trim()
+    .slice(0, 64);
+  if (!formId) return jsonError(400, "formId required");
+  const formName = String(body.formName || "")
+    .trim()
+    .slice(0, 120);
+  const questions = (Array.isArray(body.questions) ? body.questions : [])
+    .map((q) => String(q ?? "").trim().slice(0, 200))
+    .filter(Boolean)
+    .slice(0, 60);
+  if (!questions.length) return jsonError(400, "questions required");
+
+  const mapping = {};
+  for (const q of questions) mapping[q] = matchStandardField(q);
+
+  let prevRecord = null;
+  try {
+    const rows = await services.metaFormSchemas.list({
+      where: { FormId: formId },
+      limit: 1,
+    });
+    prevRecord = rows?.records?.[0] || null;
+  } catch {
+    /* 조회 실패는 최초 등록과 같게 취급 — 알림을 못 내는 것보다 낫다 */
+  }
+
+  let prevQuestions = [];
+  if (prevRecord) {
+    try {
+      const parsed = JSON.parse(prevRecord.fields?.Questions || "[]");
+      if (Array.isArray(parsed)) prevQuestions = parsed.map((q) => String(q));
+    } catch {
+      /* 손상된 스냅샷은 빈 목록으로 — 다음 보고에서 정상 스냅샷으로 덮인다 */
+    }
+  }
+
+  const added = questions.filter((q) => !prevQuestions.includes(q));
+  const removed = prevQuestions.filter((q) => !questions.includes(q));
+  const changed = added.length > 0 || removed.length > 0;
+  const first = !prevRecord;
+
+  // 이름·연락처가 어느 질문에도 안 걸리면 그 폼 리드는 전량 '오류' 카드가 된다.
+  // 폼을 고친 직후 이 경고가 뜨면 FIELD_RULES 에 질문 문구를 추가해야 한다.
+  const mapped = new Set(Object.values(mapping).filter(Boolean));
+  const critical = ["name", "phone"].filter((f) => !mapped.has(f));
+
+  const now = new Date().toISOString();
+  const snapshot = {
+    FormId: formId,
+    FormName: formName,
+    Questions: JSON.stringify(questions),
+    Mapping: JSON.stringify(mapping),
+    UpdatedAt: now,
+  };
+  try {
+    if (prevRecord) {
+      if (changed) await services.metaFormSchemas.update(prevRecord.id, snapshot);
+    } else {
+      await services.metaFormSchemas.create(snapshot);
+    }
+  } catch (e) {
+    return json(
+      { ok: false, error: (e?.message || "snapshot failed").slice(0, 120) },
+      { status: 502 },
+    );
+  }
+
+  // 최초 스냅샷은 조용히 저장한다 — 처음 보는 폼은 질문이 전부 '추가'로 잡히지만
+  // 새 폼 자체는 폴러가 이미 알렸다. 다만 이름·연락처가 안 잡히는 폼은 최초라도 즉시
+  // 알린다(그 폼 리드는 전량 '오류' 카드가 되므로 조용히 넘기면 접수가 멈춘 걸 늦게 안다).
+  const shouldNotify = first ? critical.length > 0 : changed;
+  if (!shouldNotify) {
+    return jsonOk({
+      changed: false,
+      first,
+      formId,
+      questions: questions.length,
+    });
+  }
+
+  const unmapped = questions.filter((q) => !mapping[q]);
+  const lines = [
+    `<b>[day1design/meta-lead]</b> 📝 <b>입력폼 질문 ${first ? "확인" : "변경 감지"}</b>`,
+    `├ 폼: ${escapeHtml(formName || "-")} (${escapeHtml(formId)})`,
+  ];
+  if (added.length) {
+    lines.push(`├ 추가: ${escapeHtml(added.join(" / ").slice(0, 300))}`);
+  }
+  if (removed.length) {
+    lines.push(`├ 삭제: ${escapeHtml(removed.join(" / ").slice(0, 300))}`);
+  }
+  if (unmapped.length) {
+    lines.push(
+      `├ 요약필드 미매핑: ${escapeHtml(unmapped.join(" / ").slice(0, 300))}`,
+      `├ → 상담카드 '폼 응답'과 알림에 질문·답변 원문으로 표시됩니다`,
+    );
+  }
+  lines.push(
+    critical.length
+      ? `└ 🔴 ${critical.join("·")} 질문을 못 찾았습니다 — 이 폼 리드는 전량 '오류' 카드로 저장됩니다. 매핑 규칙 확인 필요`
+      : `└ ✅ 이름·연락처 매핑 정상 — 별도 조치 없이 자동 반영됩니다`,
+  );
+
+  ctx.waitUntil(
+    Promise.resolve(notifyTelegram(env, lines.join("\n"))).catch(() => {}),
+  );
+
+  return jsonOk({
+    changed,
+    first,
+    formId,
+    added: added.length,
+    removed: removed.length,
+    unmapped: unmapped.length,
+    critical,
+  });
 }

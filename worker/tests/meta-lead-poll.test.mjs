@@ -12,9 +12,12 @@ import { afterEach, beforeEach, test } from "node:test";
 import {
   handleMetaLead,
   handleMetaLeadHeartbeat,
+  handleMetaFormSchema,
   mapFieldData,
+  matchStandardField,
   normalizeLeadPayload,
   normalizeQuestionKey,
+  serializeFormFields,
 } from "../src/routes/meta-lead.js";
 import { isPhoneQuestion } from "../../workers/imac-meta-lead-poller/worker.mjs";
 
@@ -86,6 +89,31 @@ function fakeServices({ created = [], existing = [] } = {}) {
     smsLogs: { async create() {} },
     intakeEvents: { async create() {} },
     systemHeartbeats: { async create() {} },
+    metaFormSchemas: fakeFormSchemas(),
+  };
+}
+
+// 폼 스키마 스냅샷 저장소 목 — 최초 등록/변경 감지 분기를 그대로 재현한다.
+function fakeFormSchemas(rows = []) {
+  return {
+    rows,
+    async list({ where = {}, limit = 10 } = {}) {
+      return {
+        records: rows
+          .filter((r) => Object.entries(where).every(([k, v]) => r.fields[k] === v))
+          .slice(0, limit),
+      };
+    },
+    async create(fields) {
+      const record = { id: `form${rows.length + 1}`, fields };
+      rows.push(record);
+      return record;
+    },
+    async update(id, fields) {
+      const record = rows.find((r) => r.id === id);
+      if (record) record.fields = { ...record.fields, ...fields };
+      return record;
+    },
   };
 }
 
@@ -529,4 +557,207 @@ test("하트비트 시크릿 불일치는 403", async () => {
     fakeServices(),
   );
   assert.equal(res.status, 403);
+});
+
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  입력폼 변경 자동대응 가드                                             ║
+// ║  Meta 쪽 인스턴트폼 질문이 조정돼도 코드를 고치지 않고 상담카드·알림이   ║
+// ║  따라가야 한다. 아래 4가지가 그 계약이다.                              ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+
+test("[guard] 같은 표준필드에 걸리는 질문이 둘이면 뒤엣것도 보존한다(유실 0)", () => {
+  // 폼에 질문을 추가하면 흔히 생기는 상황. 예전에는 두 번째 답변이 그냥 사라졌다.
+  const mapped = mapFieldData([
+    { name: "가용 예산", values: ["3천만원"] },
+    { name: "예산 관련 요청사항", values: ["분할 납부 가능한지"] },
+  ]);
+  assert.equal(mapped.budget, "3천만원");
+  assert.deepEqual(mapped.extras, ["예산 관련 요청사항: 분할 납부 가능한지"]);
+});
+
+test("[guard] 폼 응답 원문(pairs)은 질문·답변·매핑필드를 그대로 보존한다", () => {
+  const mapped = mapFieldData(POLLER_LEAD.fieldData);
+  assert.equal(mapped.pairs.length, POLLER_LEAD.fieldData.length);
+  assert.deepEqual(mapped.pairs[0], {
+    q: "성함을 입력해주세요",
+    a: "임혜진",
+    f: "name",
+  });
+  // 매핑 안 된 질문은 f 가 빈 문자열 — 상담카드가 이 항목만 '폼 응답'으로 보여준다.
+  const free = mapped.pairs.find((p) => p.q === "궁금한 점");
+  assert.deepEqual(free, { q: "궁금한 점", a: "욕실만 따로 가능한가요", f: "" });
+
+  // 직렬화는 값 상한을 먼저 걸어 JSON 이 깨지지 않는다.
+  const json = serializeFormFields([{ q: "q".repeat(500), a: "a".repeat(900), f: "" }]);
+  const parsed = JSON.parse(json);
+  assert.equal(parsed[0].q.length, 200);
+  assert.equal(parsed[0].a.length, 500);
+  assert.equal(serializeFormFields([]), "");
+});
+
+test("[guard] 새 질문은 D1 원문(MetaFieldData)과 텔레그램 알림에 자동으로 실린다", async () => {
+  const created = [];
+  const tasks = [];
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes("api.telegram.org")) {
+      sent.push(JSON.parse(init?.body || "{}").text || "");
+    }
+    return Response.json({ ok: true });
+  };
+
+  const lead = {
+    ...POLLER_LEAD,
+    fieldData: [
+      ...POLLER_LEAD.fieldData,
+      // 폼 조정으로 새로 생긴 질문 — 워커 매핑 규칙에는 없다.
+      { name: "반려동물을 키우시나요", values: ["고양이 2마리"] },
+    ],
+  };
+  const res = await handleMetaLead(
+    pollerRequest(lead),
+    {
+      META_LEAD_SECRET: SECRET,
+      TELEGRAM_BOT_TOKEN: "bot-token",
+      TELEGRAM_CHAT_ID: "-100123",
+    },
+    { waitUntil: (t) => tasks.push(t) },
+    fakeServices({ created }),
+  );
+  await Promise.allSettled(tasks);
+
+  assert.equal(res.status, 200);
+  const pairs = JSON.parse(created[0].MetaFieldData);
+  assert.ok(
+    pairs.some((p) => p.q === "반려동물을 키우시나요" && p.a === "고양이 2마리"),
+    "새 질문 응답이 MetaFieldData 원문에 남아야 한다",
+  );
+  const leadMsg = sent.find((t) => t.includes("신규 상담 신청")) || "";
+  assert.match(leadMsg, /폼 응답/);
+  assert.match(leadMsg, /반려동물을 키우시나요: 고양이 2마리/);
+});
+
+test("[guard] 폼 질문 변경 감지 — 최초는 조용, 변경 시에만 알린다", async () => {
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes("api.telegram.org")) {
+      sent.push(JSON.parse(init?.body || "{}").text || "");
+    }
+    return Response.json({ ok: true });
+  };
+  const env = {
+    META_LEAD_SECRET: SECRET,
+    TELEGRAM_BOT_TOKEN: "bot-token",
+    TELEGRAM_CHAT_ID: "-100123",
+  };
+  const services = fakeServices();
+  const tasks = [];
+  const post = (questions) =>
+    handleMetaFormSchema(
+      new Request("https://api.example.test/api/meta-lead/form-schema", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-meta-lead-secret": SECRET,
+        },
+        body: JSON.stringify({
+          formId: "9001",
+          formName: "인테리어 상담",
+          questions,
+        }),
+      }),
+      env,
+      { waitUntil: (t) => tasks.push(t) },
+      services,
+    );
+
+  const first = await (await post(["성함", "연락처", "지역"])).json();
+  await Promise.allSettled(tasks);
+  assert.equal(first.first, true);
+  assert.equal(sent.length, 0, "최초 스냅샷은 알리지 않는다(새 폼은 폴러가 이미 알림)");
+
+  // 같은 질문 재보고 — 20분마다 와도 조용해야 한다
+  const again = await (await post(["성함", "연락처", "지역"])).json();
+  assert.equal(again.changed, false);
+  assert.equal(sent.length, 0);
+
+  // 질문 추가 + 삭제
+  const changed = await (
+    await post(["성함", "연락처", "반려동물을 키우시나요"])
+  ).json();
+  await Promise.allSettled(tasks);
+  assert.equal(changed.changed, true);
+  assert.equal(changed.added, 1);
+  assert.equal(changed.removed, 1);
+  assert.equal(changed.unmapped, 1);
+  const msg = sent.join("\n");
+  assert.match(msg, /입력폼 질문 변경 감지/);
+  assert.match(msg, /추가: 반려동물을 키우시나요/);
+  assert.match(msg, /삭제: 지역/);
+  assert.match(msg, /이름·연락처 매핑 정상/);
+});
+
+test("[guard] 이름·연락처를 못 찾는 폼은 최초 보고에서도 즉시 경고한다", async () => {
+  // 이 폼의 리드는 전량 '오류' 카드가 된다. 조용히 넘어가면 접수가 통째로 멈춘 걸 뒤늦게 안다.
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes("api.telegram.org")) {
+      sent.push(JSON.parse(init?.body || "{}").text || "");
+    }
+    return Response.json({ ok: true });
+  };
+  const tasks = [];
+  const res = await handleMetaFormSchema(
+    new Request("https://api.example.test/api/meta-lead/form-schema", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-meta-lead-secret": SECRET,
+      },
+      body: JSON.stringify({
+        formId: "9002",
+        formName: "이벤트 응모",
+        questions: ["닉네임", "응모 사유"],
+      }),
+    }),
+    {
+      META_LEAD_SECRET: SECRET,
+      TELEGRAM_BOT_TOKEN: "bot-token",
+      TELEGRAM_CHAT_ID: "-100123",
+    },
+    { waitUntil: (t) => tasks.push(t) },
+    fakeServices(),
+  );
+  const body = await res.json();
+  await Promise.allSettled(tasks);
+  assert.deepEqual(body.critical, ["name", "phone"]);
+  assert.match(sent.join("\n"), /전량 '오류' 카드로 저장됩니다/);
+});
+
+test("[guard] 매핑 판정은 워커 규칙 한 곳에서만 한다", () => {
+  // 폼 스키마 알림과 실제 리드 매핑이 같은 함수를 쓰는지 — 어긋나면 "알림은 된다는데
+  // 실제로는 안 되는" 상태가 된다.
+  assert.equal(matchStandardField("성함을 입력해주세요"), "name");
+  assert.equal(matchStandardField("연락처"), "phone");
+  assert.equal(matchStandardField("first_name"), "name");
+  assert.equal(matchStandardField("반려동물을 키우시나요"), "");
+  const mapped = mapFieldData([{ name: "연락처", values: ["01066246615"] }]);
+  assert.equal(mapped.pairs[0].f, matchStandardField("연락처"));
+});
+
+test("[guard] 같은 뜻의 새 문구는 표준 필드로 자동 흡수된다", () => {
+  // 폼 문구를 바꿔도(질문을 다시 쓰거나 표현을 손봐도) 요약 필드가 계속 채워져야 한다.
+  const mapped = mapFieldData([
+    { name: "고객명을 남겨주세요", values: ["임혜진"] },
+    { name: "휴대전화", values: ["010-6624-6615"] },
+    { name: "언제 시공을 원하시나요", values: ["10월 중"] },
+    { name: "예상 비용은 얼마정도 생각하시나요", values: ["4천"] },
+    { name: "거주지가 어디신가요", values: ["분당구"] },
+  ]);
+  assert.equal(mapped.name, "임혜진");
+  assert.equal(mapped.phone, "010-6624-6615");
+  assert.equal(mapped.scheduledDate, "10월 중");
+  assert.equal(mapped.budget, "4천");
+  assert.equal(mapped.location, "분당구");
+  assert.deepEqual(mapped.extras, [], "전부 흡수돼야 한다");
 });

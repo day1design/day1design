@@ -402,6 +402,36 @@ async function postLead({ webhookUrl, webhookSecret, payload, fetchImpl = fetch 
   return data;
 }
 
+// 입력폼 질문 목록을 워커로 그대로 보고한다. 변경 비교·매핑 판정은 워커가 한다
+// (매핑 규칙의 주인이 워커이므로 여기서 판정하면 두 규칙이 어긋난다).
+// 변경이 없으면 워커가 조용히 200 을 준다 — 20분마다 보내도 알림은 안 늘어난다.
+export async function reportFormSchema({
+  webhookUrl,
+  webhookSecret,
+  formId,
+  formName,
+  questions,
+  fetchImpl = fetch,
+}) {
+  const url = new URL(webhookUrl);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/form-schema`;
+  const response = await fetchImpl(url.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Meta-Lead-Secret": webhookSecret,
+    },
+    body: JSON.stringify({ formId, formName, questions }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      `폼 스키마 보고 실패: HTTP ${response.status} ${String(data?.error || "").slice(0, 120)}`,
+    );
+  }
+  return data;
+}
+
 export async function sendHeartbeat({
   webhookUrl,
   webhookSecret,
@@ -557,19 +587,31 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
       (f) => knownFormIds.length > 0 && !knownFormIds.includes(f.id),
     );
 
+    // 폼별로 격리해서 조회한다. 폼 하나가 권한 상실·일시 오류를 내도 나머지 폼 리드는
+    // 그 주기에 정상 수집돼야 한다(폼을 조정하는 중에 특히 잘 난다).
+    // 전 폼이 실패할 때만 중단 — 그때는 토큰·권한 문제이므로 다음 주기가 재시도한다.
     const allLeads = [];
+    const formErrors = [];
     for (const formId of formIds) {
-      allLeads.push(
-        ...(await fetchFormLeads({
-          formId,
-          token,
-          appSecret,
-          graphVersion,
-          sinceMs,
-          maxPages,
-          fetchImpl,
-        })),
-      );
+      try {
+        allLeads.push(
+          ...(await fetchFormLeads({
+            formId,
+            token,
+            appSecret,
+            graphVersion,
+            sinceMs,
+            maxPages,
+            fetchImpl,
+          })),
+        );
+      } catch (error) {
+        formErrors.push(String(error?.message || error).slice(0, 200));
+        console.error(`${TAG} form-fetch ${formId} ${formErrors.at(-1)}`);
+      }
+    }
+    if (formErrors.length && formErrors.length === formIds.length) {
+      throw new Error(`전 폼 조회 실패 — ${formErrors[0]}`);
     }
 
     const byId = new Map();
@@ -638,7 +680,8 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
     const detail =
       `forms=${formIds.length} fetched=${leads.length} delivered=${delivered}` +
       ` duplicates=${duplicates} captured=${captured} failed=${failures.length}` +
-      ` discovery=${discoveryNote}`;
+      ` discovery=${discoveryNote}` +
+      (formErrors.length ? ` formErrors=${formErrors.length}` : "");
     if (!dryRun) {
       // 상태 저장이 먼저 — 하트비트가 실패해도 같은 리드를 다시 보내지 않는다.
       // 실패건이 있으면 워터마크를 그 리드 시각으로 되돌린다. 실패가 며칠 이어져도
@@ -661,6 +704,49 @@ export async function runPoll({ fetchImpl = fetch } = {}) {
           : knownFormIds,
         processed: pruneProcessed(processed, retentionFloor),
       });
+      // 일부 폼만 실패한 경우 — 수집은 계속됐지만 그 폼 리드는 이 주기에 안 들어왔다.
+      // 다음 주기가 겹침조회로 다시 끌어오지만, 권한 문제라면 사람이 손대야 하므로 알린다.
+      if (formErrors.length) {
+        await sendTelegram({
+          botToken: String(process.env.HEALTH_TELEGRAM_BOT_TOKEN || "").trim(),
+          chatId: String(process.env.HEALTH_TELEGRAM_CHAT_ID || "").trim(),
+          message:
+            `[day1design/meta-lead-poller] ⚠ 폼 ${formErrors.length}/${formIds.length}개 조회 실패\n` +
+            `${formErrors[0]}\n` +
+            `나머지 폼은 정상 수집됐고, 실패분은 다음 주기가 겹침조회로 재시도합니다.`,
+          fetchImpl,
+        });
+      }
+
+      // 입력폼 질문 변경 감지 — 폼이 조정되면 상담카드·알림이 따라가야 한다.
+      // 질문 목록을 가공 없이 워커로 넘기고 판정은 워커가 한다(불변식 6과 같은 이유).
+      // 폼별 try/catch + 전체가 리드 처리 이후이므로, 여기서 실패해도 수집은 이미 끝나 있다.
+      if (pageToken) {
+        const nameById = new Map(discovered.map((f) => [f.id, f.name]));
+        for (const formId of formIds) {
+          try {
+            const questions = await fetchFormQuestions({
+              formId,
+              pageToken,
+              graphVersion,
+              fetchImpl,
+            });
+            if (!questions.length) continue;
+            await reportFormSchema({
+              webhookUrl,
+              webhookSecret,
+              formId,
+              formName: nameById.get(formId) || "",
+              questions,
+              fetchImpl,
+            });
+          } catch (error) {
+            console.error(
+              `${TAG} form-schema ${formId} ${String(error?.message || error).slice(0, 200)}`,
+            );
+          }
+        }
+      }
       // 새 양식은 조용히 지나가면 안 된다 — 매핑 확인이 필요할 수 있으므로 알린다.
       if (newForms.length) {
         const lines = ["[day1design/meta-lead-poller] 🆕 새 리드 양식 감지"];
