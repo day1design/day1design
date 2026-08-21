@@ -276,11 +276,28 @@
   // 둘 다 주면 GA4 가 합치는 과정에서 쿼리가 두 번 붙는다 —
   // 실측(2026-08-21): /pages/portfolio?size=30-40?size=30-40 처럼 찍혀
   // 같은 페이지가 착지 페이지 보고서에서 여러 줄로 쪼개졌다. 쿼리 없는 페이지는 멀쩡했다.
+  // fbclid 만 달고 UTM 없이 들어온 유입을 GA4 는 (direct) 로 떨어뜨린다.
+  // fbclid 가 붙었다는 건 페이스북·인스타 앱에서 나온 클릭이라는 확정 단서인데,
+  // GA4 는 gclid 와 달리 이 파라미터를 소스 판정에 쓰지 않기 때문이다 —
+  // 실측(2026-08-21): /pages/about?fbclid=... 같은 深페이지 착지가 (direct) 587세션에 섞였다.
+  // UTM 이 하나라도 붙은 유입은 GA4 가 알아서 귀속하므로 건드리지 않고,
+  // 아무 꼬리표도 없을 때만 보정한다. 유료인지 오가닉인지는 fbclid 로 가릴 수 없어
+  // medium 은 social 로 두고, 보정분 규모를 따로 셀 수 있도록 캠페인 이름을 박아 둔다.
+  const gaCampaign =
+    attribution.fbclid && !attribution.medium && !attribution.campaign
+      ? {
+          campaign_source: "facebook",
+          campaign_medium: "social",
+          campaign_name: "fbclid-recovered",
+        }
+      : {};
+
   window.gtag("config", tagId, {
     page_title: document.title,
     page_location: location.href,
     traffic_source_platform: attribution.source,
     traffic_source_campaign: attribution.campaign,
+    ...gaCampaign,
   });
 
   document.addEventListener("click", (event) => {
