@@ -272,10 +272,13 @@
   document.head.appendChild(script);
 
   window.gtag("js", new Date());
+  // page_path 를 같이 보내지 않는다. page_location 이 이미 쿼리를 담고 있어서
+  // 둘 다 주면 GA4 가 합치는 과정에서 쿼리가 두 번 붙는다 —
+  // 실측(2026-08-21): /pages/portfolio?size=30-40?size=30-40 처럼 찍혀
+  // 같은 페이지가 착지 페이지 보고서에서 여러 줄로 쪼개졌다. 쿼리 없는 페이지는 멀쩡했다.
   window.gtag("config", tagId, {
     page_title: document.title,
     page_location: location.href,
-    page_path: location.pathname + location.search,
     traffic_source_platform: attribution.source,
     traffic_source_campaign: attribution.campaign,
   });
