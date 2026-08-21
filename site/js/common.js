@@ -283,14 +283,28 @@
   // UTM 이 하나라도 붙은 유입은 GA4 가 알아서 귀속하므로 건드리지 않고,
   // 아무 꼬리표도 없을 때만 보정한다. 유료인지 오가닉인지는 fbclid 로 가릴 수 없어
   // medium 은 social 로 두고, 보정분 규모를 따로 셀 수 있도록 캠페인 이름을 박아 둔다.
-  const gaCampaign =
-    attribution.fbclid && !attribution.medium && !attribution.campaign
-      ? {
-          campaign_source: "facebook",
-          campaign_medium: "social",
-          campaign_name: "fbclid-recovered",
-        }
-      : {};
+  // 아임웹 시절 게시판 주소(bmode=view · t=board · q=YToxOnt…)로 들어오는 유입도 같은 처지다.
+  // 그 주소를 사람이 외워서 입력할 리는 없으니 외부 어딘가에 남아 있는 옛 링크를 타고 온 것인데,
+  // 리퍼러가 없어 (direct) 에 섞인다 — 실측(2026-08-21): 194세션이고 그중 193이 신규 방문자로
+  // (direct) 587 의 33% 였다. 직접 입력·북마크와 구분되도록 따로 세운다.
+  const gaCampaign = (() => {
+    if (attribution.medium || attribution.campaign) return {};
+    if (attribution.fbclid) {
+      return {
+        campaign_source: "facebook",
+        campaign_medium: "social",
+        campaign_name: "fbclid-recovered",
+      };
+    }
+    if (/[?&](bmode=view|t=board)|[?&]q=YToxOnt/i.test(location.search)) {
+      return {
+        campaign_source: "legacy-link",
+        campaign_medium: "referral",
+        campaign_name: "legacy-imweb-board",
+      };
+    }
+    return {};
+  })();
 
   window.gtag("config", tagId, {
     page_title: document.title,
