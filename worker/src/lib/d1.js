@@ -55,6 +55,7 @@ const SCHEMA = {
     "FirstUtmSource",
     "FirstUtmMedium",
     "FirstUtmCampaign",
+    "FirstInflowApp",
     "MetaLeadId",
     "MetaFieldData",
   ],

@@ -297,6 +297,26 @@ function channelEntry(r) {
   return { key, label: SOURCE_LABEL_MAP[key] };
 }
 
+// 리퍼러가 지워져 출처가 미상인 접수에만 단서를 붙인다 — 이미 출처가 잡힌 건에는
+// 뱃지를 늘리지 않는다. 네이버·카카오·인스타 인앱 브라우저는 리퍼러를 지우고 보내지만
+// User-Agent 에는 앱 이름이 남아서, 그것만으로도 어디서 눌렀는지가 좁혀진다.
+// legacy-link 는 아임웹 시절 게시판 주소로 들어온 경우다.
+const INFLOW_APP_LABELS = {
+  "naver-app": "네이버앱",
+  kakaotalk: "카카오톡",
+  "instagram-app": "인스타앱",
+  "facebook-app": "페북앱",
+  "legacy-link": "옛 링크",
+};
+
+function inflowAppBadge(record) {
+  const label = INFLOW_APP_LABELS[String(record?.FirstInflowApp || "").trim()];
+  if (!label) return "";
+  const first = String(record?.FirstSource || "").trim();
+  if (first && sourceKey(first) !== "homepage") return "";
+  return `<span class="src-badge src-inflow-app" title="리퍼러가 없어 출처가 미상인 접수입니다. 접속 환경과 주소로 좁힌 단서입니다">${escapeHtml(label)}</span>`;
+}
+
 function slugBadge(record) {
   if (!isSlugLead(record)) return "";
   const label = String(record.Referral || "").trim();
@@ -309,7 +329,7 @@ function slugBadge(record) {
 // "고객이 직접 선택"이라는 설명이 사실과 달라졌기 때문이다.
 // First*가 없으면(예: 마이그 전 기존 데이터) Source(끝)만 표시
 function sourceBadges(record) {
-  const slug = slugBadge(record);
+  const slug = `${slugBadge(record)} ${inflowAppBadge(record)}`.trim();
   const firstRaw = String(record.FirstSource || "").trim();
   const lastRaw = String(record.Source || "homepage").trim();
   const refHost = String(record.FirstReferrer || "").trim();

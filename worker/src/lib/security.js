@@ -96,3 +96,20 @@ export function isValidEmail(s) {
 export function isValidPhone(s) {
   return /^\d{2,3}-?\d{3,4}-?\d{4}$/.test(String(s || "").replace(/\s/g, ""));
 }
+
+// 유입 앱 단서. 클라이언트(config.js)가 판정해 보낸 값을 화이트리스트로만 받는다 —
+// 임의 문자열이 들어와 유입 집계를 오염시키지 않게 한다.
+// 네이버·카카오·인스타 인앱 브라우저는 리퍼러를 지우고 보내므로, User-Agent 에 남은
+// 앱 이름이 사실상 유일한 출처 단서다. legacy-link 는 아임웹 시절 게시판 주소로 들어온 경우.
+export const INFLOW_APPS = Object.freeze([
+  "naver-app",
+  "kakaotalk",
+  "instagram-app",
+  "facebook-app",
+  "legacy-link",
+]);
+
+export function safeInflowApp(value) {
+  const v = String(value ?? "").trim();
+  return INFLOW_APPS.includes(v) ? v : "";
+}

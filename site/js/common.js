@@ -288,7 +288,11 @@
   // 리퍼러가 없어 (direct) 에 섞인다 — 실측(2026-08-21): 194세션이고 그중 193이 신규 방문자로
   // (direct) 587 의 33% 였다. 직접 입력·북마크와 구분되도록 따로 세운다.
   const gaCampaign = (() => {
-    if (attribution.medium || attribution.campaign) return {};
+    // GA4 가 이미 출처를 아는 유입은 건드리지 않는다 — UTM 이 붙었거나 리퍼러가 살아
+    // 있으면 그쪽이 항상 정확하다. 보정은 단서가 하나도 없을 때만 개입한다.
+    if (attribution.medium || attribution.campaign || attribution.referrerHost) {
+      return {};
+    }
     if (attribution.fbclid) {
       return {
         campaign_source: "facebook",
@@ -296,11 +300,20 @@
         campaign_name: "fbclid-recovered",
       };
     }
-    if (/[?&](bmode=view|t=board)|[?&]q=YToxOnt/i.test(location.search)) {
+    // 인앱 브라우저·옛 게시판 링크 판정은 config.js 한 곳에 있다(tracker·접수와 공유).
+    const app = window.DAY1_INFLOW_APP || "";
+    if (app === "legacy-link") {
       return {
         campaign_source: "legacy-link",
         campaign_medium: "referral",
         campaign_name: "legacy-imweb-board",
+      };
+    }
+    if (app) {
+      return {
+        campaign_source: app,
+        campaign_medium: "referral",
+        campaign_name: "inapp-browser",
       };
     }
     return {};

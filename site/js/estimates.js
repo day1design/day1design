@@ -303,6 +303,10 @@
       utm_campaign: attribution.utm_campaign,
       campaign: attribution.label,
       session_id: sessionId,
+      // 리퍼러를 지우고 오는 인앱 브라우저·옛 게시판 링크 단서(config.js 판정).
+      // 워커는 방문 이력에서 first-touch 를 먼저 찾고, 없을 때 이 값을 폴백으로 쓴다
+      // — 첫 페이지에서 바로 접수하면 방문 이벤트가 아직 안 쌓여 있다.
+      inflow_app: window.DAY1_INFLOW_APP || "",
       // Meta CAPI 중복제거 (서버가 동일 event_id 로 Lead 재전송)
       _fb_event_id: eventId,
       _fbp: fbCookie("_fbp"),

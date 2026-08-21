@@ -145,6 +145,9 @@
       session_id: SESSION_ID,
       referrer: REFERRER,
       referrer_path: REFERRER_PATH,
+      // 리퍼러를 지우고 오는 인앱 브라우저(네이버·카카오·인스타)와 옛 게시판 링크를
+      // 가려내 담는다. 판정은 config.js 한 곳에 있다.
+      inflow_app: (window.DAY1_INFLOW_APP || ""),
       utm: UTM,
       ts: Date.now(),
     };

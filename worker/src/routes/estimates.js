@@ -8,6 +8,7 @@ import {
   isValidEmail,
   isValidPhone,
   rateLimit,
+  safeInflowApp,
 } from "../lib/security.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { safeFileName, datePrefix, randomId } from "../lib/r2.js";
@@ -139,6 +140,7 @@ async function fetchFirstTouch(env, sessionId) {
     utmSource: "",
     utmMedium: "",
     utmCampaign: "",
+    inflowApp: "",
   };
   if (!sessionId || !env?.DB) return empty;
   try {
@@ -146,7 +148,7 @@ async function fetchFirstTouch(env, sessionId) {
     // 방문 경계 계산은 JS 로 한다 — D1(SQLite)에서 CTE·윈도우 함수로 짜면
     // silent fail 이 나기 쉬워 결과가 조용히 비는 사고가 있었다.
     const recent = await env.DB.prepare(
-      `SELECT Referrer, RefPath, UtmSource, UtmMedium, UtmCampaign, CreatedAt
+      `SELECT Referrer, RefPath, UtmSource, UtmMedium, UtmCampaign, InflowApp, CreatedAt
        FROM HeatmapEvents
        WHERE SessionId = ? AND EventType = 'page_view'
        ORDER BY CreatedAt DESC
@@ -184,6 +186,11 @@ async function fetchFirstTouch(env, sessionId) {
       campaign: row.UtmCampaign || "",
       source: row.Referrer || "",
     });
+    // 유입 앱 단서는 진입 행에만 실리는 게 아니라 방문 내내 같은 값이 따라온다.
+    // 출처가 실린 행이 비어 있어도 같은 방문의 다른 행에서 주워 온다.
+    const inflowApp =
+      String(row.InflowApp || "") ||
+      String(visitAsc.find((r) => String(r.InflowApp || "") !== "")?.InflowApp || "");
     return {
       source: norm.source,
       platform: norm.platform,
@@ -193,6 +200,7 @@ async function fetchFirstTouch(env, sessionId) {
       utmSource: String(row.UtmSource || ""),
       utmMedium: String(row.UtmMedium || ""),
       utmCampaign: String(row.UtmCampaign || ""),
+      inflowApp,
     };
   } catch {
     return empty;
@@ -808,6 +816,8 @@ async function submitEstimate(request, env, ctx, services) {
     FirstUtmSource: firstTouch.utmSource,
     FirstUtmMedium: firstTouch.utmMedium,
     FirstUtmCampaign: firstTouch.utmCampaign,
+    // 방문 이력에 단서가 없으면 접수 폼이 보낸 값을 폴백으로 쓴다(첫 페이지 즉시 접수).
+    FirstInflowApp: firstTouch.inflowApp || safeInflowApp(fields.inflow_app),
   };
   let record;
   try {

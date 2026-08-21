@@ -931,6 +931,12 @@
   color: #6d28d9;
   border: 1px dashed #c4b5fd;
 }
+/* 리퍼러 없는 접수의 유입 단서(인앱 브라우저·옛 링크) */
+.src-inflow-app {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px dashed #fdba74;
+}
 .est-channel-slug {
   border-top: 1px dashed #e2e8f0;
   padding-top: 6px;

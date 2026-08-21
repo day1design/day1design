@@ -1,6 +1,11 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
-import { clientIP, validateContentType, escapeHtml } from "../lib/security.js";
+import {
+  clientIP,
+  validateContentType,
+  escapeHtml,
+  safeInflowApp,
+} from "../lib/security.js";
 import { generateId } from "../lib/d1.js";
 import { notifyInfra } from "../lib/telegram.js";
 import { buildAnalyticsRollupStatements } from "../lib/analytics-rollups.js";
@@ -9,7 +14,7 @@ import { buildAnalyticsRollupStatements } from "../lib/analytics-rollups.js";
 const HEATMAP_RATE_LIMIT_PER_HOUR = 1000;
 const MAX_EVENTS_PER_REQUEST = 50;
 const MAX_D1_BOUND_PARAMETERS = 100;
-const HEATMAP_INSERT_COLUMN_COUNT = 23;
+const HEATMAP_INSERT_COLUMN_COUNT = 24;
 
 function buildHeatmapInsertStatements(env, rows) {
   const chunkSize = Math.floor(
@@ -19,7 +24,7 @@ function buildHeatmapInsertStatements(env, rows) {
   for (let index = 0; index < rows.length; index += chunkSize) {
     const chunk = rows.slice(index, index + chunkSize);
     const values = chunk
-      .map(() => "(?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?)")
+      .map(() => "(?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?)")
       .join(", ");
     statements.push(
       env.DB.prepare(
@@ -27,7 +32,8 @@ function buildHeatmapInsertStatements(env, rows) {
           (id, Page, EventType, Device, XPct, YPct, ScrollDepthPct,
            PageW, PageH, ViewportW, ViewportH,
            SessionId, IP, Country, Region, City,
-           Referrer, RefPath, UtmSource, UtmMedium, UtmCampaign, CreatedAt, IsBot)
+           Referrer, RefPath, UtmSource, UtmMedium, UtmCampaign, CreatedAt, IsBot,
+           InflowApp)
          VALUES ${values}`,
       ).bind(...chunk.flat()),
     );
@@ -295,6 +301,7 @@ async function trackEvents(request, env, ctx) {
     const utmSource = safeStr(e?.utm?.source, 100);
     const utmMedium = safeStr(e?.utm?.medium, 100);
     const utmCampaign = safeStr(e?.utm?.campaign, 100);
+    const inflowApp = safeInflowApp(e.inflow_app);
     const evIsBot = uaBot || isSpoofedSearch(refHost, country) ? 1 : 0;
     if (evIsBot) {
       botCount++;
@@ -326,6 +333,7 @@ async function trackEvents(request, env, ctx) {
       utmCampaign,
       nowIso,
       evIsBot,
+      inflowApp,
     ]);
     rollupEvents.push({
       id,
