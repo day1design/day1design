@@ -186,14 +186,7 @@
     if (proc) proc.style.display = "none";
     document.getElementById("estComplete").style.display = "block";
     window.scrollTo({ top: 0, behavior: "smooth" });
-    // 전환 추적: GA4 generate_lead + Meta Pixel Lead (eventID 로 서버 CAPI 와 중복제거)
-    if (typeof window.day1Track === "function") {
-      window.day1Track(
-        "generate_lead",
-        { method: "estimate_form" },
-        { eventID: payload.fields._fb_event_id },
-      );
-    }
+    // 전환은 여기서 찍지 않는다 — submitInBackground 가 서버 확정 후에 찍는다.
     submitInBackground(payload);
   });
 
@@ -338,6 +331,20 @@
       : null;
   const PENDING_KEY = "day1_pending_estimates";
 
+  // 전환 추적: GA4 generate_lead + Meta Pixel Lead (eventID 로 서버 CAPI 와 중복제거).
+  // 완료화면은 체감속도 때문에 낙관적으로 먼저 띄우지만, 전환은 서버가 접수를
+  // 확정한 뒤에만 찍는다. 400·403·500 으로 거부된 제출까지 전환으로 세면 GA4
+  // 전환수가 실제 접수보다 부푼다 — 불변규칙 2(가짜 성공 금지)와 같은 취지다.
+  // 첫 전송이 실패해 큐로 넘어간 건은 재전송이 성공하는 시점에 한 번만 찍힌다.
+  function trackLeadConversion(eventId) {
+    if (typeof window.day1Track !== "function") return;
+    window.day1Track(
+      "generate_lead",
+      { method: "estimate_form" },
+      { eventID: eventId || "" },
+    );
+  }
+
   async function submitInBackground(payload) {
     if (!ESTIMATES_ENDPOINT) {
       queuePending(payload.fields);
@@ -350,6 +357,7 @@
         keepalive: true,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      trackLeadConversion(payload.fields._fb_event_id);
     } catch (e) {
       queuePending(payload.fields);
     }
@@ -402,6 +410,7 @@
           body: fd,
         });
         if (!res.ok) remaining.push(fields);
+        else trackLeadConversion(fields._fb_event_id);
       } catch (e) {
         remaining.push(fields);
       }
