@@ -56,10 +56,21 @@ export function sheetsClient(env) {
   };
 }
 
+// 미러링 on/off 스위치. 2026-08-24 사용자 요청으로 시트 기록을 중단했다
+// (wrangler.toml LEADS_SHEET_ENABLED="0"). 자격증명·시트 ID 는 그대로 두고 이 값만
+// "1" 로 되돌리면 다시 기록된다. 값이 없으면 기본은 켜짐이다.
+export function isSheetEnabled(env) {
+  const v = String(env?.LEADS_SHEET_ENABLED ?? "1")
+    .trim()
+    .toLowerCase();
+  return !(v === "0" || v === "false" || v === "off");
+}
+
 export function isSheetConfigured(env) {
   const client = env ? sheetsClient(env) : { id: "", secret: "" };
   return Boolean(
     env &&
+    isSheetEnabled(env) &&
     env.LEADS_SHEET_ID &&
     client.id &&
     client.secret &&
@@ -161,8 +172,10 @@ async function appendValues(env, token, tab, values, fetchImpl) {
   return true;
 }
 
-// 리드 1건 append. 미설정이면 조용히 skip(연동 전에도 접수는 정상 동작해야 한다).
+// 리드 1건 append. 꺼져 있거나 미설정이면 조용히 skip 한다
+// (연동 전에도, 미러링을 끈 뒤에도 접수는 정상 동작해야 한다).
 export async function appendLeadToSheet(env, lead, { fetchImpl = fetch } = {}) {
+  if (!isSheetEnabled(env)) return { skipped: true, reason: "disabled" };
   if (!isSheetConfigured(env)) return { skipped: true, reason: "unconfigured" };
   const token = await accessToken(env, fetchImpl);
   const values = [buildLeadRow(lead)];

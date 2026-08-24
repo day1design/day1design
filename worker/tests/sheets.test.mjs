@@ -13,6 +13,7 @@ import {
   appendLeadToSheet,
   buildLeadRow,
   isSheetConfigured,
+  isSheetEnabled,
   toSheetStamp,
 } from "../src/lib/sheets.js";
 
@@ -213,4 +214,17 @@ test("설정 판정 — 토큰·시트ID·클라이언트 중 하나라도 없�
     false,
   );
   assert.equal(isSheetConfigured({ ...ENV, LEADS_SHEET_ID: "" }), false);
+});
+
+test("스위치 OFF — 설정이 다 갖춰져 있어도 기록하지 않는다", async () => {
+  const { calls, fetchImpl } = stub([]);
+  const r = await appendLeadToSheet(
+    { ...ENV, LEADS_SHEET_ENABLED: "0" },
+    LEAD,
+    { fetchImpl },
+  );
+  assert.deepEqual(r, { skipped: true, reason: "disabled" });
+  assert.equal(calls.length, 0, "OFF 상태에서 외부 호출 금지");
+  assert.equal(isSheetConfigured({ ...ENV, LEADS_SHEET_ENABLED: "0" }), false);
+  assert.equal(isSheetEnabled({}), true, "값이 없으면 기본은 켜짐");
 });

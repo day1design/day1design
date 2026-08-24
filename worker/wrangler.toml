@@ -41,6 +41,8 @@ ESTIMATE_ALLOWLIST_NAMES = ""
 # 리드 미러링 구글시트. 쓰기 토큰은 secret(GOOGLE_SHEETS_REFRESH_TOKEN)으로 주입하며
 # spreadsheets 스코프가 필요하다(GA4용 analytics.readonly 토큰으로는 403).
 # 미설정이면 시트 기록만 skip 되고 접수는 정상 동작한다.
+# 2026-08-24 사용자 요청으로 시트 기록 중단. "1" 로 바꾸면 아래 설정 그대로 다시 켜진다.
+LEADS_SHEET_ENABLED = "0"
 LEADS_SHEET_ID = "1V2xNjQZPJUskHoARMRLnyVdXGFcFsdM6-H7ihDNEMcA"
 LEADS_SHEET_TAB = "고객정보"
 ESTIMATE_ALLOWLIST_PHONES = ""
