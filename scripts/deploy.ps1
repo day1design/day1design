@@ -40,13 +40,30 @@ Get-Content $envFile | ForEach-Object {
 $ADMIN_PROJECT_ID = 'prj_SMk0FaZF5Y1nNcRsIQYKHKC6cHJA'
 $ADMIN_ORG_ID = 'team_fuEnkCHCSVhgGlS7m39Jhz1e'
 
+# 2026-08-24: 이 PC 의 npx 가 wrangler·vercel 을 못 찾는다
+# (`npm error could not determine executable to run`, exit 1).
+# 그래서 `npx wrangler deploy` 가 인증 문제처럼 보이는 실패를 냈다 —
+# 자격증명은 정상이었고 실행 파일 해석이 깨진 것이다.
+# 로컬 node_modules/.bin 을 먼저 보고, 없으면 전역 설치본을 쓴다.
+function Resolve-Cli {
+  param([string]$Name, [string]$LocalDir)
+  $local = Join-Path $LocalDir "node_modules\.bin\$Name.cmd"
+  if (Test-Path $local) { return $local }
+  $globalCmd = (Get-Command $Name -ErrorAction SilentlyContinue).Source
+  if ($globalCmd) { return $globalCmd }
+  throw "$Name CLI 를 찾을 수 없습니다 (로컬 node_modules·전역 설치 모두 없음)"
+}
+
 function Deploy-Worker {
   Write-Host "`n[1/3] Cloudflare Worker deploy" -ForegroundColor Cyan
   Push-Location (Join-Path $root 'worker')
   try {
     # wrangler 가 CLOUDFLARE_API_TOKEN 우선 보므로 강제로 비워서 Global API Key 사용
+    # (Global API Key 방식은 CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY 가 짝이어야 한다)
     $env:CLOUDFLARE_API_TOKEN = ''
-    & npx wrangler deploy
+    $env:CF_API_TOKEN = ''
+    $wrangler = Resolve-Cli -Name 'wrangler' -LocalDir (Join-Path $root 'worker')
+    & $wrangler deploy
     if ($LASTEXITCODE -ne 0) { throw "wrangler deploy failed" }
   } finally {
     Pop-Location
@@ -57,7 +74,10 @@ function Deploy-Main {
   Write-Host "`n[2/3] Main Vercel deploy (day1design.co.kr)" -ForegroundColor Cyan
   Push-Location $root
   try {
-    & npx vercel --prod --token $env:VERCEL_TOKEN --yes
+    # 평소 Vercel 배포는 git push 가 트리거한다(작업트리 직접 배포 사고 차단).
+    # 이 경로는 push 자동배포가 안 걸릴 때의 수동 폴백이다.
+    $vercel = Resolve-Cli -Name 'vercel' -LocalDir $root
+    & $vercel --prod --token $env:VERCEL_TOKEN --yes
     if ($LASTEXITCODE -ne 0) { throw "main vercel deploy failed" }
   } finally {
     Pop-Location
