@@ -1794,23 +1794,48 @@
   color: var(--c-text-muted);
   font-size: 12px;
 }
+/* 채널별 가로 막대 — 막대 길이가 전체 대비 비중이라 순위와 격차가 한눈에 잡힌다.
+   칩 나열은 78%와 0.2%가 같은 크기로 보여 비교가 안 됐다. */
 .est-channel-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: block;
 }
 .est-channel-item {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  background: var(--c-bg, #f8fafc);
-  border: 1px solid var(--c-border);
-  border-radius: 999px;
-  padding: 6px 12px;
+  display: grid;
+  grid-template-columns: 104px 1fr 92px;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+}
+.est-channel-name {
+  text-align: right;
+  font-size: 12px;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.est-channel-track {
+  position: relative;
+  display: block;
+  height: 18px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.est-channel-fill {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: 4px;
+  background: #64748b;
+}
+.est-channel-val {
+  text-align: right;
+  white-space: nowrap;
 }
 .est-channel-item strong {
   color: var(--c-text);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -1819,21 +1844,63 @@
   font-size: 12px;
   font-style: normal;
   font-variant-numeric: tabular-nums;
+  margin-left: 5px;
+}
+/* 막대 색은 출처 뱃지 색 계열을 그대로 쓴다(화면 다른 곳의 뱃지와 어긋나지 않게).
+   네이버는 검색·블로그·플레이스로 갈려도 같은 계열임이 보이도록 한 색으로 둔다. */
+.bar-meta {
+  background: #1d4ed8;
+}
+.bar-homepage {
+  background: #4338ca;
+}
+.bar-naver {
+  background: #166534;
+}
+.bar-google {
+  background: #1e40af;
+}
+.bar-instagram_official {
+  background: #833ab4;
+}
+.bar-instagram_mkt {
+  background: #b03a75;
+}
+.bar-youtube {
+  background: #b91c1c;
+}
+.bar-kakao {
+  background: #a16207;
+}
+.bar-referral,
+.bar-other {
+  background: #64748b;
+}
+.bar-slug {
+  background: #8b5cf6;
 }
 .est-channel-empty {
   color: var(--c-text-muted);
   font-size: 12px;
 }
 @media (max-width: 760px) {
-  .est-channel-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
+  /* 좁은 화면에서는 라벨 칸 고정폭을 버리고 라벨·값을 윗줄에, 막대를 아랫줄에 둔다
+     (고정폭을 유지하면 '네이버플레이스' 같은 이름이 잘린다) */
   .est-channel-item {
-    border-radius: var(--radius);
-    justify-content: flex-start;
-    padding: 8px 10px;
+    grid-template-columns: 1fr auto;
+    gap: 2px 8px;
+    padding: 5px 0;
+  }
+  .est-channel-name {
+    text-align: left;
+  }
+  .est-channel-track {
+    grid-column: 1 / -1;
+    height: 14px;
+  }
+  .est-channel-val {
+    grid-column: 2;
+    grid-row: 1;
   }
 }
 

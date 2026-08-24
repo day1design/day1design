@@ -454,23 +454,37 @@ function renderChannelStats(list) {
     if (isSlugLead(r)) slugCount += 1;
   }
   const items = [...counts.values()].sort((a, b) => b.count - a.count);
+  // 막대 길이 = 전체 대비 비중. 비중이 1% 미만이어도 막대가 사라지지 않도록
+  // 최소 길이를 준다(CSS min-width).
+  const barRow = (key, labelHtml, count, extraClass, titleAttr) => `
+      <div class="est-channel-item ${extraClass || ""}"${titleAttr || ""}>
+        <span class="est-channel-name">${labelHtml}</span>
+        <span class="est-channel-track">
+          <i class="est-channel-fill bar-${key}" style="width:${((count / total) * 100).toFixed(2)}%"></i>
+        </span>
+        <span class="est-channel-val"
+          ><strong>${fmtInt(count)}</strong><em>${fmtShare(count, total)}</em></span
+        >
+      </div>`;
   const slugItem = slugCount
-    ? `
-      <div class="est-channel-item est-channel-slug" title="마케팅 슬러그(/go/) 경유 — 위 매체 집계와 중복 집계됩니다">
-        <span class="src-badge src-slug">슬러그 경유</span>
-        <strong>${fmtInt(slugCount)}</strong>
-        <em>${fmtShare(slugCount, total)}</em>
-      </div>`
+    ? barRow(
+        "slug",
+        '<span class="src-badge src-slug">슬러그 경유</span>',
+        slugCount,
+        "est-channel-slug",
+        ' title="마케팅 슬러그(/go/) 경유 · 위 매체 집계와 중복 집계됩니다"',
+      )
     : "";
   wrap.innerHTML =
     items
-      .map(
-        (item) => `
-      <div class="est-channel-item">
-        <span class="src-badge src-${item.key}">${escapeHtml(item.label)}</span>
-        <strong>${fmtInt(item.count)}</strong>
-        <em>${fmtShare(item.count, total)}</em>
-      </div>`,
+      .map((item) =>
+        barRow(
+          item.key,
+          escapeHtml(item.label),
+          item.count,
+          "",
+          ` title="${escapeHtml(item.label)} ${fmtInt(item.count)}건 · ${fmtShare(item.count, total)}"`,
+        ),
       )
       .join("") + slugItem;
   if (sub) {
