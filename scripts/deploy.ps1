@@ -40,11 +40,22 @@ Get-Content $envFile | ForEach-Object {
 $ADMIN_PROJECT_ID = 'prj_SMk0FaZF5Y1nNcRsIQYKHKC6cHJA'
 $ADMIN_ORG_ID = 'team_fuEnkCHCSVhgGlS7m39Jhz1e'
 
-# 2026-08-24: 이 PC 의 npx 가 wrangler·vercel 을 못 찾는다
-# (`npm error could not determine executable to run`, exit 1).
-# 그래서 `npx wrangler deploy` 가 인증 문제처럼 보이는 실패를 냈다 —
-# 자격증명은 정상이었고 실행 파일 해석이 깨진 것이다.
-# 로컬 node_modules/.bin 을 먼저 보고, 없으면 전역 설치본을 쓴다.
+# 🔴 2026-08-24 원인규명 — PowerShell 에서 `& npx ...` 를 쓰면 안 된다.
+#
+# Node 설치본의 npx.ps1 은 인자를 이렇게 만든다:
+#   $NPX_ARGS = <명령줄 텍스트>.Substring($MyInvocation.InvocationName.Length)
+# 호출 연산자 `&` 를 붙이면 InvocationName 이 `npx` 가 아니라 `&`(1글자)가 되어
+# "npx wrangler deploy" 에서 1글자만 잘려 "px wrangler deploy" 로 실행된다.
+# npm 은 실재하는 px@0.1.2 를 레지스트리에서 받아오고, 거기 실행 파일이 없어
+# `npm error could not determine executable to run` (exit 1) 을 낸다.
+#
+# 실측: `& npx wrangler --version` → 위 에러 / `npx wrangler --version` → 3.114.17
+# 이 에러가 인증 실패처럼 보여 계정을 의심하게 만든다. 계정은 멀쩡했다.
+# 구분법: 메시지가 `npm error` 로 시작하면 CLI 해석 문제이고,
+#         wrangler 인증 오류라면 `Authentication error [code: 10000]` 로 나온다.
+#
+# 그래서 npx 를 아예 거치지 않는다. 로컬 node_modules/.bin 을 먼저 보고,
+# 없으면 전역 설치본을 쓴다. npx 로 되돌리지 말 것.
 function Resolve-Cli {
   param([string]$Name, [string]$LocalDir)
   $local = Join-Path $LocalDir "node_modules\.bin\$Name.cmd"
@@ -52,6 +63,27 @@ function Resolve-Cli {
   $globalCmd = (Get-Command $Name -ErrorAction SilentlyContinue).Source
   if ($globalCmd) { return $globalCmd }
   throw "$Name CLI 를 찾을 수 없습니다 (로컬 node_modules·전역 설치 모두 없음)"
+}
+
+# 배포 전 자격증명 점검. Global API Key 방식은 EMAIL + API_KEY 가 짝이어야 하고,
+# 셸에 남은 다른 프로젝트 토큰이 끼어들면 엉뚱한 계정으로 배포된다.
+# 값 위생(꼬리 공백·개행)까지 여기서 걸러 "인증은 되는데 값이 안 맞는" 상황을 막는다.
+function Assert-CloudflareAccount {
+  param([string]$WranglerPath)
+
+  foreach ($k in @('CLOUDFLARE_EMAIL', 'CLOUDFLARE_API_KEY', 'CLOUDFLARE_ACCOUNT_ID')) {
+    $v = [Environment]::GetEnvironmentVariable($k)
+    if ([string]::IsNullOrWhiteSpace($v)) { throw "$k 가 site/.env.local 에 없습니다" }
+    if ($v -ne $v.Trim()) { throw "$k 값 끝에 공백·개행이 붙어 있습니다 (인증 실패의 흔한 원인)" }
+  }
+
+  $who = & $WranglerPath whoami 2>&1 | Out-String
+  $expected = $env:CLOUDFLARE_ACCOUNT_ID
+  if ($who -notmatch [regex]::Escape($expected)) {
+    Write-Host $who -ForegroundColor DarkGray
+    throw "계정 불일치: wrangler 가 잡은 계정이 .env.local 의 CLOUDFLARE_ACCOUNT_ID($expected) 와 다릅니다"
+  }
+  Write-Host "  ✓ 계정 확인 $env:CLOUDFLARE_EMAIL / $($expected.Substring(0,8))…" -ForegroundColor DarkGray
 }
 
 function Deploy-Worker {
@@ -63,6 +95,7 @@ function Deploy-Worker {
     $env:CLOUDFLARE_API_TOKEN = ''
     $env:CF_API_TOKEN = ''
     $wrangler = Resolve-Cli -Name 'wrangler' -LocalDir (Join-Path $root 'worker')
+    Assert-CloudflareAccount -WranglerPath $wrangler
     & $wrangler deploy
     if ($LASTEXITCODE -ne 0) { throw "wrangler deploy failed" }
   } finally {
