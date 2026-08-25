@@ -966,9 +966,14 @@
           </thead>
           <tbody>
             <tr>
-              <td>팝업을 닫고 다시 나가려 할 때</td>
-              <td>가드 엔트리를 다시 쌓아 재노출</td>
+              <td>팝업을 닫고 다시 나가려 할 때 (같은 방문)</td>
+              <td>가드 엔트리를 다시 쌓아 재노출 (한 방문 3회까지)</td>
               <td><span class="ok">PC·모바일 정상</span></td>
+            </tr>
+            <tr>
+              <td>무시하고 나갔다가 다시 들어와 또 나가려 할 때</td>
+              <td>새 방문이므로 다시 노출</td>
+              <td><span class="ok">실측 확인</span></td>
             </tr>
             <tr>
               <td>팝업이 뜬 상태에서 뒤로가기를 한 번 더</td>
@@ -1027,10 +1032,13 @@
               </td>
             </tr>
             <tr>
-              <td>이번 방문에서 접수를 완료함</td>
+              <td>접수를 완료한 방문자</td>
               <td>
-                <code class="kbd">sessionStorage.day1_lead_done</code> 확인 후
-                무장 해제.
+                이번 방문은
+                <code class="kbd">sessionStorage.day1_lead_done</code>, 이후
+                방문은 <code class="kbd">localStorage.day1_lead_done_at</code>
+                으로 <b>30일간</b> 막습니다. 이미 상담을 신청한 고객에게 "견적
+                받아보세요" 를 다시 띄우면 안 됩니다.
               </td>
             </tr>
             <tr>
@@ -1044,8 +1052,20 @@
             <tr>
               <td>"다음에 볼게요"로 닫음</td>
               <td>
-                <b>24시간</b> 억제
-                (<code class="kbd">day1_exitguard_dismissed</code>).
+                <b>이번 방문에서만</b> 억제합니다
+                (<code class="kbd">sessionStorage.day1_exitguard_dismissed</code>).
+                팝업을 무시하고 나갔다가 나중에 다시 들어온 방문자는 새
+                방문이므로 다시 붙잡습니다. 재방문 자체가 관심이 남아 있다는
+                신호이고, 그때는 마음이 달라졌을 수 있습니다.
+              </td>
+            </tr>
+            <tr>
+              <td>한 방문에서 세 번 띄움</td>
+              <td>
+                더 붙잡지 않고 그대로 내보냅니다
+                (<code class="kbd">day1_exitguard_shown</code> 상한 3회). 나가려는
+                사람을 계속 막아 세우면 팝업이 방해물이 됩니다. 이 상한도 방문
+                단위라 재방문하면 초기화됩니다.
               </td>
             </tr>
             <tr>

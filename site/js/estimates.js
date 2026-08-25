@@ -188,9 +188,12 @@
     const proc = document.querySelector(".est-process");
     if (proc) proc.style.display = "none";
     document.getElementById("estComplete").style.display = "block";
-    // 이번 방문에 접수를 마쳤음을 남긴다 — 이탈 팝업이 다시 붙잡지 않게 한다.
+    // 접수를 마쳤음을 남긴다 — 이탈 팝업이 다시 붙잡지 않게 한다.
+    // 세션 키는 이번 방문용, localStorage 시각은 방문을 넘어 30일간 유효하다.
+    // 이미 상담을 신청한 고객에게 "견적 받아보세요" 를 다시 띄우면 안 된다.
     try {
       sessionStorage.setItem("day1_lead_done", "1");
+      localStorage.setItem("day1_lead_done_at", String(Date.now()));
     } catch (e) {}
     window.scrollTo({ top: 0, behavior: "smooth" });
     // 전환은 여기서 찍지 않는다 — submitInBackground 가 서버 확정 후에 찍는다.

@@ -33,8 +33,11 @@
   var CARRY_KEY = "day1_exitguard_carry"; // 폼으로 넘길 값 (session)
   var CARRIED_KEY = "day1_exitguard_carried"; // 이번 방문에 이미 넘어갔는가
   var LEAD_DONE_KEY = "day1_lead_done"; // 이번 방문에 접수를 마쳤는가
-  var DISMISS_KEY = "day1_exitguard_dismissed"; // 24시간 억제
-  var DISMISS_MS = 24 * 60 * 60 * 1000;
+  var DISMISS_KEY = "day1_exitguard_dismissed"; // 이번 방문에 "다음에" 를 눌렀는가
+  var SHOWN_KEY = "day1_exitguard_shown"; // 이번 방문에 몇 번 띄웠는가
+  var LEAD_DONE_AT_KEY = "day1_lead_done_at"; // 접수 완료 시각 (방문을 넘어 유지)
+  var LEAD_DONE_MS = 30 * 24 * 60 * 60 * 1000; // 접수한 사람에겐 30일간 안 띄운다
+  var MAX_SHOWS_PER_VISIT = 3; // 한 방문에서 붙잡는 횟수 상한
   var ESTIMATE_PATH = "/pages/estimates";
 
   function ss(key) {
@@ -44,18 +47,41 @@
       return null;
     }
   }
-  function dismissedRecently() {
+  function ssSet(key, value) {
     try {
-      var at = parseInt(localStorage.getItem(DISMISS_KEY) || "0", 10);
-      return at && Date.now() - at < DISMISS_MS;
+      sessionStorage.setItem(key, String(value));
+    } catch (e) {}
+  }
+
+  // 억제는 "이번 방문" 단위다. 팝업을 무시하고 나갔다가 나중에 다시 들어온
+  // 방문자는 새 세션이므로 다시 붙잡는다 — 그때는 마음이 달라졌을 수 있고,
+  // 재방문 자체가 관심이 남아 있다는 신호다.
+  //
+  // 방문을 넘어 유지되는 억제는 하나뿐이다: 접수를 마친 사람. 이미 상담을
+  // 신청한 고객에게 "견적 받아보세요" 를 다시 띄우면 안 된다.
+  function alreadyConverted() {
+    try {
+      var at = parseInt(localStorage.getItem(LEAD_DONE_AT_KEY) || "0", 10);
+      return !!at && Date.now() - at < LEAD_DONE_MS;
     } catch (e) {
       return false;
     }
   }
+  function shownCount() {
+    return parseInt(ss(SHOWN_KEY) || "0", 10) || 0;
+  }
 
-  // 접수를 이미 마쳤거나, 팝업을 거쳐 폼으로 이미 넘어갔거나, 24시간 안에
-  // 닫은 적이 있으면 가드를 아예 심지 않는다.
-  if (ss(LEAD_DONE_KEY) || ss(CARRIED_KEY) || dismissedRecently()) return;
+  if (alreadyConverted()) return;
+  // 이번 방문에 이미 접수했거나, 팝업을 거쳐 폼으로 넘어갔거나, "다음에 볼게요"
+  // 를 눌렀거나, 상한만큼 띄웠으면 이 방문에서는 더 붙잡지 않는다.
+  if (
+    ss(LEAD_DONE_KEY) ||
+    ss(CARRIED_KEY) ||
+    ss(DISMISS_KEY) ||
+    shownCount() >= MAX_SHOWS_PER_VISIT
+  ) {
+    return;
+  }
 
   var armed = true;
   var popup = null;
@@ -188,8 +214,12 @@
       var name = document.getElementById("d1egName");
       if (name) name.focus({ preventScroll: true });
     }
+    ssSet(SHOWN_KEY, shownCount() + 1);
     if (typeof window.day1Track === "function") {
-      window.day1Track("exit_guard_shown", { page_path: location.pathname });
+      window.day1Track("exit_guard_shown", {
+        page_path: location.pathname,
+        shown_count: shownCount(),
+      });
     }
   }
 
@@ -206,9 +236,7 @@
   // 실제 이탈: 팝업을 띄우면서 가드 엔트리를 다시 쌓았으므로 2칸을 물러난다.
   function leave() {
     armed = false;
-    try {
-      localStorage.setItem(DISMISS_KEY, String(Date.now()));
-    } catch (e) {}
+    ssSet(DISMISS_KEY, "1"); // 이번 방문에서만 억제 — 재방문하면 다시 붙잡는다
     hide();
     history.go(-2);
   }
@@ -330,6 +358,14 @@
     var other = document.querySelector("#popupRoot .popup-overlay");
     if (other) {
       history.pushState({ d1Guard: 1 }, "");
+      return;
+    }
+
+    // 한 방문에서 상한만큼 띄웠으면 더 붙잡지 않는다. 나가려는 사람을 계속
+    // 막아 세우면 팝업이 방해물이 된다.
+    if (shownCount() >= MAX_SHOWS_PER_VISIT) {
+      armed = false;
+      history.back();
       return;
     }
 
