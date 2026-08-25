@@ -422,3 +422,74 @@
 .est-wrap ~ .footer {
   margin-top: 0;
 }
+
+/* ─────────── 이탈 팝업에서 이어받은 접수 ───────────
+   팝업에서 이름·연락처를 먼저 받고 이 페이지로 넘어온 경우에만 나타난다.
+   estimates.js 가 폼 앞에 배너를 끼워 넣고, 옮겨온 두 칸에 .carried 를 붙인다. */
+.est-carry {
+  max-width: 720px;
+  margin: 0 auto 18px;
+  padding: 16px 20px;
+  background: var(--color-bg-cream);
+  border-left: 3px solid var(--color-brand-beige);
+  border-radius: 2px;
+}
+.est-carry-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-heading);
+}
+.est-carry-chk {
+  flex: 0 0 auto;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--color-brand-beige);
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.est-carry p {
+  margin: 7px 0 0 28px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #6b6558;
+}
+
+/* 옮겨온 칸 — 채워져 있음을 표시하되 수정은 막지 않는다.
+   오타를 고치지 못하면 연락이 닿지 않는다. */
+.est-field.carried input {
+  background: #faf8f3;
+  border-color: #cfc7b6;
+  font-weight: 700;
+}
+.est-field.carried .lbl::after {
+  content: "옮겨옴";
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--color-bg-cream);
+  color: var(--color-brand-beige);
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+@media (max-width: 600px) {
+  .est-carry {
+    margin: 0 0 14px;
+    padding: 14px 16px;
+  }
+  .est-carry-head {
+    font-size: 13px;
+  }
+  .est-carry p {
+    margin-left: 28px;
+    font-size: 12px;
+  }
+}

@@ -58,6 +58,8 @@ const SCHEMA = {
     "FirstInflowApp",
     "MetaLeadId",
     "MetaFieldData",
+    "LeadKey",
+    "FormType",
   ],
   EstimateMemos: ["EstimateId", "Body", "Author", "CreatedAt", "UpdatedAt"],
   Clients: ["Brand", "Phone4", "Order"],

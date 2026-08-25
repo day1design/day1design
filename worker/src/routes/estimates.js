@@ -190,7 +190,9 @@ async function fetchFirstTouch(env, sessionId) {
     // 출처가 실린 행이 비어 있어도 같은 방문의 다른 행에서 주워 온다.
     const inflowApp =
       String(row.InflowApp || "") ||
-      String(visitAsc.find((r) => String(r.InflowApp || "") !== "")?.InflowApp || "");
+      String(
+        visitAsc.find((r) => String(r.InflowApp || "") !== "")?.InflowApp || "",
+      );
     return {
       source: norm.source,
       platform: norm.platform,
@@ -677,6 +679,12 @@ async function submitEstimate(request, env, ctx, services) {
     autofillHoneypot = true;
   }
 
+  // 이탈 방지 팝업(exit guard) 경유 접수 — 이름·연락처·동의 세 가지만 받는다.
+  // 나머지 항목은 이어지는 견적 폼에서 채워 같은 LeadKey 로 승격된다.
+  // 기존 견적 폼의 검증은 그대로 두고, 이 경로에서만 필수 범위를 좁힌다.
+  const isExitGuard = fields.form_type === "exit_guard";
+  const leadKey = sanitizeText(fields.lead_key || "", 40);
+
   // 기본 검증 — 간소화 폼 필수: 이름·연락처·평형대·현장주소·희망일정·지점·가용예산 + 개인정보 동의
   // (이메일·공간유형·문의경로는 폼에서 제거되어 선택값. 이메일은 입력 시에만 형식 검증)
   const errors = [];
@@ -684,11 +692,13 @@ async function submitEstimate(request, env, ctx, services) {
   if (!isValidPhone(fields.phone || "")) errors.push("phone");
   if (fields.email && !isValidEmail(fields.email)) errors.push("email");
   if (fields.privacy_agreed !== "true") errors.push("privacy_agreed");
-  if (!fields.space_size) errors.push("space_size");
-  if (!fields.address) errors.push("address");
-  if (!fields.schedule) errors.push("schedule");
-  if (!fields.branch) errors.push("branch");
-  if (!fields.budget) errors.push("budget");
+  if (!isExitGuard) {
+    if (!fields.space_size) errors.push("space_size");
+    if (!fields.address) errors.push("address");
+    if (!fields.schedule) errors.push("schedule");
+    if (!fields.branch) errors.push("branch");
+    if (!fields.budget) errors.push("budget");
+  }
   if ((fields.detail || "").length > 2000) errors.push("detail-too-long");
   // URL 정책: 이름엔 URL 금지(봇). 문의내용엔 단순 참고링크 허용,
   // 링크 스팸(3개+)·HTML/스크립트 삽입만 차단. (정상 고객 링크 첨부 보존)
@@ -726,7 +736,11 @@ async function submitEstimate(request, env, ctx, services) {
     return jsonError(400, "Validation failed", { errors });
   }
   const attribution = normalizeEstimateAttribution(fields);
-  const detail = detailWithBudget(fields.detail, fields.budget);
+  // 팝업 접수는 상세 항목이 비어 있다. 담당자가 통화 전에 상황을 알 수 있게
+  // 그 사실을 본문에 남긴다(빈 카드를 받으면 왜 비었는지 알 수 없다).
+  const detail = isExitGuard
+    ? "이탈 방지 팝업 접수 · 이름·연락처만 입력됨 (상세 항목 미작성)"
+    : detailWithBudget(fields.detail, fields.budget);
 
   // ★검증 통과 시점에 R2 원문 보관 — 이후 업로드/D1 실패에 대비.
   // 자동완성 허니팟 오탐 건은 'accepted_autofill' 로 구분 보관(접수는 정상).
@@ -783,6 +797,25 @@ async function submitEstimate(request, env, ctx, services) {
   // First-touch 출처: 자체 트래커 SessionId로 D1 HeatmapEvents의 최초 page_view 조회
   const sessionId = sanitizeText(fields.session_id, 64);
   const firstTouch = await fetchFirstTouch(env, sessionId);
+
+  // ★팝업 → 폼 승격. 팝업이 먼저 저장해 둔 '작성중' 레코드를 LeadKey 로 찾아
+  // 새 카드를 만들지 않고 그 레코드를 채운다. 이 대조가 없으면 같은 사람이
+  // 카드 두 장(팝업 1 + 폼 1)으로 갈라져 담당자가 같은 고객에게 두 번 전화한다.
+  const issuedLeadKey = isExitGuard
+    ? leadKey || `${datePrefix()}-${randomId()}`
+    : leadKey;
+  let promoteId = "";
+  if (leadKey) {
+    try {
+      const found = await services.estimates.listAll({
+        where: { LeadKey: leadKey },
+      });
+      if (found.length) promoteId = found[0].id;
+    } catch {
+      // 조회 실패는 승격만 포기한다. 접수 자체를 막지 않는다(새 레코드로 저장).
+    }
+  }
+
   // ★성공(200)은 D1 저장 확정 후에만 반환. throw 시 1회 재시도 → 그래도 실패면
   // R2 d1_failed 보관 + 텔레그램 + 500(재시도 유도). 가짜 성공 절대 금지.
   const createPayload = {
@@ -802,7 +835,11 @@ async function submitEstimate(request, env, ctx, services) {
     ConceptFiles: JSON.stringify(conceptUrls),
     FloorPlans: JSON.stringify(planUrls),
     SubmittedAt: submittedAt,
-    Status: "접수대기",
+    // 팝업 접수는 아직 완성된 문의가 아니다. '작성중' 으로 두어 접수관리 기본
+    // 목록에서 빠지게 하고, 견적 폼을 마치면 같은 레코드가 '접수대기' 로 승격된다.
+    Status: isExitGuard ? "작성중" : "접수대기",
+    LeadKey: issuedLeadKey,
+    FormType: isExitGuard ? "exit_guard" : leadKey ? "exit_guard" : "",
     IP: ip,
     Source: attribution.source,
     Platform: attribution.platform,
@@ -819,12 +856,16 @@ async function submitEstimate(request, env, ctx, services) {
     // 방문 이력에 단서가 없으면 접수 폼이 보낸 값을 폴백으로 쓴다(첫 페이지 즉시 접수).
     FirstInflowApp: firstTouch.inflowApp || safeInflowApp(fields.inflow_app),
   };
+  const saveRecord = () =>
+    promoteId
+      ? services.estimates.update(promoteId, createPayload)
+      : services.estimates.create(createPayload);
   let record;
   try {
-    record = await services.estimates.create(createPayload);
+    record = await saveRecord();
   } catch (dbErr1) {
     try {
-      record = await services.estimates.create(createPayload); // 1회 재시도
+      record = await saveRecord(); // 1회 재시도
     } catch (dbErr2) {
       await archiveAttemptToR2(env, ctx, {
         ip,
@@ -856,9 +897,42 @@ async function submitEstimate(request, env, ctx, services) {
     );
   }
 
+  // ★이탈 팝업 접수는 여기서 끝낸다. 아직 문의가 완성되지 않았으므로
+  // 고객 문자·접수확인 메일·시트 기록·CAPI 는 보내지 않는다("접수되었습니다"
+  // 문자가 먼저 가면 방문자가 폼을 마칠 이유를 잃는다). 운영자 인지용
+  // 텔레그램 한 줄과 작동로그만 남기고, 나머지는 폼 완주 시점에 전량 발송한다.
+  if (isExitGuard) {
+    const guardPhone = String(fields.phone || "").replace(/\D/g, "");
+    ctx.waitUntil(
+      Promise.allSettled([
+        notifyTelegram(
+          env,
+          `[day1design/estimates] 이탈 팝업 접수 (작성중)\n` +
+            `이름: ${escapeHtml(fields.name)}\n` +
+            `연락처: ${escapeHtml(fields.phone)}\n` +
+            `출처: ${escapeHtml(attribution.platform)}\n` +
+            `※ 견적 폼 완주 시 같은 카드가 '접수대기' 로 승격됩니다.`,
+        ),
+        logIntakeEvent(services, {
+          channel: "exit_guard",
+          source: attribution.source,
+          name: fields.name,
+          phone: fields.phone,
+          geo: String(
+            request.cf?.city || request.cf?.region || request.cf?.country || "",
+          ),
+          estimateId: record.id,
+          steps: { d1: "ok", stage: "작성중", phone4: guardPhone.slice(-4) },
+          ip,
+        }),
+      ]),
+    );
+    return jsonOk({ id: record.id, leadKey: issuedLeadKey, received: true });
+  }
+
   const addressLine = compactJoin([fields.address, fields.address_detail]);
   const notificationLines = [
-    `[day1design/estimates] 새 상담신청`,
+    `[day1design/estimates] 새 상담신청${promoteId ? " (이탈팝업 경유)" : ""}`,
     `이름: ${escapeHtml(fields.name)}`,
     `연락처: ${escapeHtml(fields.phone)}`,
   ];
@@ -1078,10 +1152,16 @@ async function listEstimates(request, env, ctx, services) {
   if (cached) return jsonOk(cached);
 
   const where = status ? { Status: status } : undefined;
-  const records = await services.estimates.listAll({
+  const all = await services.estimates.listAll({
     where,
     sort: [{ field: "SubmittedAt", direction: "desc" }],
   });
+  // 이탈 팝업만 거치고 견적 폼을 마치지 않은 '작성중' 건은 아직 완성된 문의가
+  // 아니다. 상태를 명시해서 요청할 때만 돌려주고, 기본 목록에서는 뺀다
+  // (상담 카드에 이름·연락처뿐인 카드가 섞이면 접수관리가 오염된다).
+  const records = status
+    ? all
+    : all.filter((r) => r.fields.Status !== "작성중");
   const payload = {
     records: records.map((r) => ({
       id: r.id,

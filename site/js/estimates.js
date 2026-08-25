@@ -12,6 +12,9 @@
   // 봇 트랩 타임스탬프 (3초 미만 제출 차단용)
   window._estLoadTs = Date.now();
 
+  // 이탈 팝업에서 넘어온 접수를 잇는 키. 팝업이 없었으면 빈 문자열로 남는다.
+  let carriedLeadKey = "";
+
   const SELECT_OPTIONS = {
     space_size: ["20~30평", "30~40평", "40~50평", "50평 이상"],
     branch: ["강남점", "판교점", "지점 무관"],
@@ -185,6 +188,10 @@
     const proc = document.querySelector(".est-process");
     if (proc) proc.style.display = "none";
     document.getElementById("estComplete").style.display = "block";
+    // 이번 방문에 접수를 마쳤음을 남긴다 — 이탈 팝업이 다시 붙잡지 않게 한다.
+    try {
+      sessionStorage.setItem("day1_lead_done", "1");
+    } catch (e) {}
     window.scrollTo({ top: 0, behavior: "smooth" });
     // 전환은 여기서 찍지 않는다 — submitInBackground 가 서버 확정 후에 찍는다.
     submitInBackground(payload);
@@ -321,6 +328,10 @@
       // 봇 트랩 — 중립 필드명(_hp_field)에서 읽어 _hp 로 전송. (자동완성 자석 'website' 제거)
       _hp: val("_hp_field"),
       _ts: String(window._estLoadTs || ""),
+      // 이탈 팝업에서 넘어온 접수면 그때 발급받은 키를 함께 보낸다. 워커가 이 키로
+      // '작성중' 레코드를 찾아 채워 넣기 때문에, 팝업과 폼이 카드 두 장으로
+      // 갈라지지 않는다. 팝업을 거치지 않은 접수는 빈 값이다.
+      lead_key: carriedLeadKey,
     };
 
     const fd = new FormData();
@@ -424,4 +435,135 @@
     } catch (e) {}
   }
   retryPending();
+
+  // ============================================================
+  // 이탈 팝업에서 넘어온 값 이어받기 (prefill + 도착 위치 고정)
+  //
+  // 값은 sessionStorage 로만 온다 — URL 쿼리에 실으면 이름·연락처가 브라우저
+  // 히스토리·리퍼러·서버 로그·GA4 착지 페이지 보고서에 그대로 남는다.
+  //
+  // 화면 위치가 중요하다. 값만 채우고 페이지 최상단에 서 있으면 방문자는
+  // "왜 처음으로 돌아왔지" 로 받아들이고, 폼 한가운데에 서면 "뭘 놓쳤나" 가
+  // 된다. 그래서 안내 배너 윗선 — 배너·이미 채워진 두 칸·다음에 쓸 칸이 한
+  // 화면에 들어오는 위치 — 로 정확히 맞춘다.
+  // ============================================================
+  const CARRY_KEY = "day1_exitguard_carry";
+  const CARRY_MAX_AGE_MS = 30 * 60 * 1000;
+
+  function readCarry() {
+    let raw = null;
+    try {
+      raw = sessionStorage.getItem(CARRY_KEY);
+      // 1회용 — 남겨두면 뒤로 갔다 다시 들어올 때 지운 값이 되살아나 덮어쓴다.
+      sessionStorage.removeItem(CARRY_KEY);
+    } catch (e) {}
+    if (!raw) return null;
+    try {
+      const data = JSON.parse(raw);
+      if (!data || !data.name || !data.phone) return null;
+      // 오래된 값이 다른 방문에 섞이지 않게 만료 처리한다.
+      if (data.ts && Date.now() - data.ts > CARRY_MAX_AGE_MS) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function buildCarryBanner(name) {
+    const box = document.createElement("div");
+    box.className = "est-carry";
+    box.innerHTML =
+      '<div class="est-carry-head"><span class="est-carry-chk">✓</span>' +
+      `<span>${name}님, 입력하신 정보를 옮겨왔습니다.</span></div>` +
+      "<p>이름과 연락처는 이미 채워져 있습니다. 남은 항목만 작성해주시면 접수가 완료됩니다.</p>";
+    return box;
+  }
+
+  // 화면 위를 덮는 고정 요소의 실제 높이.
+  // 모바일은 헤더(70px) 아래에 탭바(58px)가 하나 더 붙어 있어서 #header 만
+  // 재면 58px 이 가려진다. --header-height 가 그 합(128px)을 들고 있으므로
+  // 이 값을 먼저 쓰고, 없을 때만 요소를 실측한다.
+  function stickyOffset() {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(
+      "--header-height",
+    );
+    const fromVar = parseFloat(raw);
+    if (Number.isFinite(fromVar) && fromVar > 0) return fromVar;
+    const header = document.getElementById("header");
+    return header ? header.getBoundingClientRect().height : 0;
+  }
+
+  // 도착 지점 = 안내 배너 윗선 − 고정 요소 높이 − 여백.
+  function scrollToCarry(banner, instant) {
+    const headerH = stickyOffset();
+    const top = banner.getBoundingClientRect().top + window.scrollY;
+    const target = Math.round(top - headerH - 16);
+    // 계산이 문서 범위를 벗어나면 움직이지 않는다. 엉뚱한 곳으로 튀는 것보다
+    // 최상단에 그대로 서 있는 편이 낫다.
+    if (!Number.isFinite(target) || target < 0) return;
+    if (target > document.documentElement.scrollHeight) return;
+    window.scrollTo({ top: target, behavior: instant ? "auto" : "auto" });
+  }
+
+  function applyCarry() {
+    const data = readCarry();
+    if (!data) return;
+
+    const nameEl = document.getElementById("name");
+    const phoneEl = document.getElementById("phone");
+    const privacyEl = document.getElementById("privacy");
+    if (!nameEl || !phoneEl || !form) return;
+
+    // 방문자가 이미 입력한 값은 덮어쓰지 않는다. 작성 중이던 내용을 지우는 것이
+    // 가장 나쁜 오작동이다.
+    if (!nameEl.value.trim()) nameEl.value = data.name;
+    if (!phoneEl.value.trim()) phoneEl.value = data.phone;
+    if (privacyEl && data.privacy !== false) privacyEl.checked = true;
+    carriedLeadKey = String(data.leadKey || "");
+
+    document
+      .querySelectorAll('[data-field="name"], [data-field="phone"]')
+      .forEach((el) => el.classList.add("carried"));
+
+    const banner = buildCarryBanner(data.name);
+    form.parentNode.insertBefore(banner, form);
+
+    // 레이아웃이 확정된 뒤에 좌표를 잡는다. 폼 위쪽 영역이 늦게 그려지면
+    // 미리 계산한 좌표가 밀린다.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        scrollToCarry(banner, true);
+        // PC 만 다음 빈칸으로 커서를 옮긴다. 모바일에서 포커스를 주면 키보드가
+        // 올라오며 화면이 접혀 위치가 다시 어긋나고, 방문자는 원치 않은 키보드를
+        // 닫는 동작부터 하게 된다.
+        if (window.matchMedia("(min-width: 601px)").matches) {
+          const next = document.getElementById("postcode");
+          if (next) next.focus({ preventScroll: true });
+        }
+      }),
+    );
+
+    // 이미지 로딩으로 위쪽 높이가 바뀌면 도착선이 밀린다. 한 번 더 확인하고
+    // 20px 넘게 어긋났을 때만 조용히 보정한다.
+    window.addEventListener(
+      "load",
+      () => {
+        const drift = banner.getBoundingClientRect().top - stickyOffset() - 16;
+        if (Math.abs(drift) > 20) scrollToCarry(banner, true);
+      },
+      { once: true },
+    );
+
+    if (typeof window.day1Track === "function") {
+      window.day1Track("exit_guard_form_view", { page_path: "/estimates" });
+    }
+  }
+
+  // 뒤로가기로 이 페이지에 다시 들어왔을 때 브라우저가 옛 스크롤 위치를
+  // 복원하며 우리가 잡은 위치를 덮어쓰는 것을 막는다.
+  try {
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  } catch (e) {}
+
+  applyCarry();
 })();
