@@ -38,6 +38,7 @@
   var LEAD_DONE_AT_KEY = "day1_lead_done_at"; // 접수 완료 시각 (방문을 넘어 유지)
   var LEAD_DONE_MS = 30 * 24 * 60 * 60 * 1000; // 접수한 사람에겐 30일간 안 띄운다
   var MAX_SHOWS_PER_VISIT = 3; // 한 방문에서 붙잡는 횟수 상한
+  var STAY_CONFIRM_MS = 15000; // 닫고 이만큼 머물면 "붙잡힘" 으로 확정
   var ESTIMATE_PATH = "/pages/estimates";
 
   function ss(key) {
@@ -70,8 +71,26 @@
   function shownCount() {
     return parseInt(ss(SHOWN_KEY) || "0", 10) || 0;
   }
+  function ssDel(key) {
+    try {
+      sessionStorage.removeItem(key);
+    } catch (e) {}
+  }
+
+  // 브라우저의 뒤로/앞으로가기로 이 페이지에 온 경우를 가린다.
+  // 나갔다가 앞으로가기로 되돌아온 방문자는 다시 관심을 보인 것이므로, 방금
+  // "다음에 볼게요" 를 눌렀더라도 다시 붙잡는다(상한 3회는 그대로 적용).
+  function isBackForwardNav() {
+    try {
+      var nav = performance.getEntriesByType("navigation")[0];
+      return !!nav && nav.type === "back_forward";
+    } catch (e) {
+      return false;
+    }
+  }
 
   if (alreadyConverted()) return;
+  if (isBackForwardNav()) ssDel(DISMISS_KEY); // 되돌아왔으면 무장 해제를 취소한다
   // 이번 방문에 이미 접수했거나, 팝업을 거쳐 폼으로 넘어갔거나, "다음에 볼게요"
   // 를 눌렀거나, 상한만큼 띄웠으면 이 방문에서는 더 붙잡지 않는다.
   if (
@@ -86,6 +105,93 @@
   var armed = true;
   var popup = null;
   var sending = false;
+  var shownAt = 0; // 팝업이 뜬 시각 — 결과까지 걸린 시간을 재기 위해
+  var resultSent = false; // 이번 노출의 결과를 이미 보냈는가
+
+  // ─── 성과 기록 (D1 영속) ─────────────────────────────────
+  // 브라우저 저장소는 방문자가 지우면 사라지고 집계도 못 하므로 서버에 남긴다.
+  // GA4·픽셀과 별개다 — 어드민 유입통계가 이 값을 직접 읽는다.
+  function sessionId() {
+    try {
+      var raw = localStorage.getItem("_d1_hm_sid");
+      return raw ? String(JSON.parse(raw).id || "") : "";
+    } catch (e) {
+      return "";
+    }
+  }
+  function refParts() {
+    var r = document.referrer || "";
+    var host = "";
+    var path = "";
+    try {
+      if (r) {
+        var u = new URL(r);
+        // 사이트 안에서의 이동은 유입 출처가 아니다.
+        if (u.hostname !== location.hostname) {
+          host = u.hostname;
+          path = (u.pathname || "") + (u.search || "");
+        }
+      }
+    } catch (e) {}
+    return { host: host, path: path.slice(0, 200) };
+  }
+  function utmParts() {
+    try {
+      var q = new URLSearchParams(location.search);
+      return {
+        source: q.get("utm_source") || q.get("src") || "",
+        medium: q.get("utm_medium") || "",
+        campaign: q.get("utm_campaign") || "",
+      };
+    } catch (e) {
+      return { source: "", medium: "", campaign: "" };
+    }
+  }
+
+  function record(type, opts) {
+    var base = window.DAY1_API_BASE || "";
+    if (!base) return;
+    var ref = refParts();
+    var payload = {
+      events: [
+        {
+          type: type,
+          page: location.pathname,
+          device: window.innerWidth < 768 ? "mobile" : "pc",
+          session_id: sessionId(),
+          shown_seq: (opts && opts.seq) || shownCount(),
+          held_ms: shownAt ? Math.max(0, Date.now() - shownAt) : 0,
+          referrer: ref.host,
+          referrer_path: ref.path,
+          utm: utmParts(),
+          inflow_app: window.DAY1_INFLOW_APP || "",
+        },
+      ],
+    };
+    var url = base + "/api/exit-guard/track";
+    var body = JSON.stringify(payload);
+    try {
+      // 이탈 직전에도 남아야 하므로 beacon 을 먼저 쓴다.
+      if (navigator.sendBeacon) {
+        var blob = new Blob([body], { type: "application/json" });
+        if (navigator.sendBeacon(url, blob)) return;
+      }
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body,
+        keepalive: true,
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  // 한 번의 노출에 결과는 하나만 남긴다(닫고 머물다 나가면 stayed 와 dismissed
+  // 가 겹쳐 붙잡은 수가 부풀려진다).
+  function recordResult(type) {
+    if (resultSent) return;
+    resultSent = true;
+    record(type);
+  }
 
   history.replaceState({ d1Entry: 1 }, "");
   history.pushState({ d1Guard: 1 }, "");
@@ -215,6 +321,9 @@
       if (name) name.focus({ preventScroll: true });
     }
     ssSet(SHOWN_KEY, shownCount() + 1);
+    shownAt = Date.now();
+    resultSent = false;
+    record("shown", { seq: shownCount() });
     if (typeof window.day1Track === "function") {
       window.day1Track("exit_guard_shown", {
         page_path: location.pathname,
@@ -223,10 +332,23 @@
     }
   }
 
+  var stayTimer = null;
   function hide() {
     if (popup) popup.classList.remove("open");
     document.body.style.overflow = "";
     document.removeEventListener("keydown", onKey);
+    // 닫고 나서 15초를 더 머물면 이탈을 막은 것으로 본다. 바로 기록하지 않는
+    // 이유는, 닫자마자 다시 뒤로가기로 나가는 사람과 구분해야 하기 때문이다.
+    if (stayTimer) clearTimeout(stayTimer);
+    stayTimer = setTimeout(function () {
+      recordResult("stayed");
+    }, STAY_CONFIRM_MS);
+  }
+  function cancelStayTimer() {
+    if (stayTimer) {
+      clearTimeout(stayTimer);
+      stayTimer = null;
+    }
   }
 
   function onKey(e) {
@@ -237,7 +359,11 @@
   function leave() {
     armed = false;
     ssSet(DISMISS_KEY, "1"); // 이번 방문에서만 억제 — 재방문하면 다시 붙잡는다
-    hide();
+    recordResult("dismissed");
+    if (popup) popup.classList.remove("open");
+    document.body.style.overflow = "";
+    document.removeEventListener("keydown", onKey);
+    cancelStayTimer();
     history.go(-2);
   }
 
@@ -328,10 +454,37 @@
     if (typeof window.day1Track === "function") {
       window.day1Track("exit_guard_submit", { page_path: location.pathname });
     }
+    recordResult("submit");
     armed = false;
-    hide();
+    cancelStayTimer();
+    if (popup) popup.classList.remove("open");
+    document.body.style.overflow = "";
     location.href = ESTIMATE_PATH + "?from=exit";
   }
+
+  // 팝업을 닫고 15초가 되기 전에 사이트 안 다른 페이지로 이동한 경우도
+  // 붙잡은 것이다. 페이지를 떠나는 시점에 확정한다.
+  window.addEventListener("pagehide", function () {
+    if (!shownAt || resultSent) return;
+    if (isOpen()) return; // 팝업이 떠 있는 채로 떠난 건 붙잡힌 게 아니다
+    recordResult("stayed");
+  });
+
+  // 앞으로가기로 되돌아오면 페이지가 bfcache 에서 복원된다. 이때 스크립트가
+  // 다시 실행되지 않으므로 위의 초기화가 통째로 건너뛰어진다. 그 결과 가드
+  // 엔트리도, armed 도 나갈 때 상태 그대로라 다시 나가려 할 때 아무 일도
+  // 일어나지 않는다. 복원 시점에 무장을 되돌린다.
+  window.addEventListener("pageshow", function (e) {
+    if (!e.persisted) return; // 새로 로드된 경우는 초기화 코드가 이미 처리했다
+    if (alreadyConverted() || ss(LEAD_DONE_KEY) || ss(CARRIED_KEY)) return;
+    if (shownCount() >= MAX_SHOWS_PER_VISIT) return;
+    ssDel(DISMISS_KEY);
+    armed = true;
+    // 스택 맨 위(가드 엔트리)가 나갈 때 소비됐으면 다시 쌓는다. 이미 가드
+    // 위에 서 있으면 그대로 둔다 — 겹쳐 쌓으면 뒤로가기가 헛돈다.
+    var st = history.state;
+    if (!st || st.d1Guard !== 1) history.pushState({ d1Guard: 1 }, "");
+  });
 
   window.addEventListener("popstate", function () {
     var st = history.state;
@@ -349,7 +502,10 @@
     // 이 탈출구가 없으면 브라우저 뒤로가기로는 영영 못 나가는 구조가 된다.
     if (isOpen()) {
       armed = false;
-      hide();
+      recordResult("escaped");
+      if (popup) popup.classList.remove("open");
+      document.body.style.overflow = "";
+      cancelStayTimer();
       history.back();
       return;
     }

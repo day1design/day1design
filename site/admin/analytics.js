@@ -2618,6 +2618,7 @@ function applyRange(key) {
   loadVisitorLocations(range);
   loadFunnel(range);
   loadSearchKeywords();
+  loadExitGuard(range);
   renderSubmissionStats(range);
 }
 
@@ -2947,4 +2948,115 @@ async function loadSearchKeywords() {
     console.error("search keywords load failed:", e);
     renderSearchKeywords(null);
   }
+}
+
+
+// ─── 이탈 방지 팝업 성과 ───────────────────────────────────────
+// 나가려던 방문자를 붙잡았는지, 붙잡은 뒤 실제로 더 봤는지를 보여준다.
+// 수집이 시작되기 전(노출 0건)에는 섹션을 통째로 숨긴다 — 빈 표를 띄워두면
+// 기능이 고장난 것처럼 읽힌다.
+async function loadExitGuard(range) {
+  const section = document.getElementById("exitGuardSection");
+  if (!section) return;
+  const days = Math.max(
+    1,
+    Math.round((range.end - range.start) / 86400000) + 1,
+  );
+  try {
+    await adminUtil.ensureAuth();
+    const data = await adminUtil.apiCached(
+      `/api/exit-guard/stats?days=${days}`,
+      { ttl: 60_000 },
+    );
+    renderExitGuard(data);
+  } catch (e) {
+    console.error("exit-guard stats load failed:", e);
+    section.hidden = true;
+  }
+}
+
+function renderExitGuard(data) {
+  const section = document.getElementById("exitGuardSection");
+  if (!section) return;
+  const f = data?.funnel;
+  if (!f || !f.shown) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+
+  const r = data.retention || {};
+  const held = f.held || 0;
+  const holdRate = f.holdRate || 0;
+  const keepRate = r.heldSessions
+    ? Math.round(((r.sessionsWithMoreViews || 0) / r.heldSessions) * 1000) / 10
+    : 0;
+
+  document.getElementById("exitGuardKpi").innerHTML = [
+    egKpi("붙잡은 비율", `${holdRate}%`, `노출 ${fmtInt(f.shown)}건 중 ${fmtInt(held)}건`),
+    egKpi(
+      "붙잡은 뒤 더 본 방문",
+      `${keepRate}%`,
+      `${fmtInt(r.sessionsWithMoreViews || 0)} / ${fmtInt(r.heldSessions || 0)} 세션`,
+    ),
+    egKpi(
+      "붙잡은 세션당 페이지",
+      `${r.avgAfterViews || 0}`,
+      `추가 조회 ${fmtInt(r.afterViews || 0)}회`,
+    ),
+    egKpi(
+      "접수까지 완주",
+      fmtInt(f.completed || 0),
+      f.pending ? `작성중 ${fmtInt(f.pending)}건` : "미완성 없음",
+    ),
+  ].join("");
+
+  document.getElementById("egShown").textContent = fmtInt(f.shown);
+  document.getElementById("egHeld").textContent = fmtInt(held);
+  document.getElementById("egHeldSub").textContent =
+    `계속 둘러봄 ${fmtInt(f.stayed || 0)} · 폼으로 ${fmtInt(f.submit || 0)}`;
+  document.getElementById("egFormView").textContent = fmtInt(f.formView || 0);
+  document.getElementById("egCompleted").textContent = fmtInt(f.completed || 0);
+  document.getElementById("egPending").textContent = f.pending
+    ? `작성중 ${fmtInt(f.pending)}건`
+    : "";
+
+  document.getElementById("egRetention").innerHTML = [
+    egRow("붙잡은 세션", fmtInt(r.heldSessions || 0)),
+    egRow(
+      "그 뒤 페이지를 더 본 세션",
+      `${fmtInt(r.sessionsWithMoreViews || 0)} (${keepRate}%)`,
+    ),
+    egRow("붙잡은 뒤 추가 조회", `${fmtInt(r.afterViews || 0)}회`),
+    egRow("세션당 평균", `${r.avgAfterViews || 0}장`),
+    egRow("그냥 나감", `${fmtInt((f.dismissed || 0) + (f.escaped || 0))}건`),
+  ].join("");
+
+  const rows = (data.channels || []).filter((c) => c.shown > 0);
+  document.getElementById("egChannels").innerHTML = rows.length
+    ? rows
+        .map(
+          (c) => `<tr>
+            <td>${adminUtil.escapeHtml(sourceLabel(sourceKey(c.channel)))}</td>
+            <td style="text-align:right">${fmtInt(c.shown)}</td>
+            <td style="text-align:right">${fmtInt(c.held)}</td>
+          </tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="3" class="empty-state">데이터 없음</td></tr>`;
+}
+
+function egKpi(label, value, sub) {
+  return `<div class="eg-kpi-card">
+    <div class="eg-kpi-label">${adminUtil.escapeHtml(label)}</div>
+    <div class="eg-kpi-val">${adminUtil.escapeHtml(String(value))}</div>
+    <div class="eg-kpi-sub">${adminUtil.escapeHtml(String(sub))}</div>
+  </div>`;
+}
+
+function egRow(label, value) {
+  return `<div class="eg-ret-row">
+    <span>${adminUtil.escapeHtml(label)}</span>
+    <b>${adminUtil.escapeHtml(String(value))}</b>
+  </div>`;
 }

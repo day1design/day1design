@@ -13,7 +13,7 @@
     />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260824-channelbar" />
+    <link rel="stylesheet" href="admin.css?v=20260825-exitguard" />
     <script>
       window.ADMIN_PAGE = { title: "유입통계", nav: "analytics" };
     </script>
@@ -497,6 +497,78 @@
           </div>
         </section>
 
+        <!-- 이탈 방지 팝업 — 나가려던 방문자를 얼마나 붙잡았는지.
+             수집은 exit-guard.js → /api/exit-guard/track, 집계는 /stats.
+             수집 시작 전(데이터 0건)이면 analytics.js 가 섹션을 숨긴다. -->
+        <section
+          class="analytics-row exit-guard-section"
+          data-order="7"
+          id="exitGuardSection"
+          hidden
+        >
+          <div class="panel">
+            <div class="panel-head">
+              <h3>
+                이탈 방지 팝업
+                <span class="badge-source badge-self">자체측정</span>
+              </h3>
+              <span class="panel-sub"
+                >나가려던 방문자를 붙잡은 결과와 그 뒤 방문 유지</span
+              >
+            </div>
+
+            <div class="eg-kpi" id="exitGuardKpi"></div>
+
+            <div class="eg-flow" id="exitGuardFlow">
+              <div class="eg-flow-item">
+                <div class="eg-flow-label">팝업 노출</div>
+                <div class="eg-flow-val" id="egShown">—</div>
+              </div>
+              <div class="eg-flow-arrow" aria-hidden="true">→</div>
+              <div class="eg-flow-item">
+                <div class="eg-flow-label">붙잡음</div>
+                <div class="eg-flow-val" id="egHeld">—</div>
+                <div class="eg-flow-sub" id="egHeldSub">닫고 계속 둘러봄</div>
+              </div>
+              <div class="eg-flow-arrow" aria-hidden="true">→</div>
+              <div class="eg-flow-item">
+                <div class="eg-flow-label">견적 폼 도착</div>
+                <div class="eg-flow-val" id="egFormView">—</div>
+              </div>
+              <div class="eg-flow-arrow" aria-hidden="true">→</div>
+              <div class="eg-flow-item eg-flow-goal">
+                <div class="eg-flow-label">접수 완료</div>
+                <div class="eg-flow-val" id="egCompleted">—</div>
+                <div class="eg-flow-sub" id="egPending"></div>
+              </div>
+            </div>
+
+            <div class="eg-split">
+              <div class="eg-split-col">
+                <h4 class="eg-sub-title">붙잡은 뒤 방문 유지</h4>
+                <div class="eg-retention" id="egRetention"></div>
+              </div>
+              <div class="eg-split-col">
+                <h4 class="eg-sub-title">어느 유입의 이탈을 잡았나</h4>
+                <table class="data-table eg-table">
+                  <thead>
+                    <tr>
+                      <th>유입</th>
+                      <th style="width: 78px; text-align: right">노출</th>
+                      <th style="width: 78px; text-align: right">붙잡음</th>
+                    </tr>
+                  </thead>
+                  <tbody id="egChannels">
+                    <tr>
+                      <td colspan="3" class="empty-state">데이터 없음</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section class="analytics-row funnel-section" data-order="7">
           <div class="panel">
             <div class="panel-head">
@@ -688,6 +760,6 @@
     ></script>
     <script defer src="config.js?v=20260514-heatmap"></script>
     <script defer src="admin.js?v=20260626-authfast"></script>
-    <script defer src="analytics.js?v=20260811-keywords"></script>
+    <script defer src="analytics.js?v=20260825-exitguard"></script>
   </body>
 </html>

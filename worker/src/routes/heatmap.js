@@ -89,7 +89,7 @@ const PAGE_ALIAS = {
   "/57": "/pages/about",
 };
 
-function safePage(s) {
+export function safePage(s) {
   // 쿼리스트링·해시 제거, 끝 슬래시 정리, .html 확장자 제거 (cleanUrls 통일)
   const raw = String(s || "");
   let noQuery = raw.split("?")[0].split("#")[0];
@@ -103,24 +103,24 @@ function safePage(s) {
   return noQuery.slice(0, 200) || "/";
 }
 
-function safeStr(s, max = 100) {
+export function safeStr(s, max = 100) {
   return String(s || "").slice(0, max);
 }
 
-function safeDevice(s) {
+export function safeDevice(s) {
   return s === "mobile" ? "mobile" : s === "pc" ? "pc" : "";
 }
 
 // 꼬리표 뒷부분(path + query). 클라이언트가 이미 잘라 보내지만 서버에서도 방어적으로
 // 상한을 건다. 호스트는 Referrer 컬럼에 그대로 두고 이 값만 RefPath 로 분리 저장한다
 // — 기존 유입통계/봇필터가 "Referrer = 호스트" 전제라 한 컬럼에 합치면 회귀한다.
-function safeReferrerPath(s) {
+export function safeReferrerPath(s) {
   const raw = String(s || "").trim();
   if (!raw || raw[0] !== "/") return "";
   return raw.replace(/[\r\n\t]+/g, "").slice(0, 200);
 }
 
-function safeReferrerHost(s) {
+export function safeReferrerHost(s) {
   const raw = String(s || "").trim();
   if (!raw) return "";
   try {
@@ -143,13 +143,13 @@ const BOT_UA_RE =
 const SEARCH_REF_RE =
   /(^|\.)(google|naver|bing|daum|yahoo|yandex|baidu|duckduckgo)\./i;
 
-function isBotUserAgent(userAgent) {
+export function isBotUserAgent(userAgent) {
   const ua = String(userAgent || "").trim();
   if (!ua) return true; // UA 비어있음 = 봇
   return BOT_UA_RE.test(ua);
 }
 
-function isSpoofedSearch(referrerHost, country) {
+export function isSpoofedSearch(referrerHost, country) {
   const c = String(country || "").toUpperCase();
   if (!c || c === "KR") return false; // 국가 미상/국내는 정상 취급
   return SEARCH_REF_RE.test(String(referrerHost || ""));

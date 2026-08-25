@@ -15,6 +15,7 @@ import {
   runScheduledAnalyticsSnapshot,
 } from "./routes/analytics.js";
 import { handleHeatmap } from "./routes/heatmap.js";
+import { handleExitGuard } from "./routes/exit-guard.js";
 import { handleAudit } from "./routes/audit.js";
 import { handleMemos, handleHistory } from "./routes/memos.js";
 import { handleSms } from "./routes/sms.js";
@@ -215,6 +216,8 @@ async function handleApi(request, env, ctx, path) {
     res = await handleAnalytics(request, env, ctx, services);
   } else if (path.startsWith("/api/heatmap")) {
     res = await handleHeatmap(request, env, ctx, services);
+  } else if (path.startsWith("/api/exit-guard")) {
+    res = await handleExitGuard(request, env, ctx);
   } else if (path.startsWith("/api/upload")) {
     res = await handleUpload(request, env, ctx, services);
   } else if (path.startsWith("/api/sms")) {

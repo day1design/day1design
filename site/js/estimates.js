@@ -560,6 +560,39 @@
     if (typeof window.day1Track === "function") {
       window.day1Track("exit_guard_form_view", { page_path: "/estimates" });
     }
+    // 어드민 유입통계가 읽을 영속 기록. 팝업이 실제로 폼까지 데려왔는지는
+    // 이 이벤트로만 확인된다(팝업 쪽 submit 은 이동 직전에 찍히므로, 중간에
+    // 이탈하면 도착 사실이 남지 않는다).
+    recordExitGuardFormView();
+  }
+
+  function recordExitGuardFormView() {
+    const base = window.DAY1_API_BASE || "";
+    if (!base) return;
+    let sid = "";
+    try {
+      const raw = localStorage.getItem("_d1_hm_sid");
+      if (raw) sid = String(JSON.parse(raw)?.id || "");
+    } catch (e) {}
+    const body = JSON.stringify({
+      events: [
+        {
+          type: "form_view",
+          page: "/pages/estimates",
+          device: window.innerWidth < 768 ? "mobile" : "pc",
+          session_id: sid,
+          inflow_app: window.DAY1_INFLOW_APP || "",
+        },
+      ],
+    });
+    try {
+      fetch(base + "/api/exit-guard/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    } catch (e) {}
   }
 
   // 뒤로가기로 이 페이지에 다시 들어왔을 때 브라우저가 옛 스크롤 위치를

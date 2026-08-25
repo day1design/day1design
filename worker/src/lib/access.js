@@ -77,6 +77,14 @@ export function classifyAccess(request, opts = {}) {
     return { role: "admin", method, path };
   }
 
+  // 이탈 방지 팝업 — 성과 기록은 홈페이지에서, 집계 조회는 어드민에서만.
+  if (path === "/api/exit-guard/track") {
+    return { role: method === "POST" ? "main" : "unknown", method, path };
+  }
+  if (path.startsWith("/api/exit-guard")) {
+    return { role: "admin", method, path };
+  }
+
   if (path === "/api/estimates" && method === "POST") {
     return { role: "main", method, path };
   }

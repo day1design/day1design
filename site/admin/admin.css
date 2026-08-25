@@ -5984,3 +5984,124 @@
     width: 100%;
   }
 }
+
+/* ─────────── 이탈 방지 팝업 성과 (유입통계) ─────────── */
+.eg-kpi {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.eg-kpi-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.eg-kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+.eg-kpi-val {
+  margin-top: 3px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+.eg-kpi-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.eg-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.eg-flow-item {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  text-align: center;
+}
+.eg-flow-goal {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.eg-flow-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+}
+.eg-flow-val {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.eg-flow-sub {
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: #94a3b8;
+  word-break: keep-all;
+}
+.eg-flow-arrow {
+  align-self: center;
+  color: #cbd5e1;
+  font-size: 15px;
+  flex: 0 0 auto;
+}
+.eg-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.eg-sub-title {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+}
+.eg-ret-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12.5px;
+  color: #475569;
+}
+.eg-ret-row:last-child {
+  border-bottom: 0;
+}
+.eg-ret-row b {
+  color: #0f172a;
+  font-weight: 700;
+}
+.eg-table {
+  font-size: 12.5px;
+}
+
+@media (max-width: 900px) {
+  .eg-kpi {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .eg-flow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .eg-flow-arrow {
+    display: none;
+  }
+  .eg-split {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+}
