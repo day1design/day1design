@@ -686,7 +686,9 @@ async function submitEstimate(request, env, ctx, services) {
   const leadKey = sanitizeText(fields.lead_key || "", 40);
 
   // 기본 검증 — 간소화 폼 필수: 이름·연락처·평형대·현장주소·희망일정·지점·가용예산 + 개인정보 동의
-  // (이메일·공간유형·문의경로는 폼에서 제거되어 선택값. 이메일은 입력 시에만 형식 검증)
+  // (공간유형·문의경로는 폼에서 제거되어 선택값. 이메일은 2026-08-28 부터 견적
+  //  폼의 필수 항목이지만, 이탈 팝업 접수·옛 재전송 큐에는 없으므로 워커는
+  //  값이 있을 때만 형식을 본다 — 여기서 필수로 막으면 그 경로가 전부 거부된다)
   const errors = [];
   if (!fields.name || fields.name.length > 50) errors.push("name");
   if (!isValidPhone(fields.phone || "")) errors.push("phone");
@@ -984,7 +986,8 @@ async function submitEstimate(request, env, ctx, services) {
         steps.email = "fail";
       }),
   ];
-  // 고객 접수확인 메일은 이메일을 입력한 경우에만 (간소화 폼은 이메일 미수집)
+  // 고객 접수확인 메일은 이메일이 있을 때만 보낸다. 견적 폼은 2026-08-28 부터
+  // 이메일을 필수로 받지만, 이탈 팝업 접수와 옛 재전송 큐에는 이메일이 없다.
   if (fields.email) {
     notifyTasks.push(
       sendEmail(env, {

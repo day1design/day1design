@@ -98,6 +98,7 @@
 }
 .est-form input[type="text"],
 .est-form input[type="tel"],
+.est-form input[type="email"],
 .est-form textarea {
   width: 100%;
   padding: 13px 14px;

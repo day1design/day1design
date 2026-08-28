@@ -133,6 +133,7 @@
   const REQUIRED = [
     { f: "name", get: () => val("name"), label: "이름" },
     { f: "phone", get: () => val("phone"), label: "연락처" },
+    { f: "email", get: () => val("email"), label: "이메일" },
     { f: "address", get: () => val("address"), label: "상세주소" },
     { f: "space_size", get: () => selections.space_size, label: "평형대" },
     { f: "budget", get: () => val("budget"), label: "가용 예산" },
@@ -180,6 +181,18 @@
       errMsg.style.display = "block";
       const first = document.querySelector(`[data-field="${missing[0].f}"]`);
       if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    // 이메일 형식은 여기서 막는다. 완료 화면을 먼저 띄우는 구조라서, 형식이
+    // 어긋난 값을 그대로 보내면 워커가 400 으로 거부해도 고객은 접수된 줄 안다
+    // (2026-08-18 전화번호 유령 완료 사고와 같은 경로).
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val("email"))) {
+      const grp = document.querySelector('[data-field="email"]');
+      if (grp) grp.classList.add("invalid");
+      const errMsg = document.getElementById("estErrMsg");
+      errMsg.textContent = "이메일 주소를 정확히 입력해주세요";
+      errMsg.style.display = "block";
+      if (grp) grp.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
     // 1) DOM 값 캡처 → 2) 즉시 완료 화면 → 3) 백그라운드 전송
@@ -295,7 +308,7 @@
       submittedAt: new Date().toISOString(),
       name: val("name"),
       phone: val("phone"),
-      email: "", // 간소화 폼은 이메일 미수집 (Worker에서 선택값 처리)
+      email: val("email"),
       space_size: selections.space_size || "",
       postcode: val("postcode"),
       address: val("address"),

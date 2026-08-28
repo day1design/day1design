@@ -735,6 +735,15 @@ function render() {
           <b>유입</b>
           <em>${sourceBadges(r)} ${sessionBadgeHtml(sessionNo)}</em>
         </span>
+        ${
+          r.Email
+            ? `
+        <span>
+          <b>이메일</b>
+          <em>${escapeHtml(r.Email)}</em>
+        </span>`
+            : ""
+        }
         ${cardKeywordHtml(r)}
       </span>
       <span class="est-card-summary">
@@ -953,7 +962,7 @@ async function openDetail(id) {
         <h3>접수 정보</h3>
         <dl class="detail-dl">
           <dt>연락처</dt><dd>${escapeHtml(r.Phone || "—")}</dd>
-          ${r.Email ? `<dt>이메일</dt><dd>${escapeHtml(r.Email)}</dd>` : ""}
+          <dt>이메일</dt><dd>${escapeHtml(r.Email || "—")}</dd>
           ${
             [r.SpaceType, r.SpaceSize].filter(Boolean).length
               ? `<dt>공간</dt><dd>${escapeHtml([r.SpaceType, r.SpaceSize].filter(Boolean).join(" · "))}</dd>`
