@@ -18,17 +18,93 @@ import { briefSummary, briefFunnel } from "./analytics.js";
 const MAX_DAYS = 180;
 const TOP_N = 10;
 
-function resolveDays(url) {
-  const n = Number(url.searchParams.get("days") || 30);
-  if (!Number.isFinite(n) || n <= 0) return 30;
-  return Math.min(Math.round(n), MAX_DAYS);
-}
-
 // KST 기준 날짜 문자열. 광고계정도 서울 시간대라 여기서 기준을 맞춰야
 // "어제까지"가 어드민 화면과 같은 날을 가리킨다.
 function kstDate(offsetDays = 0) {
   const now = new Date(Date.now() + 9 * 3600000 - offsetDays * 86400000);
   return now.toISOString().slice(0, 10);
+}
+
+function isDate(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+}
+
+function shiftDate(ymd, deltaDays) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+// 기간 해석 — days 하나로는 "이번 달"이나 "지난달"을 말할 수 없다.
+//
+// 사람은 "이번 주", "지난달"처럼 달력 단위로 묻는데 days=N 은 오늘에서 거꾸로 센 구간이라
+// 그 요청을 담지 못한다. 그래서 하위 라우트가 이미 쓰고 있는 range 키를 그대로 받는다.
+//
+// 종료일은 기본이 어제다. 오늘은 광고 집계가 미완성이라 함께 넣으면 지출과 접수가
+// 같은 날을 두고 다른 진행률로 잡혀 비교가 왜곡된다. today 만 예외로 오늘을 본다.
+function resolveRange(url) {
+  const key = String(url.searchParams.get("range") || "").trim();
+  const yesterday = kstDate(1);
+  const today = kstDate(0);
+
+  const byDays = (n) => {
+    const days = Math.min(Math.max(Math.round(n) || 30, 1), MAX_DAYS);
+    return {
+      key: days === 7 || days === 30 ? String(days) : "custom",
+      startDate: kstDate(days),
+      endDate: yesterday,
+      days,
+    };
+  };
+
+  if (key === "today") {
+    return { key: "today", startDate: today, endDate: today, days: 1 };
+  }
+
+  if (key === "cur-month") {
+    const start = `${today.slice(0, 7)}-01`;
+    // 매월 1일에는 이번 달에 끝난 날이 없다. 그때는 어제(지난달 말일)까지 보여 준다
+    const startDate = start > yesterday ? yesterday : start;
+    return {
+      key: "custom",
+      startDate,
+      endDate: yesterday,
+      days: null,
+      label: "cur-month",
+    };
+  }
+
+  if (key === "prev-month") {
+    const firstOfThis = new Date(`${today.slice(0, 7)}-01T00:00:00Z`);
+    const endDate = shiftDate(firstOfThis.toISOString().slice(0, 10), -1);
+    const startDate = `${endDate.slice(0, 7)}-01`;
+    return {
+      key: "custom",
+      startDate,
+      endDate,
+      days: null,
+      label: "prev-month",
+    };
+  }
+
+  if (key === "custom") {
+    const s = url.searchParams.get("start");
+    const e = url.searchParams.get("end");
+    if (isDate(s) && isDate(e) && s <= e) {
+      return {
+        key: "custom",
+        startDate: s,
+        endDate: e,
+        days: null,
+        label: "custom",
+      };
+    }
+    return byDays(30);
+  }
+
+  if (key === "7" || key === "30") return byDays(Number(key));
+
+  return byDays(Number(url.searchParams.get("days") || 30));
 }
 
 async function readJson(res) {
@@ -49,10 +125,19 @@ function topRows(rows, key = "spend", n = TOP_N) {
 
 // 접수는 브리프의 결론 지표다. 광고비만으로는 효율을 말할 수 없고,
 // 이 숫자가 있어야 리드 단가가 나온다.
-async function collectLeads(env, days) {
-  const since = new Date(Date.now() - days * 86400000).toISOString();
+async function collectLeads(env, period) {
+  // SubmittedAt 은 UTC ISO 이고 구간은 KST 날짜다. 경계를 그대로 비교하면 하루가
+  // 9시간씩 밀려 "이번 주"에 지난주 새벽 접수가 섞인다. 여기서 KST 경계를 UTC 로 옮긴다.
+  const since = new Date(`${period.startDate}T00:00:00+09:00`).toISOString();
+  const until = new Date(
+    `${shiftDate(period.endDate, 1)}T00:00:00+09:00`,
+  ).toISOString();
+
   const out = {
     since,
+    until,
+    startDate: period.startDate,
+    endDate: period.endDate,
     total: 0,
     bySource: [],
     byStatus: [],
@@ -63,36 +148,39 @@ async function collectLeads(env, days) {
   try {
     const [totalRow, bySource, byStatus, daily] = await Promise.all([
       env.DB.prepare(
-        `SELECT COUNT(*) AS n FROM Estimates WHERE SubmittedAt >= ?`,
+        `SELECT COUNT(*) AS n FROM Estimates
+          WHERE SubmittedAt >= ? AND SubmittedAt < ?`,
       )
-        .bind(since)
+        .bind(since, until)
         .first(),
       env.DB.prepare(
         `SELECT COALESCE(NULLIF(Source, ''), '미상') AS source, COUNT(*) AS n
            FROM Estimates
-          WHERE SubmittedAt >= ?
+          WHERE SubmittedAt >= ? AND SubmittedAt < ?
           GROUP BY source
           ORDER BY n DESC`,
       )
-        .bind(since)
+        .bind(since, until)
         .all(),
       env.DB.prepare(
         `SELECT COALESCE(NULLIF(Status, ''), '미상') AS status, COUNT(*) AS n
            FROM Estimates
-          WHERE SubmittedAt >= ?
+          WHERE SubmittedAt >= ? AND SubmittedAt < ?
           GROUP BY status
           ORDER BY n DESC`,
       )
-        .bind(since)
+        .bind(since, until)
         .all(),
+      // 일자는 KST 로 끊는다. UTC 로 자르면 09시 이전 접수가 전날로 잡혀
+      // 광고 일자별 지표와 하루씩 어긋난다
       env.DB.prepare(
-        `SELECT substr(SubmittedAt, 1, 10) AS day, COUNT(*) AS n
+        `SELECT substr(datetime(SubmittedAt, '+9 hours'), 1, 10) AS day, COUNT(*) AS n
            FROM Estimates
-          WHERE SubmittedAt >= ?
+          WHERE SubmittedAt >= ? AND SubmittedAt < ?
           GROUP BY day
           ORDER BY day ASC`,
       )
-        .bind(since)
+        .bind(since, until)
         .all(),
     ]);
 
@@ -192,16 +280,16 @@ export async function handleBrief(request, env, ctx, services) {
     return jsonError(404, "Not Found");
   }
 
-  const days = resolveDays(url);
+  const period = resolveRange(url);
   const full = url.searchParams.get("full") === "1";
 
-  // 두 라우트는 같은 range 규칙을 쓴다 — "7"·"30" 은 기본 구간이고 그 밖은 custom 이다.
-  // 7·30 을 그대로 넘기는 이유는 어드민이 쓰는 캐시 키와 겹쳐 응답이 즉시 나오기 때문이다.
-  // 여기서 days 를 임의 문자열로 만들면(예: "30d") 양쪽 모두 조용히 기본값으로 돌아간다.
+  // 하위 두 라우트는 같은 range 규칙을 쓴다 — "today"·"7"·"30" 은 기본 구간이고 그 밖은
+  // custom 이다. 7·30 을 그대로 넘기는 이유는 어드민이 쓰는 캐시 키와 겹쳐 응답이 즉시
+  // 나오기 때문이다. 여기서 임의 문자열을 만들면(예: "30d") 양쪽 모두 조용히 기본값으로 돌아간다.
   const rangeQuery =
-    days === 7 || days === 30
-      ? `range=${days}`
-      : `range=custom&start=${kstDate(days)}&end=${kstDate(1)}`;
+    period.key === "custom"
+      ? `range=custom&start=${period.startDate}&end=${period.endDate}`
+      : `range=${period.key}`;
 
   const origin = url.origin;
   const sub = (p) => new Request(`${origin}${p}`, { headers: request.headers });
@@ -219,7 +307,7 @@ export async function handleBrief(request, env, ctx, services) {
     briefFunnel(funnelReq, env)
       .then(readJson)
       .catch(() => null),
-    collectLeads(env, days),
+    collectLeads(env, period),
   ]);
 
   // 효율 계산은 언제나 껍질을 벗긴 쪽에서 한다. full=1 원본으로 계산하면
@@ -233,7 +321,12 @@ export async function handleBrief(request, env, ctx, services) {
   return jsonOk({
     ok: true,
     generatedAt: new Date().toISOString(),
-    range: { days, since: kstDate(days), until: kstDate(1) },
+    range: {
+      startDate: period.startDate,
+      endDate: period.endDate,
+      days: period.days,
+      requested: url.searchParams.get("range") || url.searchParams.get("days") || "30",
+    },
     efficiency: deriveEfficiency(condensed, leads),
     ads,
     traffic,

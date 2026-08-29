@@ -109,9 +109,213 @@ async function say(text, opts = {}) {
   return first;
 }
 
+// ── 기간 해석 ───────────────────────────────────────────
+//
+// 사람은 "이번 주", "지난달"이라고 묻지 "30일"이라고 묻지 않는다.
+// 숫자만 찾는 정규식을 쓰면 그런 말이 전부 기본값 30일로 떨어지는데, 그러면 봇이
+// 못 알아들은 것이 아니라 "알아듣고 다른 기간을 본" 꼴이라 사람이 더 헷갈린다.
+// 그래서 해석 결과를 라벨로 만들어 답의 첫 줄에 되돌려 준다.
+
+function ymd(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function addDays(d, n) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function mdLabel(a, b) {
+  const f = (s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+  return a === b ? f(a) : `${f(a)}~${f(b)}`;
+}
+
+// 이번 주의 시작(월요일). 일요일을 주의 시작으로 보는 달력도 있지만
+// 영업 주간은 월요일에 시작한다
+function mondayOf(d) {
+  const x = new Date(d);
+  const dow = x.getDay(); // 0=일
+  const back = dow === 0 ? 6 : dow - 1;
+  return addDays(x, -back);
+}
+
+export function parsePeriod(text) {
+  const t = String(text || "");
+  const now = new Date();
+  const today = ymd(now);
+  const yesterday = ymd(addDays(now, -1));
+
+  const custom = (start, end, label) => ({
+    query: `range=custom&start=${start}&end=${end}`,
+    label: `${label}(${mdLabel(start, end)})`,
+  });
+
+  if (/오늘|금일/.test(t)) {
+    return { query: "range=today", label: `오늘(${mdLabel(today, today)})` };
+  }
+  if (/어제|전일/.test(t)) {
+    return custom(yesterday, yesterday, "어제");
+  }
+  if (/(지난|저번|전)\s*주/.test(t)) {
+    const lastMon = addDays(mondayOf(now), -7);
+    return custom(ymd(lastMon), ymd(addDays(lastMon, 6)), "지난주");
+  }
+  if (/(이번|금)\s*주|이번주|금주/.test(t)) {
+    const mon = ymd(mondayOf(now));
+    // 월요일에는 이번 주에 끝난 날이 아직 없다. 그럴 때는 오늘을 본다
+    const end = mon > yesterday ? today : yesterday;
+    return custom(mon, end, "이번 주");
+  }
+  if (/(지난|저번|전)\s*달|전월|지난달/.test(t)) {
+    return { query: "range=prev-month", label: "지난달" };
+  }
+  if (/(이번|금)\s*달|이달|금월|이번달/.test(t)) {
+    return { query: "range=cur-month", label: "이번 달" };
+  }
+
+  const weeks = t.match(/(\d+)\s*주/);
+  if (weeks) {
+    const d = Math.min(Number(weeks[1]) * 7, 180);
+    return { query: `days=${d}`, label: `최근 ${weeks[1]}주(${d}일)` };
+  }
+  const months = t.match(/(\d+)\s*(개월|달)/);
+  if (months) {
+    const d = Math.min(Number(months[1]) * 30, 180);
+    return { query: `days=${d}`, label: `최근 ${months[1]}개월(${d}일)` };
+  }
+  const days = t.match(/(\d+)\s*일/);
+  if (days) {
+    const d = Math.min(Math.max(Number(days[1]), 1), 180);
+    return { query: `days=${d}`, label: `최근 ${d}일` };
+  }
+  if (/일주일|한\s*주/.test(t)) return { query: "days=7", label: "최근 7일" };
+  if (/한\s*달|1개월/.test(t)) return { query: "days=30", label: "최근 30일" };
+
+  return { query: "days=30", label: "최근 30일", isDefault: true };
+}
+
+// ── 의도 해석 ───────────────────────────────────────────
+//
+// 위 parsePeriod 는 정형 표현만 읽는다. 사람은 "요즘 어때", "추석 전후로 비교해줘",
+// "8월 성과", "지난주랑 이번주 붙여서" 처럼 묻는다. 규칙을 아무리 늘려도 그 말들을
+// 다 담을 수 없고, 못 읽으면 조용히 30일로 떨어져 "알아듣고 다른 기간을 본" 꼴이 된다.
+//
+// 그래서 기간과 초점은 모델이 읽는다. 대신 모델이 답을 지어낼 여지를 좁히려고
+// 형식을 JSON 으로 못 박고, 파싱에 실패하면 규칙 파서로 되돌아간다.
+// 규칙은 사라지지 않고 아래를 받치는 자리로 내려간 것이다.
+
+function intentPrompt(question, todayStr, dowStr) {
+  return [
+    "다음 질문에서 '분석 기간'과 '무엇을 묻는지'를 뽑아 JSON 하나만 출력하세요.",
+    "설명·인사·코드블록 없이 JSON 만 출력합니다.",
+    "",
+    `오늘은 ${todayStr}(${dowStr})입니다. 데이터는 어제까지 집계됩니다.`,
+    `질문: ${JSON.stringify(question)}`,
+    "",
+    "형식:",
+    '{"onTopic":true,"periods":[{"kind":"days","days":7,"label":"이번 주"}],"focus":"무엇을 묻는지 한 문장"}',
+    "",
+    "규칙:",
+    "- onTopic 은 이 질문이 인테리어 시공사의 마케팅 성과(광고·유입·견적 접수)에 관한 것이면 true.",
+    "  시스템·코드·계정·일반 상식·잡담이면 false.",
+    '- periods 의 kind 는 "days" | "today" | "cur-month" | "prev-month" | "custom" 중 하나.',
+    '  · kind:"days" 면 days 에 숫자(1~180).',
+    '  · kind:"custom" 이면 start,end 를 "YYYY-MM-DD" 로.',
+    "- 비교를 요청하면 periods 에 두 구간을 넣으세요(먼저 최신 구간, 다음 비교 구간).",
+    "  비교가 아니면 하나만 넣습니다.",
+    "- 기간을 말하지 않았으면 최근 30일로 보고 label 을 '최근 30일'로 하세요.",
+    "- '이번 주'는 이번 주 월요일부터 어제까지, '지난주'는 지난 월요일부터 일요일까지입니다.",
+    "- label 은 사람이 읽을 한국어 기간 이름입니다.",
+    "- focus 는 질문이 실제로 알고 싶어 하는 것을 한 문장으로 적습니다.",
+  ].join("\n");
+}
+
+function periodFromIntent(p) {
+  if (!p || typeof p !== "object") return null;
+  const label = String(p.label || "").slice(0, 40);
+  const kind = String(p.kind || "");
+  const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+
+  if (kind === "today") return { query: "range=today", label: label || "오늘" };
+  if (kind === "cur-month")
+    return { query: "range=cur-month", label: label || "이번 달" };
+  if (kind === "prev-month")
+    return { query: "range=prev-month", label: label || "지난달" };
+  if (kind === "custom" && isDate(p.start) && isDate(p.end) && p.start <= p.end) {
+    return {
+      query: `range=custom&start=${p.start}&end=${p.end}`,
+      label: `${label || "지정 기간"}(${mdLabel(p.start, p.end)})`,
+    };
+  }
+  const n = Number(p.days);
+  if (Number.isFinite(n) && n >= 1) {
+    const d = Math.min(Math.round(n), 180);
+    return { query: `days=${d}`, label: label || `최근 ${d}일` };
+  }
+  return null;
+}
+
+function extractJson(raw) {
+  const s = String(raw || "");
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(s.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+
+async function interpretIntent(question) {
+  const now = new Date();
+  const fallback = {
+    periods: [parsePeriod(question)],
+    focus: "",
+    onTopic: null,
+    source: "규칙",
+  };
+
+  const r = await askClaude(
+    intentPrompt(question, ymd(now), DOW[now.getDay()]),
+    90 * 1000,
+  );
+  if (!r.ok) {
+    log("의도 해석 실패, 규칙으로 대체 —", r.error);
+    return fallback;
+  }
+
+  const parsed = extractJson(r.out);
+  if (!parsed) {
+    log("의도 해석 결과가 JSON 이 아니라 규칙으로 대체");
+    return fallback;
+  }
+
+  const periods = (Array.isArray(parsed.periods) ? parsed.periods : [])
+    .map(periodFromIntent)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (!periods.length) return { ...fallback, onTopic: parsed.onTopic };
+
+  return {
+    periods,
+    focus: String(parsed.focus || "").slice(0, 200),
+    onTopic: parsed.onTopic === false ? false : true,
+    source: "해석",
+  };
+}
+
 // ── 데이터 수집 ─────────────────────────────────────────
-async function fetchBrief(days) {
-  const url = `${BRIEF_API}/api/brief/marketing?days=${days}`;
+async function fetchBrief(period) {
+  const query = typeof period === "string" ? period : period.query;
+  const url = `${BRIEF_API}/api/brief/marketing?${query}`;
   const res = await fetch(url, {
     headers: { "X-Brief-Secret": BRIEF_SECRET },
     signal: AbortSignal.timeout(60000),
@@ -205,13 +409,8 @@ const CLAUDE_NO_TOOLS = [
   "Task",
 ];
 
-async function askClaude(prompt) {
-  const r = await run(
-    CLAUDE_BIN,
-    ["-p", ...CLAUDE_NO_TOOLS],
-    prompt,
-    ANALYZE_TIMEOUT_MS,
-  );
+async function askClaude(prompt, timeoutMs = ANALYZE_TIMEOUT_MS) {
+  const r = await run(CLAUDE_BIN, ["-p", ...CLAUDE_NO_TOOLS], prompt, timeoutMs);
   if (!r.ok) return r;
   // 인증이 끊기면 CLI 가 성공 종료하면서 안내문만 뱉는다. 그걸 분석 결과로 올리면 안 된다
   if (/OAuth session expired|Please run .*login|Invalid API key/i.test(r.out)) {
@@ -220,7 +419,7 @@ async function askClaude(prompt) {
   return r;
 }
 
-async function askCodex(prompt) {
+async function askCodex(prompt, timeoutMs = ANALYZE_TIMEOUT_MS) {
   const r = await run(
     CODEX_BIN,
     [
@@ -233,7 +432,7 @@ async function askCodex(prompt) {
       "-",
     ],
     prompt,
-    ANALYZE_TIMEOUT_MS,
+    timeoutMs,
   );
   if (!r.ok) return r;
   const answer = extractCodexAnswer(r.out);
@@ -390,12 +589,16 @@ const HELP = [
   "이 방은 데이원디자인의 유입 분석과 Meta 광고 분석만 답합니다.",
   "그 밖의 주제(시스템·코드·계정·일반 질문)에는 응답하지 않습니다.",
   "",
-  "· 그냥 물어보세요 — 클로드와 코덱스가 같은 데이터로 각각 답합니다.",
-  "  예) 이번 달 광고 효율 어때? / 리드 단가 왜 올랐지? / 유입 채널별 접수 비교해줘",
+  "· 그냥 물어보세요. 기간은 말하는 대로 알아듣습니다.",
+  "  예) 이번 주 광고 효율 어때? / 지난달 리드 단가 왜 올랐지?",
+  "      지난주랑 이번 주 비교해줘 / 8월 유입 채널별 접수 보여줘",
   "",
-  "· /brief [일수] — 기본 브리프 (기본 30일)",
-  "· /data [일수] — 분석 없이 원본 숫자만",
+  "· /brief [기간] — 기본 브리프. 기간을 안 쓰면 최근 30일",
+  "  예) /brief 이번주 · /brief 지난달 · /brief 14",
+  "· /data [기간] — 분석 없이 원본 숫자만",
   "· /ping — 봇·데이터 연결 확인",
+  "",
+  "기간을 어떻게 읽었는지 분석 시작할 때 먼저 알려드립니다.",
 ].join("\n");
 
 const OFF_TOPIC_REPLY = [
@@ -417,28 +620,34 @@ function parseCommand(text) {
   if (/^\/(help|start)\b/i.test(bare)) return { kind: "help" };
   if (/^\/ping\b/i.test(bare)) return { kind: "ping" };
 
-  const dataM = bare.match(/^\/data(?:\s+(\d+))?\s*$/i);
-  if (dataM) return { kind: "data", days: Number(dataM[1] || 30) };
+  // /brief 와 /data 는 뒤에 무엇이든 붙일 수 있다. "7" 도 되고 "이번주" 도 된다
+  const dataM = bare.match(/^\/data\b\s*(.*)$/i);
+  if (dataM) return { kind: "data", periodText: dataM[1].trim() };
 
-  const briefM = bare.match(/^\/brief(?:\s+(\d+))?\s*$/i);
+  const briefM = bare.match(/^\/brief\b\s*(.*)$/i);
   if (briefM) {
+    const extra = briefM[1].trim();
     return {
       kind: "analyze",
-      days: Number(briefM[1] || 30),
+      periodText: extra,
       question:
-        "최근 기간의 마케팅 효율을 브리핑해 주세요. 광고비 대비 접수 성과, " +
+        (extra ? `${extra} 기준으로 ` : "") +
+        "마케팅 효율을 브리핑해 주세요. 광고비 대비 접수 성과, " +
         "유입 경로별 기여, 눈에 띄는 변화와 그 원인을 짚어 주세요.",
     };
   }
 
   if (bare.startsWith("/")) return { kind: "unknown" };
 
-  // 자유 질문 — 마케팅 범위인지 먼저 가른다.
-  // 애매한 문장까지 통과시키면 분석기가 엉뚱한 주제에 광고 데이터를 갖다 붙인다
-  if (topicOf(bare) !== "on") return { kind: "offtopic" };
+  // 자유 질문. 명백히 범위 밖인 것만 여기서 끊는다.
+  //
+  // 예전에는 마케팅 낱말이 안 보이면 전부 막았는데, 그러면 "요즘 어때?"나
+  // "지난주랑 붙여서 봐줘" 같은 맥락 질문까지 안내문만 받고 끝났다. 낱말이 아니라
+  // 맥락으로 판단해야 하는 몫은 의도 해석 단계로 넘기고, 여기서는 위험한 요청
+  // (시스템·코드·계정)만 차단한다.
+  if (topicOf(bare) === "off") return { kind: "offtopic" };
 
-  const days = Number((bare.match(/(\d+)\s*일/) || [])[1] || 30);
-  return { kind: "analyze", days: Math.min(Math.max(days, 1), 180), question: bare };
+  return { kind: "analyze", question: bare };
 }
 
 function summarizeNumbers(d) {
@@ -486,7 +695,7 @@ async function handle(msg) {
 
   if (cmd.kind === "ping") {
     try {
-      const d = await fetchBrief(7);
+      const d = await fetchBrief({ query: "days=7", label: "최근 7일" });
       await say(
         `봇 정상. 데이터 연결 정상.\n\n${summarizeNumbers(d)}`,
         { replyTo },
@@ -501,8 +710,11 @@ async function handle(msg) {
 
   if (cmd.kind === "data") {
     try {
-      const d = await fetchBrief(cmd.days);
-      await say(summarizeNumbers(d), { replyTo });
+      const period = parsePeriod(cmd.periodText || "");
+      const d = await fetchBrief(period);
+      await say(`${period.label}
+
+${summarizeNumbers(d)}`, { replyTo });
     } catch (e) {
       await say(`데이터를 못 읽었습니다.\n${e.message}`, { replyTo });
     }
@@ -519,46 +731,96 @@ async function handle(msg) {
   busy = true;
   const startedAt = Date.now();
   try {
+    // 1) 무엇을 언제 기준으로 묻는지부터 읽는다.
+    //    이걸 건너뛰고 숫자만 찾으면 "이번 주"가 조용히 30일로 바뀐다
+    const intent = await interpretIntent(
+      cmd.periodText ? `${cmd.periodText} ${cmd.question}` : cmd.question,
+    );
+
+    if (intent.onTopic === false) {
+      log("범위 밖(해석 단계) —", String(cmd.question).slice(0, 40));
+      await say(OFF_TOPIC_REPLY, { replyTo });
+      return;
+    }
+
+    const periods = intent.periods;
+    const main = periods[0];
+    const compare = periods[1] || null;
+
     let data;
+    let compareData = null;
     try {
-      data = await fetchBrief(cmd.days);
+      data = await fetchBrief(main);
+      if (compare) compareData = await fetchBrief(compare);
     } catch (e) {
-      await say(`데이터를 못 읽어 분석을 시작하지 못했습니다.\n${e.message}`, {
+      await say(`데이터를 못 읽어 분석을 시작하지 못했습니다.
+${e.message}`, {
         replyTo,
       });
       return;
     }
 
+    // 해석한 기간을 먼저 되돌려 준다. 사람이 "다른 기간을 봤다"는 것을
+    // 결과를 다 읽고 나서야 알아채면 그 시간이 통째로 버려진다
+    const head = compare
+      ? `${main.label} vs ${compare.label} 로 봅니다.`
+      : `${main.label} 기준으로 봅니다.`;
     await say(
-      `최근 ${cmd.days}일 데이터를 봅니다.\n\n${summarizeNumbers(data)}\n\n분석에 3~8분 걸립니다.`,
+      `${head}
+
+${summarizeNumbers(data)}
+
+분석에 2~5분 걸립니다.`,
       { replyTo },
     );
 
     // 비율·신뢰구간·이상치는 여기서 확정한다. 모델에게 계산을 맡기면 검산할 때마다 어긋난다
-    let stats;
-    try {
-      stats = analyze(data);
-    } catch (e) {
-      log("통계 계산 실패 —", e.message);
-      stats = { error: "통계 계산에 실패했습니다", detail: String(e.message).slice(0, 120) };
-    }
+    const calc = (d) => {
+      try {
+        return analyze(d);
+      } catch (e) {
+        log("통계 계산 실패 —", e.message);
+        return {
+          error: "통계 계산에 실패했습니다",
+          detail: String(e.message).slice(0, 120),
+        };
+      }
+    };
+    const stats = calc(data);
+    const compareStats = compareData ? calc(compareData) : null;
 
-    // 1) 해석 초안
-    const draftRes = await askClaude(interpretPrompt(cmd.question, data, stats));
+    const bundle = compareData
+      ? {
+          기준구간: { label: main.label, data, stats },
+          비교구간: { label: compare.label, data: compareData, stats: compareStats },
+        }
+      : null;
+
+    // 질문에 초점이 잡혀 있으면 그것을 앞세운다. 없으면 원 질문 그대로 간다
+    const ask = intent.focus
+      ? `${cmd.question}
+(초점: ${intent.focus} / 기간: ${main.label}${compare ? ` vs ${compare.label}` : ""})`
+      : `${cmd.question}
+(기간: ${main.label}${compare ? ` vs ${compare.label}` : ""})`;
+
+    // 2) 해석 초안
+    const draftRes = await askClaude(
+      interpretPrompt(ask, bundle || data, stats),
+    );
     if (!draftRes.ok) log("해석 단계 실패 —", draftRes.error);
 
-    // 2) 감사 — 초안이 없으면 데이터만 보고 점검한다
+    // 3) 감사 — 초안이 없으면 데이터만 보고 점검한다
     const auditRes = await askCodex(
-      auditPrompt(cmd.question, data, stats, draftRes.ok ? draftRes.out : ""),
+      auditPrompt(ask, bundle || data, stats, draftRes.ok ? draftRes.out : ""),
     );
     if (!auditRes.ok) log("감사 단계 실패 —", auditRes.error);
 
-    // 3) 종합 — 방에 나가는 것은 이것뿐이다
+    // 4) 종합 — 방에 나가는 것은 이것뿐이다
     let finalText = "";
     const finalRes = await askCodex(
       synthesizePrompt(
-        cmd.question,
-        data,
+        ask,
+        bundle || data,
         stats,
         draftRes.ok ? draftRes.out : "",
         auditRes.ok ? auditRes.out : "",
@@ -577,16 +839,14 @@ async function handle(msg) {
     if (finalText) {
       await say(finalText);
     } else {
-      await say(
-        "분석을 마치지 못했습니다. 잠시 뒤 다시 물어봐 주세요.\n" +
-          `(${[draftRes.error, auditRes.error, finalRes.error].filter(Boolean)[0] || ""})`.slice(
-            0,
-            200,
-          ),
-      );
+      const why = String(
+        [draftRes.error, auditRes.error, finalRes.error].filter(Boolean)[0] ||
+          "원인 미상",
+      ).slice(0, 200);
+      await say(`분석을 마치지 못했습니다. 잠시 뒤 다시 물어봐 주세요.\n(${why})`);
     }
     log(
-      `분석 ${took}초 — 해석=${draftRes.ok} 감사=${auditRes.ok} 종합=${finalRes.ok}`,
+      `분석 ${took}초 — 기간=${main.label}${compare ? "+" + compare.label : ""} 해석기간출처=${intent.source} 해석=${draftRes.ok} 감사=${auditRes.ok} 종합=${finalRes.ok}`,
     );
   } finally {
     busy = false;
@@ -638,31 +898,65 @@ async function main() {
 // 게이트가 실제로 무엇을 통과시키는지는 짐작하지 말고 돌려서 본다.
 // 정규식은 눈으로 읽어서는 어디까지 걸리는지 알 수 없다.
 function selftest() {
+  // 입구 게이트는 위험한 요청만 끊는다. 잡담은 여기서 통과하되 의도 해석이 걸러낸다 —
+  // 그 몫을 여기로 끌어오면 "요즘 어때?" 같은 맥락 질문까지 같이 막힌다
   const cases = [
     ["이번 달 광고 효율 어때?", "analyze"],
     ["리드 단가 왜 올랐지", "analyze"],
     ["유입 채널별 접수 비교해줘", "analyze"],
     ["최근 7일 캠페인 성과 보여줘", "analyze"],
     ["메타 광고 소재 중에 뭐가 제일 나아?", "analyze"],
+    ["요즘 어때?", "analyze"], // 낱말은 없지만 맥락 질문이다
+    ["지난주랑 이번주 붙여서 봐줘", "analyze"],
     ["/brief", "analyze"],
     ["/brief 7", "analyze"],
+    ["/brief 이번주", "analyze"],
     ["/ping", "ping"],
     ["/data 14", "data"],
+    ["/data 지난달", "data"],
     ["서버 재배포 해줘", "offtopic"],
     ["DB 비밀번호 알려줘", "offtopic"],
     ["이 파일 읽어줘", "offtopic"],
     ["오늘 날씨 어때?", "offtopic"],
     ["코드 고쳐줘", "offtopic"],
-    ["안녕", "offtopic"],
-    ["점심 뭐 먹지", "offtopic"],
   ];
   let bad = 0;
   for (const [text, expected] of cases) {
     const got = parseCommand(text)?.kind || "null";
     const ok = got === expected;
     if (!ok) bad++;
-    console.log(`${ok ? "OK " : "실패"} ${JSON.stringify(text)} → ${got} (기대 ${expected})`);
+    console.log(
+      `${ok ? "OK " : "실패"} ${JSON.stringify(text)} → ${got} (기대 ${expected})`,
+    );
   }
+
+  // 규칙 파서는 의도 해석이 죽었을 때 받치는 자리다. 그 자리가 비면
+  // 모든 질문이 조용히 30일로 떨어지므로 여기서 함께 확인한다
+  console.log("\n[기간 규칙 파서]");
+  const now = new Date();
+  const mon = ymd(mondayOf(now));
+  const lastMon = ymd(addDays(mondayOf(now), -7));
+  const periodCases = [
+    ["이번주 광고 어때", `start=${mon}`],
+    ["이번 주 성과", `start=${mon}`],
+    ["지난주 접수", `start=${lastMon}`],
+    ["지난달 광고비", "range=prev-month"],
+    ["이번달 유입", "range=cur-month"],
+    ["오늘 접수", "range=today"],
+    ["최근 14일 성과", "days=14"],
+    ["2주간 광고", "days=14"],
+    ["3개월 추이", "days=90"],
+    ["광고 어때", "days=30"],
+  ];
+  for (const [text, expected] of periodCases) {
+    const got = parsePeriod(text);
+    const ok = got.query.includes(expected);
+    if (!ok) bad++;
+    console.log(
+      `${ok ? "OK " : "실패"} ${JSON.stringify(text)} → ${got.query} · ${got.label}`,
+    );
+  }
+
   console.log(bad === 0 ? "\n전부 통과" : `\n${bad}건 실패`);
   process.exit(bad === 0 ? 0 : 1);
 }
