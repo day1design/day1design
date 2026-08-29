@@ -327,6 +327,33 @@ async function fetchBrief(period) {
   return JSON.parse(text);
 }
 
+
+// 분석 한 번을 통째로 남긴다.
+//
+// 텔레그램 방에만 남기면 "그때 무슨 숫자를 보고 그렇게 말했나" 를 되짚을 수 없다.
+// 광고 데이터는 계속 갱신되므로 같은 기간을 다시 조회해도 그때 본 값이 아니다.
+// 스냅샷과 보고는 R2 에 원문으로, 검색에 쓸 값만 D1 에 남는다.
+async function saveRun(payload) {
+  try {
+    const res = await fetch(`${BRIEF_API}/api/brief/runs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Brief-Secret": BRIEF_SECRET,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000),
+    });
+    const j = await res.json();
+    if (!j.ok) log("이력 저장 실패 —", j.error || res.status);
+    return j;
+  } catch (e) {
+    // 이력을 못 남겨도 사람에게는 이미 답이 갔다. 여기서 흐름을 끊지 않는다
+    log("이력 저장 실패 —", e.message);
+    return null;
+  }
+}
+
 // ── 분석기 ──────────────────────────────────────────────
 function run(bin, args, input, timeoutMs) {
   return new Promise((resolve) => {
@@ -882,6 +909,28 @@ ${summarizeNumbers(data)}
       ).slice(0, 200);
       await say(`분석을 마치지 못했습니다. 잠시 뒤 다시 물어봐 주세요.\n(${why})`);
     }
+    // 이 분석이 무엇을 보고 무엇이라 답했는지 통째로 남긴다
+    await saveRun({
+      question: cmd.question,
+      periodLabel: compare ? `${main.label} vs ${compare.label}` : main.label,
+      startDate: data?.range?.startDate || "",
+      endDate: data?.range?.endDate || "",
+      spend: stats?.rates?.spend ?? data?.efficiency?.spend ?? 0,
+      leads: stats?.leads?.total ?? 0,
+      metaLeads: stats?.leads?.metaLeads ?? 0,
+      metaCostPerLead: stats?.leads?.metaCostPerLead ?? 0,
+      hookRateAvg: stats?.video?.avgHookRate ?? 0,
+      bottleneck: stats?.funnel?.bottleneck
+        ? `${stats.funnel.bottleneck.from}→${stats.funnel.bottleneck.at}`
+        : "",
+      verdict: stats?.funnel?.verdict || "",
+      durationSec: took,
+      stages: `해석=${draftRes.ok} 감사=${auditRes.ok} 종합=${finalRes.ok}`,
+      status: finalText ? "success" : "failed",
+      report: finalText || "",
+      snapshot: { intent, stats, data, compare: compareData || null },
+    });
+
     log(
       `분석 ${took}초 — 기간=${main.label}${compare ? "+" + compare.label : ""} 해석기간출처=${intent.source} 해석=${draftRes.ok} 감사=${auditRes.ok} 종합=${finalRes.ok}`,
     );
