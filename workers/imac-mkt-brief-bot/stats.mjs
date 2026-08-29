@@ -321,6 +321,112 @@ function funnelShift(ads) {
   };
 }
 
+// 캠페인별 진짜 리드 단가 — 이 봇이 총계만 읊지 않게 하는 축.
+//
+// 총계 CPL 은 "광고가 잘 되고 있는가"에만 답한다. 정작 알아야 할 것은 "어느 캠페인에
+// 돈을 더 넣고 어느 것을 끄는가"인데, 그건 캠페인마다 지출과 접수를 붙여야 나온다.
+// 다행히 접수 레코드의 Campaign 에 광고 캠페인명이 그대로 들어와 있어 이름으로 붙는다.
+//
+// 이름이 안 맞는 것은 억지로 맞추지 않고 unmatched 로 남긴다. 잘못 붙인 한 건이
+// 캠페인 순위를 통째로 뒤집을 수 있어서, 틀리느니 비워 두는 편이 낫다.
+function normalizeName(s) {
+  return String(s || "")
+    .replace(/\s+/g, "")
+    .replace(/[_·・]/g, "")
+    .toLowerCase();
+}
+
+function campaignEfficiency(ads, leads) {
+  const rows = Array.isArray(ads?.campaigns) ? ads.campaigns : [];
+  const leadRows = Array.isArray(leads?.byCampaign) ? leads.byCampaign : [];
+  if (!rows.length || !leadRows.length) {
+    return {
+      available: false,
+      reason: "캠페인별 광고 지표나 접수가 없어 캠페인 단가를 낼 수 없다",
+    };
+  }
+
+  // 같은 캠페인이 플랫폼별로 나뉘어 있으므로 이름 기준으로 먼저 합친다
+  const leadByName = new Map();
+  for (const r of leadRows) {
+    const key = normalizeName(r.campaign);
+    if (!key || key === normalizeName("(캠페인 없음)")) continue;
+    const cur = leadByName.get(key) || { n: 0, platforms: {}, raw: r.campaign };
+    cur.n += num(r.n);
+    cur.platforms[r.platform || "미상"] =
+      (cur.platforms[r.platform || "미상"] || 0) + num(r.n);
+    leadByName.set(key, cur);
+  }
+
+  const matched = [];
+  const usedKeys = new Set();
+  for (const c of rows) {
+    const name = c.name || c.campaignName || c.campaign_name || "";
+    const key = normalizeName(name);
+    const spend = num(c.spend);
+    const hit = leadByName.get(key);
+    if (hit) usedKeys.add(key);
+    const n = hit ? hit.n : 0;
+    matched.push({
+      campaign: name,
+      status: c.status || "",
+      spend: round(spend, 2),
+      clicks: num(c.clicks),
+      linkClicks: num(c.linkClicks),
+      leads: n,
+      costPerLead: n > 0 ? round(spend / n, 2) : null,
+      platforms: hit ? hit.platforms : null,
+      note: n === 0 && spend > 0 ? "지출은 있는데 접수가 붙지 않았다" : "",
+    });
+  }
+
+  // 광고 목록에 없는 접수(끝난 캠페인, 오가닉 등)는 버리지 않고 따로 보여 준다
+  const unmatched = [];
+  for (const [key, v] of leadByName) {
+    if (!usedKeys.has(key)) unmatched.push({ campaign: v.raw, leads: v.n });
+  }
+
+  const withLeads = matched.filter((m) => m.costPerLead !== null);
+  const spending = matched.filter((m) => m.spend > 0);
+  const best = withLeads.length
+    ? [...withLeads].sort((a, b) => a.costPerLead - b.costPerLead)[0]
+    : null;
+  const worst = withLeads.length
+    ? [...withLeads].sort((a, b) => b.costPerLead - a.costPerLead)[0]
+    : null;
+  const dead = spending
+    .filter((m) => m.leads === 0)
+    .sort((a, b) => b.spend - a.spend);
+
+  let verdict = "";
+  if (best && worst && best.campaign !== worst.campaign) {
+    const gap = worst.costPerLead / best.costPerLead;
+    verdict =
+      `캠페인별 단가가 최저 $${best.costPerLead}(${best.campaign})에서 ` +
+      `최고 $${worst.costPerLead}(${worst.campaign})까지 ${round(gap, 1)}배 벌어져 있다`;
+  } else if (best) {
+    verdict = `접수가 붙은 캠페인이 하나뿐이라 비교할 대상이 없다`;
+  }
+  if (dead.length) {
+    verdict +=
+      `${verdict ? ". " : ""}지출이 있는데 접수가 0건인 캠페인이 ${dead.length}개 있다` +
+      `(가장 큰 것 ${dead[0].campaign} $${dead[0].spend})`;
+  }
+
+  return {
+    available: true,
+    rows: matched.sort((a, b) => b.spend - a.spend),
+    unmatched,
+    best,
+    worst,
+    zeroLeadSpenders: dead.slice(0, 5),
+    verdict,
+    note:
+      "접수는 마지막 접점 기준이라 기여도이지 증분이 아니다. " +
+      "이름이 맞지 않은 접수는 unmatched 로 뺐다",
+  };
+}
+
 export function analyze(data) {
   const ads = data?.ads?.summary || null;
   const eff = data?.ads?.efficiency || null;
@@ -331,6 +437,8 @@ export function analyze(data) {
     currency: "USD",
     // 보고의 첫 문장은 여기서 나온다. 다른 블록보다 앞에 둔다
     funnel: funnelShift(data?.ads),
+    // 총계만 보면 "광고가 잘 되나"까지만 말할 수 있다. 돈을 어디로 옮길지는 여기서 나온다
+    campaigns: campaignEfficiency(data?.ads, leads),
     rates: ads ? rateBlock(ads) : { available: false },
     // previous 는 직전 구간의 날짜 범위이고, 합계는 prevTotals 에 들어 있다.
     // previous 를 합계로 착각해 넣으면 비교가 통째로 '판정 불가'로 떨어진다

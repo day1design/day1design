@@ -210,3 +210,64 @@ test("직전 구간이 없으면 흐름 변화를 말하지 않는다", () => {
   });
   assert.equal(s.funnel.available, false);
 });
+
+test("캠페인별 단가를 이름으로 붙이고 격차를 짚는다", () => {
+  // 총계 CPL 하나로는 "어느 캠페인에 돈을 더 넣을지" 말할 수 없다
+  const data = {
+    ads: {
+      summary: { impressions: 1000, clicks: 50, spend: 600 },
+      campaigns: [
+        { name: "260812 신규 잠재고객 캠페인(전환형)", spend: 300, clicks: 30 },
+        { name: "260824 잠재고객 캠페인 신규", spend: 200, clicks: 15 },
+        { name: "260727 신규 트래픽 캠페인", spend: 100, clicks: 5 },
+      ],
+    },
+    leads: {
+      total: 32,
+      bySource: [{ source: "meta", n: 32 }],
+      daily: [],
+      byCampaign: [
+        { campaign: "260812 신규 잠재고객 캠페인(전환형)", platform: "instagram", n: 26 },
+        { campaign: "260824 잠재고객 캠페인 신규", platform: "instagram", n: 4 },
+        { campaign: "인스타그램 마케팅 - 오가닉 - 견적문의", platform: "IG마케팅", n: 2 },
+      ],
+    },
+  };
+  const s = analyze(data);
+  assert.equal(s.campaigns.available, true);
+  const best = s.campaigns.best;
+  assert.equal(best.campaign, "260812 신규 잠재고객 캠페인(전환형)");
+  assert.ok(Math.abs(best.costPerLead - 300 / 26) < 0.01);
+  assert.equal(s.campaigns.worst.campaign, "260824 잠재고객 캠페인 신규");
+  // 지출이 있는데 접수가 0건인 캠페인을 놓치면 안 된다
+  assert.equal(s.campaigns.zeroLeadSpenders[0].campaign, "260727 신규 트래픽 캠페인");
+  // 광고 목록에 없는 오가닉 접수는 버리지 않고 따로 남긴다
+  assert.equal(s.campaigns.unmatched.length, 1);
+});
+
+test("캠페인 이름의 공백·밑줄 차이는 같은 것으로 본다", () => {
+  const data = {
+    ads: {
+      summary: { spend: 100 },
+      campaigns: [{ name: "260805_잠재고객(전환형 광고)", spend: 100 }],
+    },
+    leads: {
+      total: 13,
+      bySource: [],
+      daily: [],
+      byCampaign: [
+        { campaign: "260805 잠재고객(전환형광고)", platform: "instagram", n: 13 },
+      ],
+    },
+  };
+  const s = analyze(data);
+  assert.equal(s.campaigns.rows[0].leads, 13, "표기 차이로 접수를 놓쳤다");
+});
+
+test("캠페인 접수가 없으면 단가를 지어내지 않는다", () => {
+  const s = analyze({
+    ads: { summary: { spend: 100 }, campaigns: [{ name: "A", spend: 100 }] },
+    leads: { total: 0, bySource: [], daily: [], byCampaign: [] },
+  });
+  assert.equal(s.campaigns.available, false);
+});

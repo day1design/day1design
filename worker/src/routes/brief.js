@@ -142,11 +142,13 @@ async function collectLeads(env, period) {
     bySource: [],
     byStatus: [],
     daily: [],
+    byCampaign: [],
     error: "",
   };
 
   try {
-    const [totalRow, bySource, byStatus, daily] = await Promise.all([
+    const [totalRow, bySource, byStatus, daily, byCampaign] =
+      await Promise.all([
       env.DB.prepare(
         `SELECT COUNT(*) AS n FROM Estimates
           WHERE SubmittedAt >= ? AND SubmittedAt < ?`,
@@ -182,12 +184,27 @@ async function collectLeads(env, period) {
       )
         .bind(since, until)
         .all(),
+      // 캠페인별 접수. Estimates.Campaign 에 광고 캠페인명이 그대로 들어와 있어
+      // 광고비와 이름으로 붙일 수 있다. 이걸 안 주면 "어느 캠페인이 돈값을 하는가"를
+      // 아무도 말할 수 없고, 보고는 총계만 읊는 평면적인 글이 된다
+      env.DB.prepare(
+        `SELECT COALESCE(NULLIF(Campaign, ''), '(캠페인 없음)') AS campaign,
+                COALESCE(NULLIF(Platform, ''), '(미상)') AS platform,
+                COUNT(*) AS n
+           FROM Estimates
+          WHERE SubmittedAt >= ? AND SubmittedAt < ?
+          GROUP BY campaign, platform
+          ORDER BY n DESC`,
+      )
+        .bind(since, until)
+        .all(),
     ]);
 
     out.total = Number(totalRow?.n) || 0;
     out.bySource = bySource?.results || [];
     out.byStatus = byStatus?.results || [];
     out.daily = daily?.results || [];
+    out.byCampaign = byCampaign?.results || [];
   } catch (e) {
     // 한 조각이 막혀도 브리프 전체를 죽이지 않는다. 대신 무엇이 빠졌는지 남긴다
     out.error = String(e?.message || "").slice(0, 120);
@@ -325,7 +342,8 @@ export async function handleBrief(request, env, ctx, services) {
       startDate: period.startDate,
       endDate: period.endDate,
       days: period.days,
-      requested: url.searchParams.get("range") || url.searchParams.get("days") || "30",
+      requested:
+        url.searchParams.get("range") || url.searchParams.get("days") || "30",
     },
     efficiency: deriveEfficiency(condensed, leads),
     ads,
