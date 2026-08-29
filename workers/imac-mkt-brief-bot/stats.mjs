@@ -230,6 +230,97 @@ function reconcileLeads(ads, leads) {
   };
 }
 
+// 광고 흐름이 어디서 꺾이는가 — 이 봇 보고의 뼈대다.
+//
+// 숫자를 나열하면 읽는 사람이 스스로 이야기를 만들어야 한다. 그런데 광고는 언제나
+// 같은 순서로 흐른다. 돈을 쓰면 노출이 되고, 노출에서 클릭이 나오고, 클릭에서 접수가 된다.
+// 그래서 각 단계가 전기 대비 몇 배가 됐는지 나란히 놓으면 이야기가 저절로 드러난다.
+//
+// 지출 1.3배 · 노출 3.0배 · 클릭 2.6배 · 접수 1.1배 라면 할 말은 하나다.
+// "노출은 샀는데 접수로 오지 않았다." 그 문장이 보고에 남아야 할 핵심이다.
+//
+// 통과율(passThrough)은 그 단계 배율을 직전 단계 배율로 나눈 값이다. 1 이면 앞 단계가
+// 늘어난 만큼 따라온 것이고, 0.5 면 절반만 따라온 것이다. 가장 크게 새는 자리가 병목이다.
+// 받침에 따라 조사를 고른다. "리드은" 처럼 나가면 판단 문장이 우스워져
+// 정작 읽어야 할 내용이 눈에 안 들어온다
+function josa(word, withFinal, withoutFinal) {
+  const s = String(word || "");
+  if (!s) return withFinal;
+  const code = s.charCodeAt(s.length - 1);
+  if (code < 0xac00 || code > 0xd7a3) return withFinal;
+  return (code - 0xac00) % 28 === 0 ? withoutFinal : withFinal;
+}
+
+function funnelShift(ads) {
+  const cur = ads?.efficiency?.current;
+  const prev = ads?.efficiency?.prevTotals;
+  if (!cur || !prev) {
+    return {
+      available: false,
+      reason: "직전 구간이 없어 흐름 변화를 볼 수 없다",
+    };
+  }
+
+  const step = (label, c, p) => {
+    const C = num(c);
+    const P = num(p);
+    return {
+      label,
+      current: round(C, 2),
+      previous: round(P, 2),
+      x: P > 0 ? round(C / P, 3) : null,
+      pct: P > 0 ? round((C / P - 1) * 100, 1) : null,
+    };
+  };
+
+  const steps = [
+    step("지출", cur.spend, prev.spend),
+    step("노출", cur.impressions, prev.impressions),
+    step("클릭", cur.clicks, prev.clicks),
+    step("링크클릭", cur.linkClicks, prev.linkClicks),
+    step("Meta 집계 리드", cur.leads, prev.leads),
+  ].filter((s) => s.x !== null);
+
+  let bottleneck = null;
+  for (let i = 1; i < steps.length; i++) {
+    const before = steps[i - 1].x;
+    const drop = before > 0 ? steps[i].x / before : null;
+    steps[i].passThrough = drop === null ? null : round(drop, 3);
+    // 앞 단계가 늘어난 만큼 따라오지 못한 자리를 찾는다. 가장 크게 새는 곳 하나만 짚는다
+    if (drop !== null && drop < 0.85 && (!bottleneck || drop < bottleneck.passThrough)) {
+      bottleneck = {
+        from: steps[i - 1].label,
+        at: steps[i].label,
+        passThrough: round(drop, 3),
+      };
+    }
+  }
+
+  const first = steps[0];
+  const last = steps[steps.length - 1];
+  let verdict = "";
+  if (bottleneck) {
+    verdict =
+      `${first.label}${josa(first.label, "은", "는")} ${first.x}배가 됐고 ` +
+      `${bottleneck.from}까지 따라왔지만, ${bottleneck.at}${josa(bottleneck.at, "은", "는")} ` +
+      `그 증가분의 ${Math.round(bottleneck.passThrough * 100)}%만 받았다. ` +
+      `돈이 ${bottleneck.at} 바로 앞에서 멈춘다`;
+  } else if (first.x && last.x) {
+    verdict =
+      last.x >= first.x
+        ? `${first.label} ${first.x}배에 ${last.label} ${last.x}배로, 쓴 만큼 이상 따라왔다`
+        : `단계마다 큰 누수 없이 ${first.label} ${first.x}배에 ${last.label} ${last.x}배로 움직였다`;
+  }
+
+  return {
+    available: true,
+    steps,
+    bottleneck,
+    verdict,
+    note: "배율은 직전 동일 길이 구간 대비다. 대조군이 없으므로 인과가 아니라 동시 변화다",
+  };
+}
+
 export function analyze(data) {
   const ads = data?.ads?.summary || null;
   const eff = data?.ads?.efficiency || null;
@@ -238,6 +329,8 @@ export function analyze(data) {
   const out = {
     basis: "이 블록의 수치는 봇이 직접 계산했다. 모델이 추정한 값이 아니다",
     currency: "USD",
+    // 보고의 첫 문장은 여기서 나온다. 다른 블록보다 앞에 둔다
+    funnel: funnelShift(data?.ads),
     rates: ads ? rateBlock(ads) : { available: false },
     // previous 는 직전 구간의 날짜 범위이고, 합계는 prevTotals 에 들어 있다.
     // previous 를 합계로 착각해 넣으면 비교가 통째로 '판정 불가'로 떨어진다

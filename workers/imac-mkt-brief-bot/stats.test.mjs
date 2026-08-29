@@ -152,3 +152,61 @@ test("통화는 USD 로 못 박는다", () => {
   const s = analyze({ ads: { summary: {} }, leads: { total: 0, bySource: [], daily: [] } });
   assert.equal(s.currency, "USD");
 });
+
+test("광고 흐름은 어느 단계에서 꺾였는지 짚는다", () => {
+  // 돈은 1.3배 늘렸는데 노출은 3배가 됐고 접수는 제자리인 상황.
+  // 이때 할 말은 "노출을 샀는데 접수로 오지 않았다" 하나다
+  const data = {
+    ads: {
+      summary: { impressions: 300000, clicks: 6000, spend: 3900, leads: 190 },
+      efficiency: {
+        current: {
+          spend: 3900,
+          impressions: 300000,
+          clicks: 6000,
+          linkClicks: 4000,
+          leads: 190,
+        },
+        prevTotals: {
+          spend: 3000,
+          impressions: 100000,
+          clicks: 2400,
+          linkClicks: 1100,
+          leads: 180,
+        },
+      },
+    },
+    leads: { total: 130, bySource: [{ source: "meta", n: 90 }], daily: [] },
+  };
+  const s = analyze(data);
+  assert.equal(s.funnel.available, true);
+  assert.ok(s.funnel.bottleneck, "병목을 찾지 못했다");
+  assert.equal(s.funnel.bottleneck.at, "Meta 집계 리드");
+  assert.ok(
+    s.funnel.verdict.includes("멈춘다"),
+    `판단 문장이 비었다: ${s.funnel.verdict}`,
+  );
+});
+
+test("단계가 고르게 움직이면 병목을 만들어내지 않는다", () => {
+  const data = {
+    ads: {
+      summary: { impressions: 200000, clicks: 4000, spend: 2000 },
+      efficiency: {
+        current: { spend: 2000, impressions: 200000, clicks: 4000, leads: 100 },
+        prevTotals: { spend: 1000, impressions: 100000, clicks: 2000, leads: 50 },
+      },
+    },
+    leads: { total: 40, bySource: [], daily: [] },
+  };
+  const s = analyze(data);
+  assert.equal(s.funnel.bottleneck, null, "고르게 늘었는데 병목을 잡았다");
+});
+
+test("직전 구간이 없으면 흐름 변화를 말하지 않는다", () => {
+  const s = analyze({
+    ads: { summary: { impressions: 100, clicks: 5, spend: 10 } },
+    leads: { total: 2, bySource: [], daily: [] },
+  });
+  assert.equal(s.funnel.available, false);
+});
