@@ -777,3 +777,49 @@
     gap: 10px;
   }
 }
+
+/* 구간 옆 초 표기 — "25%"가 몇 초인지 붙어야 길이가 다른 소재를 같은 칸에서
+   비교하는 착시가 사라진다 */
+.mads-vid-sec {
+  display: block;
+  font-style: normal;
+  font-size: 9px;
+  color: var(--c-text-muted);
+}
+.mads-vid-sub {
+  font-style: normal;
+  color: var(--c-text-muted);
+}
+
+/* 지표 설명. 접어 두되 한 번은 읽게 한다 — 이름과 실제 의미가 다른 지표들이다 */
+.mads-vid-guide {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--c-text-muted);
+}
+.mads-vid-guide summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--c-text);
+}
+.mads-vid-guide dl {
+  margin: 10px 0 0;
+}
+.mads-vid-guide dt {
+  margin-top: 8px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+.mads-vid-guide dd {
+  margin: 2px 0 0;
+}
+.mads-vid-guide p {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-border);
+}

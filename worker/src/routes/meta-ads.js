@@ -506,6 +506,13 @@ function buildVideoBlock(r, impressions) {
   const p100 = Number(r.VideoP100 || 0);
   if (!plays && !p25 && !Number(r.ThruPlay || 0)) return null;
   const rate = (a, b) => (b > 0 ? Number((a / b).toFixed(4)) : null);
+  // 길이를 알면 "25% 지점"을 초로 말할 수 있다. 길이가 다른 소재를 같은 칸에 놓고
+  // 비교하는 것을 막아 주고, 평균 시청초가 영상의 어디까지인지도 드러난다
+  const lengthSec = Number(r.VideoLengthSec || 0);
+  const avgWatchSec = Number(Number(r.VideoAvgWatchSec || 0).toFixed(2));
+  const atSec = (ratio) =>
+    lengthSec > 0 ? Number((lengthSec * ratio).toFixed(1)) : null;
+
   return {
     plays,
     twoSecViews: Number(r.Video2SecViews || 0),
@@ -514,7 +521,13 @@ function buildVideoBlock(r, impressions) {
     p75,
     p100,
     thruPlay: Number(r.ThruPlay || 0),
-    avgWatchSec: Number(Number(r.VideoAvgWatchSec || 0).toFixed(2)),
+    avgWatchSec,
+    lengthSec: lengthSec > 0 ? Number(lengthSec.toFixed(1)) : null,
+    p25Sec: atSec(0.25),
+    p50Sec: atSec(0.5),
+    p75Sec: atSec(0.75),
+    // 평균 시청이 영상의 몇 %까지인지. 길이가 없으면 초만으로는 판단할 수 없다
+    avgWatchRatio: lengthSec > 0 ? Number((avgWatchSec / lengthSec).toFixed(4)) : null,
     playRate: rate(plays, impressions),
     p25OfPlays: rate(p25, plays),
     p50OfPlays: rate(p50, plays),
@@ -555,6 +568,8 @@ async function listAds(request, env) {
          MAX(CampaignName) AS CampaignName,
          MAX(CreativeId) AS CreativeId,
          MAX(CreativeType) AS CreativeType,
+         MAX(a.VideoId) AS VideoId,
+         MAX(v.LengthSec) AS VideoLengthSec,
          MAX(ThumbnailUrl) AS ThumbnailUrl,
          MAX(Status) AS Status,
          SUM(Impressions) AS Impressions,
@@ -584,7 +599,8 @@ async function listAds(request, env) {
          CASE WHEN SUM(Leads) > 0
               THEN SUM(Spend) / SUM(Leads)
               ELSE 0 END AS CPL
-       FROM MetaAdsAd
+       FROM MetaAdsAd a
+       LEFT JOIN MetaVideos v ON v.VideoId = a.VideoId
        WHERE Date BETWEEN ? AND ?
        GROUP BY AdId
        HAVING Impressions > 0
@@ -620,6 +636,7 @@ async function listAds(request, env) {
         campaignName: String(r.CampaignName || ""),
         creativeId: String(r.CreativeId || ""),
         creativeType: String(r.CreativeType || ""),
+        videoId: String(r.VideoId || ""),
         thumbnailUrl: String(r.ThumbnailUrl || ""),
         status: String(r.Status || ""),
         impressions: imps,
@@ -1062,6 +1079,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
           CampaignName: String(row.campaign_name || ""),
           CreativeId: String(creative.id || ""),
           CreativeType: String(creative.object_type || ""),
+          VideoId: String(creative.video_id || ""),
           ThumbnailUrl: String(
             creative.thumbnail_url || creative.image_url || "",
           ),
@@ -1117,6 +1135,17 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
 
     await runBatch(env, stmts);
     const updated = stmts.length;
+
+    // 영상 길이는 지표와 함께 오지 않는다. 광고 메타의 video_id 로 따로 받아 둔다
+    try {
+      const videoIds = Object.values(adMeta || {})
+        .map((m) => m?.creative?.video_id)
+        .filter(Boolean);
+      await fillVideoLengths(env, token, videoIds, log);
+    } catch (e) {
+      // 길이를 못 채워도 나머지 지표는 이미 저장됐다. 다음 동기화가 다시 시도한다
+      console.error("[day1design/meta-ads] video length fill", e?.message);
+    }
 
     log.Status = "success";
     log.RecordsUpdated = updated;
@@ -1289,6 +1318,65 @@ async function getAdThumbUrls(request, env) {
       : null;
   }
   return jsonOk({ urls });
+}
+
+// 영상 길이를 채운다.
+//
+// p25/p50/p75 는 시간이 아니라 영상 길이 대비 비율이라, 길이가 없으면 "25% 지점"이
+// 몇 초인지 말할 수 없다. 그러면 길이가 다른 소재를 같은 칸에 놓고 비교하게 된다.
+//
+// 길이는 광고가 아니라 영상에 붙는 속성이고 바뀌지 않는다. 그래서 한 번 조회한 영상은
+// MetaVideos 에 남겨 두고 다시 묻지 않는다 — Graph 호출은 subrequest 한도를 먹는다.
+async function fillVideoLengths(env, token, videoIds, log) {
+  const wanted = [...new Set((videoIds || []).filter(Boolean))];
+  if (!wanted.length) return 0;
+
+  let known = new Set();
+  try {
+    const rows = await env.DB.prepare(
+      `SELECT VideoId FROM MetaVideos WHERE LengthSec > 0`,
+    ).all();
+    known = new Set((rows?.results || []).map((r) => String(r.VideoId)));
+  } catch (_) {
+    // 테이블이 아직 없으면 전부 새로 받는다
+  }
+
+  const missing = wanted.filter((id) => !known.has(String(id)));
+  if (!missing.length) return 0;
+
+  // 한 번에 너무 많이 부르면 subrequest 한도에 걸린다. 남은 것은 다음 동기화가 채운다
+  const batch = missing.slice(0, 20);
+  const now = new Date().toISOString();
+  const stmts = [];
+
+  for (const id of batch) {
+    try {
+      const url =
+        `https://graph.facebook.com/${META_API_VERSION}/${id}` +
+        `?fields=length,title&access_token=${encodeURIComponent(token)}`;
+      const res = await fetch(url);
+      if (log) log.ApiCallsUsed = Number(log.ApiCallsUsed || 0) + 1;
+      const data = await res.json();
+      if (!res.ok) continue;
+      const len = Number(data?.length || 0);
+      if (!len) continue;
+      stmts.push(
+        env.DB.prepare(
+          `INSERT INTO MetaVideos (VideoId, LengthSec, Title, FetchedAt, CreatedAt)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(VideoId) DO UPDATE SET
+             LengthSec=excluded.LengthSec,
+             Title=excluded.Title,
+             FetchedAt=excluded.FetchedAt`,
+        ).bind(String(id), len, String(data?.title || ""), now, now),
+      );
+    } catch (_) {
+      // 영상 하나를 못 받아도 동기화 전체를 멈추지 않는다
+    }
+  }
+
+  if (stmts.length) await runBatch(env, stmts);
+  return stmts.length;
 }
 
 async function fetchAdMeta(token, accountId) {
@@ -1485,6 +1573,7 @@ const AD_COLS = [
   "CampaignName",
   "CreativeId",
   "CreativeType",
+  "VideoId",
   "ThumbnailUrl",
   "Status",
   "Impressions",

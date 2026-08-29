@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
     <link rel="stylesheet" href="admin.css?v=20260825-exitguard" />
-    <link rel="stylesheet" href="meta-ads.css?v=20260829-video" />
+    <link rel="stylesheet" href="meta-ads.css?v=20260829-videosec" />
     <script>
       window.ADMIN_PAGE = { title: "Meta 광고", nav: "meta-ads" };
     </script>
@@ -203,10 +203,41 @@
             <div id="madsVideoList" class="mads-video-list">
               <div class="empty-state">불러오는 중...</div>
             </div>
-            <div class="mads-help">
-              Meta 가 세는 기준입니다. 재생은 노출 대비, 25~완주는 재생 대비
-              비율입니다. 영상 길이를 모르므로 초가 아니라 구간으로 봅니다.
-            </div>
+            <details class="mads-vid-guide">
+              <summary>각 단계가 세는 것</summary>
+              <dl>
+                <dt>재생</dt>
+                <dd>
+                  화면에 들어와 영상이 <b>돌기 시작한</b> 횟수입니다. Meta 는
+                  자동재생이라 사람이 누른 것이 아닙니다. 재생되지 않은 나머지는
+                  스크롤이 빨라 지나갔거나 데이터 절약 설정입니다. 그래서 재생률이
+                  높다고 좋은 것이 아니라, 화면에 머물렀다는 뜻입니다.
+                </dd>
+                <dt>25% · 50% · 75%</dt>
+                <dd>
+                  영상 <b>길이 대비 지점</b>이지 시간이 아닙니다. 옆에 적힌 초는 그
+                  영상 기준으로 환산한 값입니다. 25% 를 못 넘긴 비율이 곧 첫 구간에서
+                  떠난 비율이고, 이 값이 낮으면 예산이 아니라 앞부분을 고칠 자리입니다.
+                </dd>
+                <dt>완주</dt>
+                <dd>끝까지 본 횟수입니다. 다시 재생한 것은 세지 않습니다.</dd>
+                <dt>ThruPlay</dt>
+                <dd>
+                  <b>15초 이상 재생되었거나</b>, 15초보다 짧은 영상이면 완주한
+                  횟수입니다. Meta 가 광고 최적화와 과금에 쓰는 기준이라 완주 수보다
+                  큽니다.
+                </dd>
+                <dt>평균 시청</dt>
+                <dd>
+                  재생당 평균 시청 시간입니다. 괄호 안은 그 시간이 영상의 몇 %까지인지
+                  입니다. 이 비율이 25% 아래면 대부분이 첫 구간에서 떠났다는 뜻입니다.
+                </dd>
+              </dl>
+              <p>
+                재생은 노출 대비 비율이고, 25%~완주는 <b>재생 대비</b> 비율입니다.
+                막대도 재생을 기준으로 그립니다.
+              </p>
+            </details>
           </div>
         </section>
 
@@ -463,6 +494,6 @@
     ></script>
     <script defer src="config.js?v=20260520-heatmap"></script>
     <script defer src="admin.js?v=20260626-authfast"></script>
-    <script defer src="meta-ads.js?v=20260829-video"></script>
+    <script defer src="meta-ads.js?v=20260829-videosec"></script>
   </body>
 </html>

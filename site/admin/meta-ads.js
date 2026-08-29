@@ -292,11 +292,17 @@
 
   // 막대는 재생을 기준으로 그린다. 노출을 기준으로 하면 모든 막대가 짧아져
   // 구간 사이의 낙차가 눈에 안 들어온다
-  function retentionBar(label, value, ratioOfPlays, tone) {
+  function retentionBar(label, value, ratioOfPlays, tone, atSec) {
     const w = Math.max(0, Math.min(1, ratioOfPlays || 0)) * 100;
+    // 25% 는 시간이 아니라 영상 길이 대비 지점이다. 길이를 알면 초를 함께 적어야
+    // 길이가 다른 소재를 같은 칸에 놓고 비교하는 착시가 사라진다
+    const secText =
+      typeof atSec === "number" && atSec > 0
+        ? `<em class="mads-vid-sec">${atSec.toFixed(1)}초</em>`
+        : "";
     return `
       <div class="mads-vid-row">
-        <span class="mads-vid-label">${label}</span>
+        <span class="mads-vid-label">${label}${secText}</span>
         <div class="mads-vid-track">
           <div class="mads-vid-fill mads-vid-${tone}" style="width:${w.toFixed(1)}%"></div>
         </div>
@@ -344,19 +350,23 @@
         <div class="mads-vid-card">
           <div class="mads-vid-head">
             <div class="mads-vid-name">${adminUtil.escapeHtml(ad.adName || "이름 없음")}</div>
-            <div class="mads-vid-meta">지출 ${fmtUsd(ad.spend)} · 노출 ${fmtCompact(ad.impressions)} · 리드 ${fmtInt(ad.leads)}건</div>
+            <div class="mads-vid-meta">${v.lengthSec ? `영상 ${v.lengthSec.toFixed(1)}초 · ` : ""}지출 ${fmtUsd(ad.spend)} · 노출 ${fmtCompact(ad.impressions)} · 리드 ${fmtInt(ad.leads)}건</div>
           </div>
           <div class="mads-vid-bars">
             ${retentionBar("재생", v.plays, v.playRate, "play")}
-            ${retentionBar("25%", v.p25, v.p25OfPlays, "p25")}
-            ${retentionBar("50%", v.p50, v.p50OfPlays, "p50")}
-            ${retentionBar("75%", v.p75, v.p75OfPlays, "p75")}
-            ${retentionBar("완주", v.p100, v.completionRate, "p100")}
+            ${retentionBar("25%", v.p25, v.p25OfPlays, "p25", v.p25Sec)}
+            ${retentionBar("50%", v.p50, v.p50OfPlays, "p50", v.p50Sec)}
+            ${retentionBar("75%", v.p75, v.p75OfPlays, "p75", v.p75Sec)}
+            ${retentionBar("완주", v.p100, v.completionRate, "p100", v.lengthSec)}
           </div>
           <div class="mads-vid-foot">
             <span>후킹 <b class="${hook !== null && hook < HOOK_WARN ? "is-bad" : ""}">${pctText(hook)}</b></span>
             <span>완주율 <b>${pctText(v.completionRate)}</b></span>
-            <span>평균 시청 <b>${Number(v.avgWatchSec || 0).toFixed(1)}초</b></span>
+            <span>평균 시청 <b>${Number(v.avgWatchSec || 0).toFixed(1)}초</b>${
+              typeof v.avgWatchRatio === "number"
+                ? ` <em class="mads-vid-sub">(영상의 ${Math.round(v.avgWatchRatio * 100)}%)</em>`
+                : ""
+            }</span>
             <span>ThruPlay <b>${fmtCompact(v.thruPlay)}</b></span>
           </div>
           ${
