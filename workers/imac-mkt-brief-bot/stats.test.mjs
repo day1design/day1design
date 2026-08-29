@@ -1,0 +1,154 @@
+// 통계 계층 회귀 가드.
+//
+// 이 봇의 신뢰는 "숫자를 지어내지 않는다"에 걸려 있다. 비율·구간·경계를 손대면
+// 대표에게 나가는 보고의 근거가 통째로 바뀌므로, 손댄 자리가 어디인지 여기서 걸린다.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import { analyze, wilson, mde, zeroUpperBound, anomalies } from "./stats.mjs";
+
+test("Wilson 구간은 0 아래로 내려가지 않는다", () => {
+  // 정규근사를 쓰면 여기서 하한이 음수가 된다. 접수 전환율이 늘 이 구간에 있다
+  const r = wilson(1, 500);
+  assert.ok(r.lo >= 0, `하한이 음수: ${r.lo}`);
+  assert.ok(r.hi > r.p, "상한이 점추정보다 커야 한다");
+  assert.equal(r.n, 500);
+});
+
+test("Wilson 구간은 표본이 커질수록 좁아진다", () => {
+  const small = wilson(20, 100);
+  const big = wilson(200, 1000);
+  const w = (r) => r.hi - r.lo;
+  assert.ok(w(big) < w(small), "표본이 10배인데 구간이 좁아지지 않았다");
+});
+
+test("표본이 없으면 구간을 만들지 않는다", () => {
+  assert.equal(wilson(0, 0), null);
+  assert.equal(mde(0.02, 0), null);
+  assert.equal(zeroUpperBound(0), null);
+});
+
+test("검출경계는 표본이 작을수록 커진다", () => {
+  const few = mde(0.03, 100);
+  const many = mde(0.03, 10000);
+  assert.ok(few > many, "표본이 100배인데 검출경계가 줄지 않았다");
+});
+
+test("0건이어도 상한을 말한다", () => {
+  // 0건을 '효과 없음'으로 보고하면 안 된다. 95% 상한은 3/n 근사다
+  const b = zeroUpperBound(300);
+  assert.ok(b > 0 && b < 0.02, `상한이 이상하다: ${b}`);
+});
+
+test("이상치는 7일 미만이면 판정하지 않는다", () => {
+  const r = anomalies([
+    { day: "2026-08-01", n: 3 },
+    { day: "2026-08-02", n: 4 },
+  ]);
+  assert.equal(r.available, false);
+});
+
+test("이상치는 튀는 날만 잡는다", () => {
+  const days = [];
+  for (let i = 1; i <= 20; i++) {
+    days.push({ day: `2026-08-${String(i).padStart(2, "0")}`, n: 5 });
+  }
+  days.push({ day: "2026-08-21", n: 400 });
+  const r = anomalies(days);
+  assert.equal(r.available, true);
+  assert.equal(r.rows.length, 1, "튄 하루만 잡혀야 한다");
+  assert.equal(r.rows[0].day, "2026-08-21");
+});
+
+test("광고 비율은 합계를 나눈 값이다", () => {
+  // 일별 비율의 평균으로 내면 노출이 적은 날이 같은 무게를 갖는다
+  const data = {
+    ads: {
+      summary: { impressions: 1000, clicks: 20, linkClicks: 10, spend: 40, leads: 5 },
+    },
+    leads: { total: 4, bySource: [{ source: "meta", n: 3 }], daily: [] },
+  };
+  const s = analyze(data);
+  assert.equal(s.rates.ctr, 0.02);
+  assert.equal(s.rates.cpc, 2);
+  assert.equal(s.rates.costPerLinkClick, 4, "Meta 화면 기준(링크클릭)도 같이 내야 한다");
+  assert.equal(s.rates.cpm, 40);
+});
+
+test("Meta 단독 리드 단가는 Meta 계열 접수만 분모로 쓴다", () => {
+  const data = {
+    ads: { summary: { impressions: 1000, clicks: 20, spend: 100, leads: 9 } },
+    leads: {
+      total: 10,
+      bySource: [
+        { source: "meta", n: 4 },
+        { source: "instagram_mkt", n: 1 },
+        { source: "homepage", n: 5 },
+      ],
+      daily: [],
+    },
+  };
+  const s = analyze(data);
+  assert.equal(s.leads.metaLeads, 5, "instagram 계열도 Meta 로 센다");
+  assert.equal(s.leads.metaCostPerLead, 20, "100 / 5 = 20");
+});
+
+test("Meta 집계 리드와 저장 접수의 격차를 드러낸다", () => {
+  // 이 격차를 숨기면 어느 숫자를 인용했느냐에 따라 단가가 두 배 달라진다
+  const data = {
+    ads: { summary: { impressions: 100, clicks: 10, spend: 50, leads: 20 } },
+    leads: { total: 12, bySource: [{ source: "meta", n: 8 }], daily: [] },
+  };
+  const s = analyze(data);
+  assert.equal(s.leadReconciliation.metaReportedLeads, 20);
+  assert.equal(s.leadReconciliation.storedLeadsFromMeta, 8);
+  assert.equal(s.leadReconciliation.gap, 12);
+});
+
+test("접수가 30건 미만이면 세분화 경고를 붙인다", () => {
+  const data = {
+    ads: { summary: { impressions: 100, clicks: 10, spend: 50 } },
+    leads: { total: 12, bySource: [], daily: [] },
+  };
+  const s = analyze(data);
+  assert.ok(s.leads.smallSampleWarning.includes("부족"));
+});
+
+test("직전 구간 합계가 없으면 비교하지 않는다", () => {
+  // previous 는 날짜 범위이고 합계는 prevTotals 다. 날짜를 합계로 착각하면
+  // 비교가 통째로 '판정 불가'가 된다
+  const data = {
+    ads: {
+      summary: { impressions: 1000, clicks: 20, spend: 40 },
+      efficiency: { previous: { startDate: "2026-07-01", endDate: "2026-07-30" } },
+    },
+    leads: { total: 5, bySource: [], daily: [] },
+  };
+  const s = analyze(data);
+  assert.equal(s.periodCompare.available, false);
+});
+
+test("전기 대비 변화가 검출경계 아래면 단정하지 않는다", () => {
+  const data = {
+    ads: {
+      summary: { impressions: 100000, clicks: 2000, spend: 500 },
+      efficiency: {
+        current: { impressions: 100000, clicks: 2000, spend: 500 },
+        prevTotals: { impressions: 100000, clicks: 2005, spend: 500 },
+      },
+    },
+    leads: { total: 40, bySource: [], daily: [] },
+  };
+  const s = analyze(data);
+  assert.equal(s.periodCompare.available, true);
+  assert.ok(
+    s.periodCompare.ctrVerdict.includes("잡음"),
+    `미세한 차이를 유의하다고 판정했다: ${s.periodCompare.ctrVerdict}`,
+  );
+});
+
+test("통화는 USD 로 못 박는다", () => {
+  // 광고계정 통화가 달러다. '원'으로 읽히면 보고 전체가 어긋난다
+  const s = analyze({ ads: { summary: {} }, leads: { total: 0, bySource: [], daily: [] } });
+  assert.equal(s.currency, "USD");
+});
