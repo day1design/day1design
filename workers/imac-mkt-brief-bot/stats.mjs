@@ -398,16 +398,36 @@ function campaignEfficiency(ads, leads) {
     .filter((m) => m.leads === 0)
     .sort((a, b) => b.spend - a.spend);
 
+  // 얼마나 붙었는지를 먼저 말한다.
+  //
+  // 접수에는 광고 캠페인 ID 가 없고 그 시점의 캠페인 '이름'만 박제된다. 그래서
+  // 캠페인 이름을 바꿨거나, 이미 끝난 캠페인의 리드가 뒤늦게 접수되면 이름이 안 붙는다.
+  // 그 상태에서 "지출은 있는데 접수 0건" 이라고 보고하면 멀쩡히 돌아가는 캠페인을
+  // 끄게 된다. 실제로 붙지 않은 접수가 절반을 넘은 적이 있다.
+  const matchedLeads = matched.reduce((a, m) => a + m.leads, 0);
+  const unmatchedLeads = unmatched.reduce((a, u) => a + u.leads, 0);
+  const totalAttributed = matchedLeads + unmatchedLeads;
+  const matchRate =
+    totalAttributed > 0 ? round(matchedLeads / totalAttributed, 3) : null;
+  const reliable = matchRate !== null && matchRate >= 0.7;
+
   let verdict = "";
   if (best && worst && best.campaign !== worst.campaign) {
     const gap = worst.costPerLead / best.costPerLead;
     verdict =
-      `캠페인별 단가가 최저 $${best.costPerLead}(${best.campaign})에서 ` +
+      `이름이 붙은 캠페인 중에는 단가가 최저 $${best.costPerLead}(${best.campaign})에서 ` +
       `최고 $${worst.costPerLead}(${worst.campaign})까지 ${round(gap, 1)}배 벌어져 있다`;
   } else if (best) {
-    verdict = `접수가 붙은 캠페인이 하나뿐이라 비교할 대상이 없다`;
+    verdict = "접수가 붙은 캠페인이 하나뿐이라 비교할 대상이 없다";
   }
-  if (dead.length) {
+
+  if (!reliable) {
+    verdict +=
+      `${verdict ? ". " : ""}다만 이 기간 접수 ${totalAttributed}건 중 ` +
+      `${unmatchedLeads}건이 지금 돌아가는 캠페인 이름과 붙지 않는다` +
+      `(끝난 캠페인의 리드이거나 이름이 바뀐 경우다). ` +
+      "캠페인별 순위와 '접수 0건' 판정을 이 수치만으로 단정하면 안 된다";
+  } else if (dead.length) {
     verdict +=
       `${verdict ? ". " : ""}지출이 있는데 접수가 0건인 캠페인이 ${dead.length}개 있다` +
       `(가장 큰 것 ${dead[0].campaign} $${dead[0].spend})`;
@@ -417,13 +437,107 @@ function campaignEfficiency(ads, leads) {
     available: true,
     rows: matched.sort((a, b) => b.spend - a.spend),
     unmatched,
+    matchRate,
+    matchedLeads,
+    unmatchedLeads,
+    reliable,
     best,
     worst,
-    zeroLeadSpenders: dead.slice(0, 5),
+    // 매칭이 부실하면 0건 목록을 내보내지 않는다. 그 목록이 곧 "끄자"는 제안이 되기 때문이다
+    zeroLeadSpenders: reliable ? dead.slice(0, 5) : [],
+    zeroLeadNote: reliable
+      ? ""
+      : "이름 매칭률이 낮아 '접수 0건' 목록은 신뢰할 수 없어 비웠다",
     verdict,
     note:
       "접수는 마지막 접점 기준이라 기여도이지 증분이 아니다. " +
-      "이름이 맞지 않은 접수는 unmatched 로 뺐다",
+      "접수에는 캠페인 ID 가 없고 접수 시점의 이름만 남아 있어 이름으로 붙인다",
+  };
+}
+
+// 영상이 어디서 죽는가.
+//
+// 광고비를 태워 재생까지는 만들어도 첫 구간을 못 넘기면 그 뒤는 없다. 그래서
+// 노출 → 재생 → 25% → 50% → 75% → 완주 를 광고마다 늘어놓고, 재생 대비 25% 도달률로
+// 후킹 성능을 본다. 이 비율이 낮으면 예산이 아니라 앞 3초를 고쳐야 한다.
+//
+// 여러 편이 모두 같은 자리에서 꺾이면 그것은 소재 하나의 문제가 아니라 만드는 방식의
+// 문제다. 그 구분을 여기서 해 준다.
+function videoRetention(ads) {
+  const rows = Array.isArray(ads?.ads) ? ads.ads : [];
+  const videos = rows
+    .map((r) => {
+      const v = r.video || null;
+      if (!v || (!num(v.plays) && !num(v.p25))) return null;
+      const plays = num(v.plays);
+      return {
+        ad: r.adName || r.AdName || "",
+        campaign: r.campaignName || "",
+        spend: round(num(r.spend), 2),
+        impressions: num(r.impressions),
+        leads: num(r.leads),
+        plays,
+        playRate: v.playRate ?? null,
+        hookRate: v.p25OfPlays ?? (plays > 0 ? round(num(v.p25) / plays, 4) : null),
+        p50Rate: v.p50OfPlays ?? null,
+        completionRate: v.completionRate ?? null,
+        avgWatchSec: num(v.avgWatchSec),
+      };
+    })
+    .filter(Boolean);
+
+  if (!videos.length) {
+    return { available: false, reason: "영상 지표가 있는 광고가 없다" };
+  }
+
+  const hooks = videos.map((v) => v.hookRate).filter((x) => x !== null);
+  const avgHook = hooks.length
+    ? round(hooks.reduce((a, b) => a + b, 0) / hooks.length, 4)
+    : null;
+  const worst = [...videos]
+    .filter((v) => v.hookRate !== null)
+    .sort((a, b) => a.hookRate - b.hookRate)[0];
+  const best = [...videos]
+    .filter((v) => v.hookRate !== null)
+    .sort((a, b) => b.hookRate - a.hookRate)[0];
+
+  // 업계에서 통상 25% 도달률 30~40% 를 기준선으로 본다. 그 아래면 첫 구간이 문제다
+  const WEAK = 0.25;
+  const weakAll = hooks.length >= 2 && hooks.every((h) => h < WEAK);
+
+  let verdict = "";
+  if (weakAll) {
+    verdict =
+      `영상 ${videos.length}편 모두 재생자의 ${Math.round((1 - avgHook) * 100)}% 가 ` +
+      "25% 지점 전에 떠난다. 한 편의 문제가 아니라 첫 구간을 만드는 방식의 문제다";
+  } else if (worst && worst.hookRate < WEAK) {
+    verdict =
+      `${worst.ad || worst.campaign} 은 재생자의 ` +
+      `${Math.round((1 - worst.hookRate) * 100)}% 가 25% 지점 전에 떠난다`;
+    if (best && best.hookRate >= WEAK) {
+      verdict += `. 같은 기간 ${best.ad || best.campaign} 은 ${Math.round(best.hookRate * 100)}% 가 남아 비교 대상이 된다`;
+    }
+  } else if (avgHook !== null) {
+    verdict = `영상 25% 도달률 평균 ${Math.round(avgHook * 100)}% 로 첫 구간은 버티고 있다`;
+  }
+
+  // 첫 구간을 못 넘기는데도 접수가 나오는 소재가 있다. 그건 끄는 대신 앞을 고칠 자리다
+  const weakButConverting = videos.filter(
+    (v) => v.hookRate !== null && v.hookRate < WEAK && v.leads > 0,
+  );
+
+  return {
+    available: true,
+    videos: videos.sort((a, b) => b.spend - a.spend),
+    avgHookRate: avgHook,
+    weakEverywhere: weakAll,
+    best,
+    worst,
+    weakButConverting,
+    verdict,
+    note:
+      "hookRate 는 재생 대비 25% 지점 도달률이다. 영상 길이를 모르므로 초 단위가 아니라 " +
+      "구간 비율로 말한다. avgWatchSec 이 함께 있으면 실제 체감 길이를 가늠할 수 있다",
   };
 }
 
@@ -439,6 +553,8 @@ export function analyze(data) {
     funnel: funnelShift(data?.ads),
     // 총계만 보면 "광고가 잘 되나"까지만 말할 수 있다. 돈을 어디로 옮길지는 여기서 나온다
     campaigns: campaignEfficiency(data?.ads, leads),
+    // 영상 소재가 첫 구간을 넘기는지. 예산 조정과 소재 교체를 가르는 기준이다
+    video: videoRetention(data?.ads),
     rates: ads ? rateBlock(ads) : { available: false },
     // previous 는 직전 구간의 날짜 범위이고, 합계는 prevTotals 에 들어 있다.
     // previous 를 합계로 착각해 넣으면 비교가 통째로 '판정 불가'로 떨어진다

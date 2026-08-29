@@ -36,6 +36,9 @@ const INSIGHT_METRICS = [
   "video_p100_watched_actions",
   "video_avg_time_watched_actions",
   "video_thruplay_watched_actions",
+  // 후킹 성능은 이 둘로 본다. 노출 대비 2초를 넘긴 비율이 첫 화면이 붙잡았는지를 말한다
+  "video_play_actions",
+  "video_continuous_2_sec_watched_actions",
 ].join(",");
 const CAMPAIGN_META_FIELDS =
   "id,name,status,objective,daily_budget,lifetime_budget";
@@ -490,6 +493,36 @@ async function listSyncLog(env) {
 }
 
 // ─── 광고별 효율 (Ad Level) ────────────────────────────
+// 영상 유지 곡선을 비율까지 계산해 돌려준다.
+//
+// 원수치만 주면 화면과 분석기가 각자 나눗셈을 해서 서로 다른 값을 말한다.
+// 재생 대비 25% 도달률이 후킹 성능을 가장 잘 드러낸다 — 첫 구간을 못 넘기면
+// 그 뒤 지표는 볼 필요가 없다.
+function buildVideoBlock(r, impressions) {
+  const plays = Number(r.VideoPlays || 0);
+  const p25 = Number(r.VideoP25 || 0);
+  const p50 = Number(r.VideoP50 || 0);
+  const p75 = Number(r.VideoP75 || 0);
+  const p100 = Number(r.VideoP100 || 0);
+  if (!plays && !p25 && !Number(r.ThruPlay || 0)) return null;
+  const rate = (a, b) => (b > 0 ? Number((a / b).toFixed(4)) : null);
+  return {
+    plays,
+    twoSecViews: Number(r.Video2SecViews || 0),
+    p25,
+    p50,
+    p75,
+    p100,
+    thruPlay: Number(r.ThruPlay || 0),
+    avgWatchSec: Number(Number(r.VideoAvgWatchSec || 0).toFixed(2)),
+    playRate: rate(plays, impressions),
+    p25OfPlays: rate(p25, plays),
+    p50OfPlays: rate(p50, plays),
+    p75OfPlays: rate(p75, plays),
+    completionRate: rate(p100, plays),
+  };
+}
+
 async function listAds(request, env) {
   const url = new URL(request.url);
   const range = resolveRangeFromQuery(url);
@@ -497,8 +530,10 @@ async function listAds(request, env) {
   const order = (url.searchParams.get("order") || "top").toLowerCase();
   const limit = Math.max(
     1,
-    Math.min(100, parseInt(url.searchParams.get("limit") || "20", 10)),
+    Math.min(200, parseInt(url.searchParams.get("limit") || "20", 10)),
   );
+  // 페이지네이션. 광고가 늘어도 한 번에 다 긁지 않도록 offset 을 받는다
+  const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10));
   const sortMap = {
     spend: "Spend",
     cpl: "CPL",
@@ -529,6 +564,17 @@ async function listAds(request, env) {
          SUM(Reach) AS Reach,
          SUM(Leads) AS Leads,
          SUM(ThruPlay) AS ThruPlay,
+         SUM(VideoPlays) AS VideoPlays,
+         SUM(Video2SecViews) AS Video2SecViews,
+         SUM(VideoP25Watched) AS VideoP25,
+         SUM(VideoP50Watched) AS VideoP50,
+         SUM(VideoP75Watched) AS VideoP75,
+         SUM(VideoP100Watched) AS VideoP100,
+         -- 평균 시청초는 단순 평균이 아니라 재생 수로 가중해야 한다.
+         -- 재생 10회짜리 날과 1000회짜리 날을 같은 무게로 더하면 값이 왜곡된다
+         CASE WHEN SUM(VideoPlays) > 0
+              THEN SUM(VideoAvgWatchSec * VideoPlays) / SUM(VideoPlays)
+              ELSE 0 END AS VideoAvgWatchSec,
          CASE WHEN SUM(Impressions) > 0
               THEN CAST(SUM(Clicks) AS REAL) / SUM(Impressions) * 100
               ELSE 0 END AS Ctr,
@@ -543,10 +589,22 @@ async function listAds(request, env) {
        GROUP BY AdId
        HAVING Impressions > 0
        ORDER BY ${sortCol} ${direction}
-       LIMIT ?`,
+       LIMIT ? OFFSET ?`,
     )
-      .bind(range.startDate, range.endDate, limit)
+      .bind(range.startDate, range.endDate, limit, offset)
       .all();
+
+    // 총 개수를 함께 준다. 이게 없으면 호출한 쪽이 마지막 페이지인지 알 수 없다
+    const countRow = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM (
+         SELECT AdId FROM MetaAdsAd
+          WHERE Date BETWEEN ? AND ?
+          GROUP BY AdId
+         HAVING SUM(Impressions) > 0
+       )`,
+    )
+      .bind(range.startDate, range.endDate)
+      .first();
 
     const ads = (res.results || []).map((r) => {
       const imps = Number(r.Impressions || 0);
@@ -574,9 +632,21 @@ async function listAds(request, env) {
         ctr: imps > 0 ? clicks / imps : 0,
         cpc: clicks > 0 ? spend / clicks : 0,
         cpl: leads > 0 ? spend / leads : 0,
+        // 영상 유지 곡선. 어디서 사람이 떠나는지는 이 값들로만 보인다.
+        // 비율까지 여기서 내주면 화면과 분석기가 같은 기준으로 읽는다
+        video: buildVideoBlock(r, imps),
       };
     });
-    return jsonOk({ range, ads });
+    return jsonOk({
+      range,
+      ads,
+      page: {
+        limit,
+        offset,
+        total: Number(countRow?.n || 0),
+        hasMore: offset + ads.length < Number(countRow?.n || 0),
+      },
+    });
   } catch (e) {
     return jsonError(500, "ads failed: " + (e.message || "").slice(0, 100));
   }
@@ -1341,6 +1411,11 @@ function mapInsight(row) {
     ThruPlay: firstActionValue(row.video_thruplay_watched_actions, [
       "video_view",
     ]),
+    VideoPlays: firstActionValue(row.video_play_actions, ["video_view"]),
+    Video2SecViews: firstActionValue(
+      row.video_continuous_2_sec_watched_actions,
+      ["video_view"],
+    ),
     UniqueClicks: Number(row.unique_clicks || 0),
     UniqueLinkClicks: Number(row.unique_inline_link_clicks || 0),
     CostPerLinkClick: Number(row.cost_per_inline_link_click || 0),
@@ -1372,6 +1447,8 @@ const DAILY_COLS = [
   "VideoP100Watched",
   "VideoAvgWatchSec",
   "ThruPlay",
+  "VideoPlays",
+  "Video2SecViews",
   "UniqueClicks",
   "UniqueLinkClicks",
   "CostPerLinkClick",
@@ -1420,6 +1497,12 @@ const AD_COLS = [
   "Leads",
   "ThruPlay",
   "VideoAvgWatchSec",
+  "VideoPlays",
+  "Video2SecViews",
+  "VideoP25Watched",
+  "VideoP50Watched",
+  "VideoP75Watched",
+  "VideoP100Watched",
   "FetchedAt",
 ];
 function buildAdStmt(env, fields) {

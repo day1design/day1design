@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>어드민 · 영상 소재 유지율 (와이어프레임)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        font-family:
+          "Pretendard",
+          -apple-system,
+          BlinkMacSystemFont,
+          system-ui,
+          sans-serif;
+      }
+      .seg {
+        transition: width 0.4s ease;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-100 p-6 text-slate-800">
+    <div class="mx-auto max-w-6xl space-y-6">
+      <header class="rounded-xl bg-white p-5 shadow-sm">
+        <div class="text-xs font-medium text-slate-400">
+          와이어프레임 · 실제 데이터(2026-08-24~28)로 그림
+        </div>
+        <h1 class="mt-1 text-xl font-bold">
+          Meta 광고 화면에 영상 유지율을 넣는 방법
+        </h1>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          지금 화면은 노출·클릭·CPL 까지만 보여 줍니다. 영상 소재가 어디서
+          죽는지는 어디에도 없습니다. 아래 두 자리에 넣는 것을 제안합니다.
+        </p>
+      </header>
+
+      <!-- 제안 1 -->
+      <section class="rounded-xl bg-white p-5 shadow-sm">
+        <div class="flex items-baseline gap-3">
+          <span
+            class="rounded-md bg-slate-900 px-2 py-1 text-xs font-bold text-white"
+            >제안 1</span
+          >
+          <h2 class="text-lg font-bold">기존 광고별 표에 '후킹' 칸 하나</h2>
+        </div>
+        <p class="mt-2 text-sm text-slate-600">
+          표는 이미 12칸이라 곡선을 넣을 공간이 없습니다. 한 칸만 더해 재생자 중
+          25% 지점까지 본 비율을 배지로 보여 줍니다. 여기서 걸리는 광고를 아래
+          섹션에서 자세히 확인합니다.
+        </p>
+        <div class="mt-4 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-xs text-slate-500">
+                <th class="px-2 py-2 text-left">광고</th>
+                <th class="px-2 py-2 text-right">지출</th>
+                <th class="px-2 py-2 text-right">노출</th>
+                <th class="px-2 py-2 text-right">CTR</th>
+                <th class="px-2 py-2 text-right">리드</th>
+                <th class="px-2 py-2 text-right">CPL</th>
+                <th class="bg-amber-50 px-2 py-2 text-center font-bold">
+                  후킹 ★신규
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="px-2 py-2">260824 잠재고객 캠페인 신규</td>
+                <td class="px-2 py-2 text-right">$630.22</td>
+                <td class="px-2 py-2 text-right">20,670</td>
+                <td class="px-2 py-2 text-right">2.1%</td>
+                <td class="px-2 py-2 text-right">22</td>
+                <td class="px-2 py-2 text-right">$28.6</td>
+                <td class="bg-amber-50 px-2 py-2 text-center">
+                  <span
+                    class="rounded bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700"
+                    >15%</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td class="px-2 py-2">260727 신규 트래픽 캠페인</td>
+                <td class="px-2 py-2 text-right">$104.13</td>
+                <td class="px-2 py-2 text-right">41,630</td>
+                <td class="px-2 py-2 text-right">1.4%</td>
+                <td class="px-2 py-2 text-right">0</td>
+                <td class="px-2 py-2 text-right">—</td>
+                <td class="bg-amber-50 px-2 py-2 text-center">
+                  <span
+                    class="rounded bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700"
+                    >18%</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td class="px-2 py-2">260824 트래픽 캠페인 신규</td>
+                <td class="px-2 py-2 text-right">$91.24</td>
+                <td class="px-2 py-2 text-right">9,089</td>
+                <td class="px-2 py-2 text-right">1.8%</td>
+                <td class="px-2 py-2 text-right">0</td>
+                <td class="px-2 py-2 text-right">—</td>
+                <td class="bg-amber-50 px-2 py-2 text-center">
+                  <span
+                    class="rounded bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700"
+                    >14%</span
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mt-3 text-xs text-slate-500">
+          배지 기준 — 40% 이상 초록 · 25~40% 노랑 · 25% 미만 빨강. 영상이 아닌
+          소재는 "—" 로 둡니다.
+        </p>
+      </section>
+
+      <!-- 제안 2 -->
+      <section class="rounded-xl bg-white p-5 shadow-sm">
+        <div class="flex items-baseline gap-3">
+          <span
+            class="rounded-md bg-slate-900 px-2 py-1 text-xs font-bold text-white"
+            >제안 2</span
+          >
+          <h2 class="text-lg font-bold">'영상 소재 유지율' 섹션을 새로</h2>
+        </div>
+        <p class="mt-2 text-sm text-slate-600">
+          어느 구간에서 떠나는지는 곡선으로 봐야 압니다. 막대 하나가 한 영상의
+          시청 유지이고, 칸이 좁아지는 구간이 사람이 떠나는 구간입니다.
+        </p>
+
+        <div
+          class="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm"
+        >
+          <div class="font-bold text-rose-800">
+            지금 이 계정에서 보이는 것 — 소재 공통 문제
+          </div>
+          <div class="mt-1 leading-relaxed text-rose-700">
+            영상 4편 모두 재생자의 <b>82~86%</b>가 25% 지점 전에 떠납니다. 평균
+            시청은 2초입니다. 한 편만 그렇다면 그 소재 문제지만, 전부 같다면 첫
+            3초를 만드는 방식 자체를 바꿔야 한다는 뜻입니다.
+          </div>
+        </div>
+
+        <div class="mt-5 space-y-5">
+          <!-- 영상 1 -->
+          <div class="rounded-lg border border-slate-200 p-4">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <div class="font-semibold">260824 잠재고객 캠페인 신규</div>
+              <div class="text-xs text-slate-500">
+                지출 $630.22 · 노출 20,670 · 리드 22건
+              </div>
+            </div>
+            <div class="mt-3 space-y-1.5">
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-16 text-slate-500">재생</span>
+                <div class="h-5 flex-1 rounded bg-slate-100">
+                  <div
+                    class="seg flex h-5 items-center rounded bg-slate-700 px-2 text-[11px] font-medium text-white"
+                    style="width: 75%"
+                  >
+                    15,512 (노출의 75%)
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-16 text-slate-500">25% 지점</span>
+                <div class="h-5 flex-1 rounded bg-slate-100">
+                  <div
+                    class="seg flex h-5 items-center rounded bg-rose-500 px-2 text-[11px] font-medium text-white"
+                    style="width: 15%"
+                  >
+                    2,338
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-16 text-slate-500">50% 지점</span>
+                <div class="h-5 flex-1 rounded bg-slate-100">
+                  <div
+                    class="seg h-5 rounded bg-rose-400"
+                    style="width: 5%"
+                  ></div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-16 text-slate-500">75% 지점</span>
+                <div class="h-5 flex-1 rounded bg-slate-100">
+                  <div
+                    class="seg h-5 rounded bg-rose-300"
+                    style="width: 3%"
+                  ></div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-16 text-slate-500">완주</span>
+                <div class="h-5 flex-1 rounded bg-slate-100">
+                  <div
+                    class="seg h-5 rounded bg-slate-300"
+                    style="width: 2%"
+                  ></div>
+                </div>
+              </div>
+            </div>
+            <div
+              class="mt-3 flex flex-wrap gap-4 border-t border-slate-100 pt-3 text-xs"
+            >
+              <div>
+                <span class="text-slate-500">후킹(재생→25%)</span>
+                <b class="ml-1 text-rose-600">15.1%</b>
+              </div>
+              <div>
+                <span class="text-slate-500">완주율</span>
+                <b class="ml-1">2.1%</b>
+              </div>
+              <div>
+                <span class="text-slate-500">평균 시청</span>
+                <b class="ml-1">2초</b>
+              </div>
+              <div>
+                <span class="text-slate-500">리드당 지출</span>
+                <b class="ml-1">$28.6</b>
+              </div>
+            </div>
+            <div
+              class="mt-2 rounded bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600"
+            >
+              첫 구간에서 85%가 떠나는데도 리드는 22건 나왔습니다. 남은 15%가
+              전환을 만들고 있다는 뜻이라, 이 소재는 끄는 대신
+              <b>앞 3초를 바꿔서</b> 남는 비율을 늘리는 쪽이 맞습니다.
+            </div>
+          </div>
+
+          <!-- 영상 2 -->
+          <div class="rounded-lg border border-slate-200 p-4">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <div class="font-semibold">260727 신규 트래픽 캠페인</div>
+              <div class="text-xs text-slate-500">
+                지출 $104.13 · 노출 41,630 · 리드 0건
+              </div>
+            </div>
+            <div class="mt-3 space-y-1.5">
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-16 text-slate-500">재생</span>
+                <div class="h-5 flex-1 rounded bg-slate-100">
+                  <div
+                    class="seg flex h-5 items-center rounded bg-slate-700 px-2 text-[11px] font-medium text-white"
+                    style="width: 77%"
+                  >
+                    32,016 (노출의 77%)
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-16 text-slate-500">25% 지점</span>
+                <div class="h-5 flex-1 rounded bg-slate-100">
+                  <div
+                    class="seg flex h-5 items-center rounded bg-rose-500 px-2 text-[11px] font-medium text-white"
+                    style="width: 18%"
+                  >
+                    5,842
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-16 text-slate-500">완주</span>
+                <div class="h-5 flex-1 rounded bg-slate-100">
+                  <div
+                    class="seg h-5 rounded bg-slate-300"
+                    style="width: 1%"
+                  ></div>
+                </div>
+              </div>
+            </div>
+            <div
+              class="mt-3 rounded bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800"
+            >
+              노출 41,630 으로 가장 많이 나갔는데 리드가 0건입니다. 후킹도 18%
+              입니다. 트래픽 목적 캠페인이라 리드가 안 잡히는 것이 정상일 수
+              있으니,
+              <b>이 캠페인은 리드 수가 아니라 랜딩 도착·체류로 평가할지</b>
+              먼저 정해야 합니다.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 데이터 근거 -->
+      <section class="rounded-xl bg-white p-5 shadow-sm">
+        <h2 class="text-lg font-bold">이 값들은 어디서 오나</h2>
+        <ul class="mt-3 space-y-1.5 text-sm text-slate-600">
+          <li>
+            · Meta Insights 의 <code class="text-xs">video_play_actions</code>,
+            <code class="text-xs">video_p25/p50/p75/p100_watched_actions</code>,
+            <code class="text-xs">video_avg_time_watched_actions</code> 입니다.
+          </li>
+          <li>
+            · p25~p100 은 예전부터 API 로 받아오고 있었지만
+            <b>광고 단위로는 저장하지 않아</b> 버려지고 있었습니다. 오늘 컬럼을
+            넣고 백필했습니다(마이그레이션 0037).
+          </li>
+          <li>
+            · 하루 한 번 cron 동기화 때 함께 쌓이고, 조회는 D1 집계 + 30분
+            캐시로 나갑니다. 광고가 늘어도 되도록 목록은
+            <code class="text-xs">limit/offset</code> 페이지네이션을 씁니다.
+          </li>
+        </ul>
+      </section>
+
+      <footer class="pb-6 text-center text-xs text-slate-400">
+        어느 안으로 갈지 정해 주시면 그대로 구현합니다. 둘 다 넣어도 됩니다.
+      </footer>
+    </div>
+  </body>
+</html>

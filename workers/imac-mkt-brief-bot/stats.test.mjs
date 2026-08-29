@@ -239,7 +239,8 @@ test("캠페인별 단가를 이름으로 붙이고 격차를 짚는다", () => 
   assert.equal(best.campaign, "260812 신규 잠재고객 캠페인(전환형)");
   assert.ok(Math.abs(best.costPerLead - 300 / 26) < 0.01);
   assert.equal(s.campaigns.worst.campaign, "260824 잠재고객 캠페인 신규");
-  // 지출이 있는데 접수가 0건인 캠페인을 놓치면 안 된다
+  // 매칭률이 충분하면(30/32) 접수 0건 캠페인을 짚는다
+  assert.ok(s.campaigns.reliable, `매칭률이 낮게 잡혔다: ${s.campaigns.matchRate}`);
   assert.equal(s.campaigns.zeroLeadSpenders[0].campaign, "260727 신규 트래픽 캠페인");
   // 광고 목록에 없는 오가닉 접수는 버리지 않고 따로 남긴다
   assert.equal(s.campaigns.unmatched.length, 1);
@@ -270,4 +271,94 @@ test("캠페인 접수가 없으면 단가를 지어내지 않는다", () => {
     leads: { total: 0, bySource: [], daily: [], byCampaign: [] },
   });
   assert.equal(s.campaigns.available, false);
+});
+
+
+test("이름이 절반도 안 붙으면 '접수 0건' 목록을 내보내지 않는다", () => {
+  // 접수에는 캠페인 ID 가 없고 그 시점 이름만 남는다. 이름이 바뀌었거나 끝난 캠페인의
+  // 리드가 뒤늦게 오면 안 붙는데, 그 상태의 "0건"을 그대로 보고하면 멀쩡한 캠페인을 끈다
+  const data = {
+    ads: {
+      summary: { spend: 1000 },
+      campaigns: [
+        { name: "지금 도는 캠페인", spend: 600 },
+        { name: "돈만 쓰는 캠페인", spend: 400 },
+      ],
+    },
+    leads: {
+      total: 20,
+      bySource: [],
+      daily: [],
+      byCampaign: [
+        { campaign: "지금 도는 캠페인", platform: "instagram", n: 5 },
+        { campaign: "이름이 바뀐 옛 캠페인", platform: "instagram", n: 15 },
+      ],
+    },
+  };
+  const s = analyze(data);
+  assert.equal(s.campaigns.reliable, false);
+  assert.equal(s.campaigns.zeroLeadSpenders.length, 0, "믿을 수 없는 0건 목록을 내보냈다");
+  assert.ok(s.campaigns.verdict.includes("단정하면 안 된다"));
+  assert.equal(s.campaigns.unmatchedLeads, 15);
+});
+
+test("영상이 전부 첫 구간에서 죽으면 소재 공통 문제로 본다", () => {
+  // 한 편만 그렇다면 그 소재 문제지만, 전부 같다면 만드는 방식의 문제다
+  const mk = (name, plays, p25, leads, spend) => ({
+    adName: name,
+    spend,
+    impressions: plays * 1.3,
+    leads,
+    video: {
+      plays,
+      p25,
+      playRate: 0.77,
+      p25OfPlays: p25 / plays,
+      completionRate: 0.02,
+      avgWatchSec: 2,
+    },
+  });
+  const s = analyze({
+    ads: {
+      summary: { spend: 800 },
+      ads: [
+        mk("영상A", 15512, 2338, 22, 630),
+        mk("영상B", 32016, 5842, 0, 104),
+        mk("영상C", 8755, 1215, 0, 91),
+      ],
+    },
+    leads: { total: 22, bySource: [], daily: [], byCampaign: [] },
+  });
+  assert.equal(s.video.available, true);
+  assert.equal(s.video.weakEverywhere, true);
+  assert.ok(s.video.verdict.includes("만드는 방식의 문제"));
+  // 첫 구간을 못 넘겨도 접수가 나오는 소재는 끄는 대신 앞을 고칠 자리다
+  assert.equal(s.video.weakButConverting.length, 1);
+  assert.equal(s.video.weakButConverting[0].ad, "영상A");
+});
+
+test("한 편만 약하면 좋은 편을 비교 대상으로 든다", () => {
+  const s = analyze({
+    ads: {
+      summary: { spend: 200 },
+      ads: [
+        { adName: "약한영상", spend: 100, leads: 0, impressions: 1000,
+          video: { plays: 1000, p25: 100, p25OfPlays: 0.1, avgWatchSec: 1 } },
+        { adName: "버티는영상", spend: 100, leads: 5, impressions: 1000,
+          video: { plays: 1000, p25: 450, p25OfPlays: 0.45, avgWatchSec: 6 } },
+      ],
+    },
+    leads: { total: 5, bySource: [], daily: [], byCampaign: [] },
+  });
+  assert.equal(s.video.weakEverywhere, false);
+  assert.ok(s.video.verdict.includes("약한영상"));
+  assert.ok(s.video.verdict.includes("버티는영상"));
+});
+
+test("영상 지표가 없으면 영상 분석을 만들어내지 않는다", () => {
+  const s = analyze({
+    ads: { summary: { spend: 100 }, ads: [{ adName: "이미지", spend: 100 }] },
+    leads: { total: 1, bySource: [], daily: [], byCampaign: [] },
+  });
+  assert.equal(s.video.available, false);
 });

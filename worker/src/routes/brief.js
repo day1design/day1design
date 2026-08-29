@@ -7,8 +7,10 @@
 // 어드민 인증(쿠키) 대신 시크릿 헤더만 받는다 — 서버-서버 호출이라 Origin 이 없다.
 // 읽기 전용이고 쓰기 경로가 없으므로 이 창구로는 데이터를 바꿀 수 없다.
 //
-// 응답은 기본적으로 "요약본"이다. 광고 전체 원본은 캠페인·광고·시간대까지 합쳐
-// 수백 KB가 되어 분석기 프롬프트에 그대로 넣을 수 없다. 원본이 필요하면 full=1.
+// 행은 자르지 않는다. 상위 몇 개만 넘기면 잘린 캠페인은 분석 대상에서 사라지고,
+// 남은 것으로 내린 결론이 전체인 것처럼 보고된다. 자르는 순간 해석이 일반화된다.
+// 전체를 넘겨도 70KB 안쪽이라 프롬프트에 충분히 들어간다. 덜어내는 것은 썸네일 URL 처럼
+// 판단에 쓰이지 않는 긴 문자열뿐이다.
 
 import { jsonOk, jsonError } from "../lib/response.js";
 import { timingSafeEqual } from "../lib/auth.js";
@@ -16,7 +18,6 @@ import { briefOverview } from "./meta-ads.js";
 import { briefSummary, briefFunnel } from "./analytics.js";
 
 const MAX_DAYS = 180;
-const TOP_N = 10;
 
 // KST 기준 날짜 문자열. 광고계정도 서울 시간대라 여기서 기준을 맞춰야
 // "어제까지"가 어드민 화면과 같은 날을 가리킨다.
@@ -116,13 +117,6 @@ async function readJson(res) {
   }
 }
 
-function topRows(rows, key = "spend", n = TOP_N) {
-  if (!Array.isArray(rows)) return [];
-  return [...rows]
-    .sort((a, b) => (Number(b?.[key]) || 0) - (Number(a?.[key]) || 0))
-    .slice(0, n);
-}
-
 // 접수는 브리프의 결론 지표다. 광고비만으로는 효율을 말할 수 없고,
 // 이 숫자가 있어야 리드 단가가 나온다.
 async function collectLeads(env, period) {
@@ -147,58 +141,59 @@ async function collectLeads(env, period) {
   };
 
   try {
-    const [totalRow, bySource, byStatus, daily, byCampaign] =
-      await Promise.all([
-      env.DB.prepare(
-        `SELECT COUNT(*) AS n FROM Estimates
+    const [totalRow, bySource, byStatus, daily, byCampaign] = await Promise.all(
+      [
+        env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM Estimates
           WHERE SubmittedAt >= ? AND SubmittedAt < ?`,
-      )
-        .bind(since, until)
-        .first(),
-      env.DB.prepare(
-        `SELECT COALESCE(NULLIF(Source, ''), '미상') AS source, COUNT(*) AS n
+        )
+          .bind(since, until)
+          .first(),
+        env.DB.prepare(
+          `SELECT COALESCE(NULLIF(Source, ''), '미상') AS source, COUNT(*) AS n
            FROM Estimates
           WHERE SubmittedAt >= ? AND SubmittedAt < ?
           GROUP BY source
           ORDER BY n DESC`,
-      )
-        .bind(since, until)
-        .all(),
-      env.DB.prepare(
-        `SELECT COALESCE(NULLIF(Status, ''), '미상') AS status, COUNT(*) AS n
+        )
+          .bind(since, until)
+          .all(),
+        env.DB.prepare(
+          `SELECT COALESCE(NULLIF(Status, ''), '미상') AS status, COUNT(*) AS n
            FROM Estimates
           WHERE SubmittedAt >= ? AND SubmittedAt < ?
           GROUP BY status
           ORDER BY n DESC`,
-      )
-        .bind(since, until)
-        .all(),
-      // 일자는 KST 로 끊는다. UTC 로 자르면 09시 이전 접수가 전날로 잡혀
-      // 광고 일자별 지표와 하루씩 어긋난다
-      env.DB.prepare(
-        `SELECT substr(datetime(SubmittedAt, '+9 hours'), 1, 10) AS day, COUNT(*) AS n
+        )
+          .bind(since, until)
+          .all(),
+        // 일자는 KST 로 끊는다. UTC 로 자르면 09시 이전 접수가 전날로 잡혀
+        // 광고 일자별 지표와 하루씩 어긋난다
+        env.DB.prepare(
+          `SELECT substr(datetime(SubmittedAt, '+9 hours'), 1, 10) AS day, COUNT(*) AS n
            FROM Estimates
           WHERE SubmittedAt >= ? AND SubmittedAt < ?
           GROUP BY day
           ORDER BY day ASC`,
-      )
-        .bind(since, until)
-        .all(),
-      // 캠페인별 접수. Estimates.Campaign 에 광고 캠페인명이 그대로 들어와 있어
-      // 광고비와 이름으로 붙일 수 있다. 이걸 안 주면 "어느 캠페인이 돈값을 하는가"를
-      // 아무도 말할 수 없고, 보고는 총계만 읊는 평면적인 글이 된다
-      env.DB.prepare(
-        `SELECT COALESCE(NULLIF(Campaign, ''), '(캠페인 없음)') AS campaign,
+        )
+          .bind(since, until)
+          .all(),
+        // 캠페인별 접수. Estimates.Campaign 에 광고 캠페인명이 그대로 들어와 있어
+        // 광고비와 이름으로 붙일 수 있다. 이걸 안 주면 "어느 캠페인이 돈값을 하는가"를
+        // 아무도 말할 수 없고, 보고는 총계만 읊는 평면적인 글이 된다
+        env.DB.prepare(
+          `SELECT COALESCE(NULLIF(Campaign, ''), '(캠페인 없음)') AS campaign,
                 COALESCE(NULLIF(Platform, ''), '(미상)') AS platform,
                 COUNT(*) AS n
            FROM Estimates
           WHERE SubmittedAt >= ? AND SubmittedAt < ?
           GROUP BY campaign, platform
           ORDER BY n DESC`,
-      )
-        .bind(since, until)
-        .all(),
-    ]);
+        )
+          .bind(since, until)
+          .all(),
+      ],
+    );
 
     out.total = Number(totalRow?.n) || 0;
     out.bySource = bySource?.results || [];
@@ -225,7 +220,27 @@ function unwrap(node, key) {
   return node;
 }
 
-// 광고 원본에서 브리프가 실제로 쓰는 부분만 남긴다
+// 분석에 쓸 수 없는 열만 덜어낸다. 행은 자르지 않는다.
+//
+// 예전에는 캠페인·광고를 지출 상위 10개로 잘라서 넘겼다. 그러면 잘린 캠페인은 분석
+// 대상에서 아예 사라지고, 남은 것만으로 내린 결론이 전체인 것처럼 보고된다. 즉 자르는
+// 순간 해석이 일반화된다. 전체를 넘겨도 69KB 라 프롬프트에 충분히 들어간다.
+//
+// 대신 썸네일 URL 처럼 판단에 쓰이지 않으면서 긴 문자열은 덜어낸다.
+const HEAVY_FIELDS = ["ThumbnailUrl", "thumbnailUrl", "thumbUrl", "imageUrl"];
+function stripHeavy(rows) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((r) => {
+    if (!r || typeof r !== "object") return r;
+    const out = {};
+    for (const [k, v] of Object.entries(r)) {
+      if (HEAVY_FIELDS.includes(k)) continue;
+      out[k] = v;
+    }
+    return out;
+  });
+}
+
 function condenseAds(overview) {
   if (!overview || overview.ok === false) {
     return { available: false, reason: "광고 데이터를 읽지 못했습니다" };
@@ -236,15 +251,21 @@ function condenseAds(overview) {
     range: overview.range || null,
     summary: unwrap(overview.summary, "summary"),
     lastSyncedAt: overview.summary?.lastSyncedAt || "",
-    campaigns: topRows(unwrap(overview.campaigns, "campaigns")),
-    ads: topRows(unwrap(overview.ads, "ads")),
+    campaigns: unwrap(overview.campaigns, "campaigns"),
+    ads: stripHeavy(unwrap(overview.ads, "ads")),
     efficiency: overview.efficiency || null,
+    // 일자별 지표. 이게 없으면 "언제부터 꺾였나"를 아무도 말할 수 없다
+    daily: overview.efficiency?.daily || [],
     breakdown: {
       platform: unwrap(b.platform),
-      position: topRows(unwrap(b.position)),
+      position: unwrap(b.position),
       device: unwrap(b.device),
+      ageGender: unwrap(b.age_gender),
+      region: unwrap(b.region),
     },
     dow: unwrap(overview.dow, "rows"),
+    // 168칸(요일 x 시간)이라 커 보이지만, 언제 사람이 반응하는지는 여기서만 나온다
+    hourHeatmap: unwrap(overview.hourHeatmap, "cells"),
     syncedAt: overview.cachedAt || "",
   };
 }
@@ -256,7 +277,8 @@ function condenseTraffic(summary) {
   return {
     available: true,
     summary: summary.summary || null,
-    sources: Array.isArray(summary.sources) ? summary.sources.slice(0, 20) : [],
+    // 유입 출처도 자르지 않는다. 꼬리에 있는 소수 경로가 접수로는 앞설 수 있다
+    sources: Array.isArray(summary.sources) ? summary.sources : [],
     trend: Array.isArray(summary.trend) ? summary.trend : [],
     freshness: summary.freshness || null,
   };
