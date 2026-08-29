@@ -108,6 +108,18 @@ async function collectLeads(env, days) {
   return out;
 }
 
+// overview 의 각 조각은 하위 핸들러의 Response 를 그대로 담은 것이라 {ok, range, <본체>}
+// 로 한 겹 싸여 있다. 그 껍질을 안 벗기면 summary.spend 가 undefined 가 되어
+// 광고비 0원짜리 브리프가 나간다(실제로 그렇게 나갔다).
+function unwrap(node, key) {
+  if (!node) return null;
+  if (Array.isArray(node)) return node;
+  if (key && node[key] !== undefined) return node[key];
+  if (Array.isArray(node.rows)) return node.rows;
+  if (Array.isArray(node.results)) return node.results;
+  return node;
+}
+
 // 광고 원본에서 브리프가 실제로 쓰는 부분만 남긴다
 function condenseAds(overview) {
   if (!overview || overview.ok === false) {
@@ -117,16 +129,17 @@ function condenseAds(overview) {
   return {
     available: true,
     range: overview.range || null,
-    summary: overview.summary || null,
-    campaigns: topRows(overview.campaigns),
-    ads: topRows(overview.ads),
+    summary: unwrap(overview.summary, "summary"),
+    lastSyncedAt: overview.summary?.lastSyncedAt || "",
+    campaigns: topRows(unwrap(overview.campaigns, "campaigns")),
+    ads: topRows(unwrap(overview.ads, "ads")),
     efficiency: overview.efficiency || null,
     breakdown: {
-      platform: b.platform || [],
-      position: topRows(b.position),
-      device: b.device || [],
+      platform: unwrap(b.platform),
+      position: topRows(unwrap(b.position)),
+      device: unwrap(b.device),
     },
-    dow: overview.dow || [],
+    dow: unwrap(overview.dow, "rows"),
     syncedAt: overview.cachedAt || "",
   };
 }
@@ -209,7 +222,10 @@ export async function handleBrief(request, env, ctx, services) {
     collectLeads(env, days),
   ]);
 
-  const ads = full ? { available: true, ...adsRaw } : condenseAds(adsRaw);
+  // 효율 계산은 언제나 껍질을 벗긴 쪽에서 한다. full=1 원본으로 계산하면
+  // spend 를 못 찾아 광고비 0원으로 떨어진다
+  const condensed = condenseAds(adsRaw);
+  const ads = full ? { available: true, ...adsRaw } : condensed;
   const traffic = full
     ? { available: true, ...trafficRaw }
     : condenseTraffic(trafficRaw);
@@ -218,7 +234,7 @@ export async function handleBrief(request, env, ctx, services) {
     ok: true,
     generatedAt: new Date().toISOString(),
     range: { days, since: kstDate(days), until: kstDate(1) },
-    efficiency: deriveEfficiency(ads, leads),
+    efficiency: deriveEfficiency(condensed, leads),
     ads,
     traffic,
     funnel: funnelRaw || { available: false },
