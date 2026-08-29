@@ -28,6 +28,7 @@ import {
   runScheduledSync,
   prewarmOverviewCache,
 } from "./routes/meta-ads.js";
+import { handleBrief } from "./routes/brief.js";
 import { handleSearchVolume } from "./routes/search-volume.js";
 import {
   handlePixelEvents,
@@ -228,6 +229,8 @@ async function handleApi(request, env, ctx, path) {
     res = await handleAudit(request, env);
   } else if (path.startsWith("/api/meta-ads")) {
     res = await handleMetaAds(request, env, ctx);
+  } else if (path.startsWith("/api/brief")) {
+    res = await handleBrief(request, env, ctx, services);
   } else if (path.startsWith("/api/admin/search-volume")) {
     res = await handleSearchVolume(request, env, ctx);
   } else if (path === "/api/pixel-events") {

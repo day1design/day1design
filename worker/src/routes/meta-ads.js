@@ -1594,3 +1594,6 @@ function resolveRangeFromQuery(url) {
   // fallback: 30일
   return rangeDays(30);
 }
+
+// 마케팅 브리프 창구용. 어드민 인증은 brief.js 가 시크릿으로 대신한다
+export { getOverview as briefOverview };

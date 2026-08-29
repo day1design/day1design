@@ -59,6 +59,11 @@ export function classifyAccess(request, opts = {}) {
   if (path === "/api/meta-lead" || path.startsWith("/api/meta-lead/")) {
     return { role: "integration", method, path };
   }
+  // 마케팅 브리프도 같은 이유로 Origin 이 없다(아이맥 봇). 읽기 전용이며
+  // 시크릿 헤더 검증은 brief.js 가 한다
+  if (path === "/api/brief" || path.startsWith("/api/brief/")) {
+    return { role: "integration", method, path };
+  }
   if (path === "/" || path === "/api") return { role: "main", method, path };
   if (path.startsWith("/api/auth") || path.startsWith("/api/upload")) {
     return { role: "admin", method, path };
