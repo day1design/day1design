@@ -457,8 +457,10 @@ const COMMON_RULES = [
   "- JSON 에 없는 수치는 절대 만들지 마세요. 없으면 '데이터 없음'이라고 쓰세요.",
   "- 금액 단위는 USD 입니다. 광고계정 통화가 달러라 spend·costPerLead 모두 달러입니다.",
   "  원화로 바꿔 말하지 마세요(환율을 임의로 곱하면 그 숫자는 거짓이 됩니다).",
-  "- costPerLead 는 전체 접수 기준입니다. Meta 광고만의 효율을 말하려면",
-  "  leads.bySource 에서 Meta 계열만 골라 다시 계산하고, 그렇게 했다고 밝히세요.",
+  "- costPerLead 는 전체 접수 기준입니다. Meta 광고만의 효율은",
+  "  stats.leads.metaCostPerLead 를 쓰고, 그 기준이라고 밝히세요.",
+  "- leads.byStatus 는 아직 운영에서 쓰지 않는 항목이라 거의 전부 '접수대기'입니다.",
+  "  이것으로 상담·계약 전환을 논하거나 '데이터가 비어 있다'고 지적하지 마세요.",
 ].join("\n");
 
 function interpretPrompt(question, data, stats) {
