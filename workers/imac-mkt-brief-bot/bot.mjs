@@ -738,6 +738,87 @@ function summarizeNumbers(d) {
     .join("\n");
 }
 
+// ── 용어 각주 ───────────────────────────────────────────
+//
+// 보고에 나오는 지표는 이름과 실제 의미가 다르다. "재생"은 사람이 누른 것이 아니고,
+// "25% 지점"은 시간이 아니며, "Meta 집계 리드"는 우리 DB 에 저장된 접수와 다른 숫자다.
+// 설명 없이 배율만 던지면 읽는 사람이 각자 다르게 해석한다.
+//
+// 매번 전체 용어집을 붙이면 시끄러우므로 이번 보고에 실제로 나온 것만 고른다.
+// 모델에게 맡기지 않는 이유는, 맡기면 같은 지표의 설명이 회차마다 달라지기 때문이다.
+const GLOSSARY = [
+  {
+    term: "재생",
+    re: /재생/,
+    desc: "화면에 들어와 영상이 돌기 시작한 횟수입니다. 자동재생이라 사람이 누른 것이 아닙니다",
+  },
+  {
+    term: "25%·50%·75% 지점",
+    re: /(25\s*%|50\s*%|75\s*%)\s*(지점|도달)|p25|p50|p75/i,
+    desc: "영상 길이 대비 지점이지 시간이 아닙니다. 17초 영상이면 25% 는 4.3초입니다",
+  },
+  {
+    term: "완주",
+    re: /완주/,
+    desc: "영상을 끝까지 본 횟수입니다. 다시 재생한 것은 세지 않습니다",
+  },
+  {
+    term: "ThruPlay",
+    re: /thruplay/i,
+    desc: "15초 이상 재생되었거나, 15초보다 짧은 영상이면 완주한 횟수입니다. Meta 가 과금·최적화에 쓰는 기준이라 완주 수보다 큽니다",
+  },
+  {
+    term: "후킹률",
+    re: /후킹/,
+    desc: "재생한 사람 중 25% 지점까지 본 비율입니다. 낮으면 예산이 아니라 영상 앞부분을 고칠 자리입니다",
+  },
+  {
+    term: "링크클릭",
+    re: /링크\s*클릭/,
+    desc: "광고에서 링크를 눌러 밖으로 나간 횟수입니다. Meta 화면의 CPC 는 이 기준입니다",
+  },
+  {
+    term: "Meta 집계 리드",
+    re: /집계\s*리드/i,
+    desc: "Meta 가 센 폼 제출 수입니다. 우리 DB 에 저장된 접수와 다를 수 있어 두 숫자를 나란히 봅니다",
+  },
+  {
+    term: "리드단가(CPL)",
+    re: /리드\s*단가|cpl/i,
+    desc: "지출을 접수 건수로 나눈 값입니다. 전체 접수 기준이면 홈페이지 유입까지 분모에 들어갑니다",
+  },
+  {
+    term: "도달",
+    re: /도달률|도달\s/,
+    desc: "광고를 본 사람 수입니다. 같은 사람이 여러 번 봐도 하나로 셉니다",
+  },
+  {
+    term: "빈도",
+    re: /빈도/,
+    desc: "한 사람이 평균 몇 번 봤는지입니다. 높아지면 같은 사람에게 반복 노출되고 있다는 뜻입니다",
+  },
+  {
+    term: "CTR",
+    re: /\bctr\b/i,
+    desc: "노출 대비 클릭 비율입니다. 기간 합계로 계산하며 일별 비율의 평균이 아닙니다",
+  },
+  {
+    term: "CPM",
+    re: /\bcpm\b/i,
+    desc: "노출 1,000회당 비용입니다. 오르면 같은 노출을 사는 데 더 든다는 뜻입니다",
+  },
+];
+
+const GLOSSARY_MAX = 6;
+
+function glossaryFor(text) {
+  const body = String(text || "");
+  const hits = GLOSSARY.filter((g) => g.re.test(body)).slice(0, GLOSSARY_MAX);
+  if (!hits.length) return "";
+  const lines = hits.map((g) => `· ${g.term} — ${g.desc}`);
+  return ["", "", "─ 이 보고에 나온 지표", ...lines].join("\n");
+}
+
 // ── 처리 ────────────────────────────────────────────────
 let busy = false;
 
@@ -901,7 +982,8 @@ ${summarizeNumbers(data)}
 
     const took = Math.round((Date.now() - startedAt) / 1000);
     if (finalText) {
-      await say(finalText);
+      // 보고에 나온 지표만 골라 뜻을 덧붙인다. 배율만 던지면 각자 다르게 읽는다
+      await say(finalText + glossaryFor(finalText));
     } else {
       const why = String(
         [draftRes.error, auditRes.error, finalRes.error].filter(Boolean)[0] ||
