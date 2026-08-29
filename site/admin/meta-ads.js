@@ -266,12 +266,115 @@
     }
   }
 
+  // ─── 영상 유지율 ────────────────────────────────
+  //
+  // 영상 광고는 노출·클릭만으로 판단할 수 없다. 재생은 되는데 첫 구간에서 떠나면
+  // 그 뒤 지표는 의미가 없다. 그래서 "재생한 사람 중 25% 지점까지 본 비율"을
+  // 후킹으로 보고, 그 값이 낮으면 예산이 아니라 앞 3초를 고칠 자리로 읽는다.
+  //
+  // 기준선은 업계에서 통상 쓰는 25%·40% 를 그대로 쓴다. 우리 계정 실측은
+  // 14~18% 라 지금은 전부 빨강이다 — 그 사실 자체가 보고할 내용이다.
+  const HOOK_WARN = 0.25;
+  const HOOK_GOOD = 0.4;
+
+  function hookBadge(ad) {
+    const v = ad && ad.video;
+    const rate = v && typeof v.p25OfPlays === "number" ? v.p25OfPlays : null;
+    if (rate === null) return '<span class="mads-hook mads-hook-na">—</span>';
+    const cls =
+      rate >= HOOK_GOOD ? "good" : rate >= HOOK_WARN ? "warn" : "bad";
+    return `<span class="mads-hook mads-hook-${cls}">${Math.round(rate * 100)}%</span>`;
+  }
+
+  function pctText(v) {
+    return typeof v === "number" ? (v * 100).toFixed(1) + "%" : "—";
+  }
+
+  // 막대는 재생을 기준으로 그린다. 노출을 기준으로 하면 모든 막대가 짧아져
+  // 구간 사이의 낙차가 눈에 안 들어온다
+  function retentionBar(label, value, ratioOfPlays, tone) {
+    const w = Math.max(0, Math.min(1, ratioOfPlays || 0)) * 100;
+    return `
+      <div class="mads-vid-row">
+        <span class="mads-vid-label">${label}</span>
+        <div class="mads-vid-track">
+          <div class="mads-vid-fill mads-vid-${tone}" style="width:${w.toFixed(1)}%"></div>
+        </div>
+        <span class="mads-vid-val">${fmtCompact(value)}<em>${pctText(ratioOfPlays)}</em></span>
+      </div>`;
+  }
+
+  function renderVideoRetention(rows) {
+    const section = $("madsVideoSection");
+    const list = $("madsVideoList");
+    const verdictEl = $("madsVideoVerdict");
+    if (!section || !list) return;
+
+    const vids = (rows || []).filter(
+      (r) => r.video && (r.video.plays > 0 || r.video.p25 > 0),
+    );
+    if (!vids.length) {
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+
+    // 여러 편이 모두 같은 구간에서 꺾이면 소재 하나가 아니라 만드는 방식의 문제다.
+    // 그 구분을 사람이 표를 훑어 알아내게 두지 않는다
+    const hooks = vids
+      .map((v) => v.video.p25OfPlays)
+      .filter((x) => typeof x === "number");
+    if (verdictEl) {
+      if (hooks.length >= 2 && hooks.every((h) => h < HOOK_WARN)) {
+        const avg = hooks.reduce((a, b) => a + b, 0) / hooks.length;
+        verdictEl.innerHTML = `영상 ${vids.length}편 모두 재생자의 <b>${Math.round((1 - avg) * 100)}%</b>가 25% 지점 전에 떠납니다. 한 편의 문제가 아니라 첫 구간을 만드는 방식을 봐야 합니다.`;
+        verdictEl.hidden = false;
+      } else {
+        verdictEl.hidden = true;
+      }
+    }
+
+    list.innerHTML = vids
+      .sort((a, b) => Number(b.spend || 0) - Number(a.spend || 0))
+      .map((ad) => {
+        const v = ad.video;
+        const hook = typeof v.p25OfPlays === "number" ? v.p25OfPlays : null;
+        const weakButConverting = hook !== null && hook < HOOK_WARN && ad.leads > 0;
+        return `
+        <div class="mads-vid-card">
+          <div class="mads-vid-head">
+            <div class="mads-vid-name">${adminUtil.escapeHtml(ad.adName || "이름 없음")}</div>
+            <div class="mads-vid-meta">지출 ${fmtUsd(ad.spend)} · 노출 ${fmtCompact(ad.impressions)} · 리드 ${fmtInt(ad.leads)}건</div>
+          </div>
+          <div class="mads-vid-bars">
+            ${retentionBar("재생", v.plays, v.playRate, "play")}
+            ${retentionBar("25%", v.p25, v.p25OfPlays, "p25")}
+            ${retentionBar("50%", v.p50, v.p50OfPlays, "p50")}
+            ${retentionBar("75%", v.p75, v.p75OfPlays, "p75")}
+            ${retentionBar("완주", v.p100, v.completionRate, "p100")}
+          </div>
+          <div class="mads-vid-foot">
+            <span>후킹 <b class="${hook !== null && hook < HOOK_WARN ? "is-bad" : ""}">${pctText(hook)}</b></span>
+            <span>완주율 <b>${pctText(v.completionRate)}</b></span>
+            <span>평균 시청 <b>${Number(v.avgWatchSec || 0).toFixed(1)}초</b></span>
+            <span>ThruPlay <b>${fmtCompact(v.thruPlay)}</b></span>
+          </div>
+          ${
+            weakButConverting
+              ? `<div class="mads-vid-note">첫 구간에서 대부분 떠나는데도 리드가 ${fmtInt(ad.leads)}건 나왔습니다. 남은 사람이 전환을 만들고 있으므로, 끄는 대신 앞 3초를 바꿔 남는 비율을 늘리는 편이 낫습니다.</div>`
+              : ""
+          }
+        </div>`;
+      })
+      .join("");
+  }
+
   function renderAds(rows) {
     const tbody = $("madsAdsBody");
     if (!tbody) return;
     if (!rows || !rows.length) {
       tbody.innerHTML =
-        '<tr><td colspan="12" class="empty-state">광고 데이터 없음</td></tr>';
+        '<tr><td colspan="13" class="empty-state">광고 데이터 없음</td></tr>';
       return;
     }
     tbody.innerHTML = rows
@@ -300,6 +403,7 @@
           <td class="num" style="text-align:right">${fmtUsd(ad.cpc)}</td>
           <td class="num" style="text-align:right">${fmtInt(ad.leads)}</td>
           <td class="num" style="text-align:right">${ad.leads > 0 ? fmtUsd(ad.cpl) : "—"}</td>
+          <td class="text-center">${hookBadge(ad)}</td>
           <td class="text-center"><span class="mads-grade mads-grade-${grade.cls}">${grade.grade}</span></td>
         </tr>`;
       })
@@ -816,6 +920,7 @@
       renderSummary(summary);
       renderCampaigns(ov?.campaigns?.campaigns);
       renderAds(ov?.ads?.ads);
+      renderVideoRetention(ov?.ads?.ads);
       renderEfficiency(ov?.efficiency);
       renderBreakdowns({
         platform: bd.platform?.rows,

@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
     <link rel="stylesheet" href="admin.css?v=20260825-exitguard" />
-    <link rel="stylesheet" href="meta-ads.css?v=20260725-thumbr2" />
+    <link rel="stylesheet" href="meta-ads.css?v=20260829-video" />
     <script>
       window.ADMIN_PAGE = { title: "Meta 광고", nav: "meta-ads" };
     </script>
@@ -170,19 +170,42 @@
                     <th style="width: 60px; text-align: right">CPC</th>
                     <th style="width: 50px; text-align: right">리드</th>
                     <th style="width: 70px; text-align: right">CPL</th>
+                    <th style="width: 64px; text-align: center">후킹</th>
                     <th style="width: 80px; text-align: center">효율</th>
                   </tr>
                 </thead>
                 <tbody id="madsAdsBody">
                   <tr>
-                    <td colspan="12" class="empty-state">불러오는 중...</td>
+                    <td colspan="13" class="empty-state">불러오는 중...</td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <div class="mads-help">
               효율 등급: 같은 목적 광고들의 CPL·CTR 중앙값 대비 ±20% 기준 (✓우수
-              / ✓양호 / ⚠보통 / ✗부진)
+              / ✓양호 / ⚠보통 / ✗부진) · 후킹: 영상을 재생한 사람 중 25% 지점까지
+              본 비율 (40%↑ 양호 / 25~40% 주의 / 25%↓ 이탈 심함)
+            </div>
+          </div>
+        </section>
+
+        <!-- 4-1. 영상 소재 유지율 -->
+        <section class="mads-section" id="madsVideoSection" hidden>
+          <div class="mads-section-head">
+            <div class="mads-section-title">🎬 영상 소재 유지율</div>
+            <div class="mads-section-sub">
+              재생한 사람이 어느 구간에서 떠나는지. 막대가 좁아지는 구간이 이탈
+              구간입니다.
+            </div>
+          </div>
+          <div class="panel">
+            <div id="madsVideoVerdict" class="mads-video-verdict" hidden></div>
+            <div id="madsVideoList" class="mads-video-list">
+              <div class="empty-state">불러오는 중...</div>
+            </div>
+            <div class="mads-help">
+              Meta 가 세는 기준입니다. 재생은 노출 대비, 25~완주는 재생 대비
+              비율입니다. 영상 길이를 모르므로 초가 아니라 구간으로 봅니다.
             </div>
           </div>
         </section>
@@ -440,6 +463,6 @@
     ></script>
     <script defer src="config.js?v=20260520-heatmap"></script>
     <script defer src="admin.js?v=20260626-authfast"></script>
-    <script defer src="meta-ads.js?v=20260725-thumbr2"></script>
+    <script defer src="meta-ads.js?v=20260829-video"></script>
   </body>
 </html>

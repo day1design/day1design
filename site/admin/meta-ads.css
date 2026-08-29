@@ -622,3 +622,158 @@
 .mads-thumb-slot {
   display: contents;
 }
+
+/* ─── 영상 유지율 ─────────────────────────────── */
+/* 후킹 배지: 재생한 사람 중 25% 지점까지 본 비율.
+   기준선은 25%·40% 로 둔다. 이 계정 실측이 14~18% 라 지금은 전부 빨강인데,
+   그 사실 자체가 봐야 할 내용이라 기준을 느슨하게 풀지 않는다. */
+.mads-hook {
+  display: inline-block;
+  min-width: 40px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.mads-hook-good {
+  background: #16a34a;
+  color: #fff;
+}
+.mads-hook-warn {
+  background: #f59e0b;
+  color: #fff;
+}
+.mads-hook-bad {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.mads-hook-na {
+  color: var(--c-text-muted);
+}
+
+.mads-video-verdict {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.mads-video-list {
+  display: grid;
+  gap: 12px;
+}
+.mads-vid-card {
+  padding: 14px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+}
+.mads-vid-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.mads-vid-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+.mads-vid-meta {
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+.mads-vid-bars {
+  display: grid;
+  gap: 5px;
+}
+.mads-vid-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mads-vid-label {
+  width: 34px;
+  flex: none;
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+.mads-vid-track {
+  flex: 1;
+  height: 18px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  overflow: hidden;
+}
+.mads-vid-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.35s ease;
+}
+/* 재생은 중립색, 이후 구간은 얼마나 남았는지에 따라 옅어진다.
+   색이 옅어지는 흐름 자체가 "떠나고 있다"를 말한다 */
+.mads-vid-play {
+  background: #334155;
+}
+.mads-vid-p25 {
+  background: #ef4444;
+}
+.mads-vid-p50 {
+  background: #f87171;
+}
+.mads-vid-p75 {
+  background: #fca5a5;
+}
+.mads-vid-p100 {
+  background: #cbd5e1;
+}
+.mads-vid-val {
+  width: 92px;
+  flex: none;
+  text-align: right;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.mads-vid-val em {
+  display: block;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--c-text-muted);
+}
+.mads-vid-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--c-border);
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+.mads-vid-foot b {
+  color: var(--c-text);
+}
+.mads-vid-foot b.is-bad {
+  color: #b91c1c;
+}
+.mads-vid-note {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--c-text-muted);
+}
+
+@media (max-width: 640px) {
+  .mads-vid-val {
+    width: 70px;
+  }
+  .mads-vid-foot {
+    gap: 10px;
+  }
+}
