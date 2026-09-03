@@ -6,6 +6,19 @@ let historyCache = {}; // { estimateId: history }
 
 const body = document.getElementById("estBody");
 const detail = document.getElementById("estDetail");
+
+// 날짜·시각 칸은 오른쪽 끝 달력 아이콘을 정확히 겨눠야 달력이 열린다. 연·월·일
+// 어디를 눌러도 열리게 받아 준다. 위임으로 달아 두면 계약 일시처럼 나중에
+// 생기는 칸에도 그대로 걸린다.
+detail?.addEventListener("click", (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement) || el.type !== "datetime-local") return;
+  try {
+    el.showPicker();
+  } catch {
+    /* 달력을 직접 못 여는 브라우저는 기본 동작에 맡긴다 */
+  }
+});
 const detailModal = document.getElementById("estDetailModal");
 const customerModal = document.getElementById("estCustomerModal");
 const customerForm = document.getElementById("estCustomerForm");
