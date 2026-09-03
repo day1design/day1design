@@ -763,15 +763,6 @@ function briefText(r, fallback = "접수내용 없음") {
   return r.Detail || typeSize || r.Address || r.Campaign || fallback;
 }
 
-function detailTitleHtml(r, sessionNo) {
-  return `
-    <span class="detail-name">${escapeHtml(r.Name || "이름 없음")}</span>
-    ${sourceBadges(r)}
-    <span id="detailSessionSlot">${sessionBadgeHtml(sessionNo)}</span>
-    <span class="branch-chip">${escapeHtml(r.Branch || "지점 미지정")}</span>
-    <span class="detail-title-note">${escapeHtml(briefText(r))}</span>`;
-}
-
 function render() {
   const list = filtered();
   renderChannelStats(list);
@@ -871,6 +862,48 @@ function render() {
   body.querySelectorAll(".est-card").forEach((card) => {
     card.addEventListener("click", () => openDetail(card.dataset.id));
   });
+}
+
+// 예약이 며칠 뒤인지 — 날짜만 비교한다(시각까지 보면 오늘이 어제로 밀린다)
+function ddayText(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((a - b) / 86400000);
+  if (diff === 0) return "오늘";
+  if (diff === 1) return "내일";
+  if (diff === -1) return "어제";
+  return diff > 0 ? `${diff}일 뒤` : `${-diff}일 지남`;
+}
+
+// 예약 띠 — 저장 뒤에도 이 함수로 다시 그린다
+function consultBandHtml(r) {
+  if (!r.ConsultAt) {
+    return `<div class="nd-book none"><span>📅 상담 예약 미정</span></div>`;
+  }
+  const dday = ddayText(r.ConsultAt);
+  return `<div class="nd-book">
+      <span>📅 ${escapeHtml(fmtConsultAt(r.ConsultAt))} · ${escapeHtml(r.ConsultBranch || "지점 미정")}</span>
+      ${dday ? `<span class="dday">${escapeHtml(dday)}</span>` : ""}
+    </div>`;
+}
+
+// 첨부 조각에 붙일 이름 — 확장자를 보고 앞에 표시를 하나 단다
+function fileLabel(u) {
+  let name = String(u).split("/").pop() || "파일";
+  try {
+    name = decodeURIComponent(name);
+  } catch {
+    /* 인코딩이 깨진 이름은 원문 그대로 쓴다 */
+  }
+  const ext = name.split(".").pop().toLowerCase();
+  const mark = ["jpg", "jpeg", "png", "webp", "gif", "svg"].includes(ext)
+    ? "🖼"
+    : "📄";
+  return `${mark} ${name}`;
 }
 
 function filesList(raw) {
@@ -1050,148 +1083,241 @@ async function openDetail(id) {
     btnSendSms.onclick = () => openSmsModal(id);
   }
 
+  const attachments = [
+    ...(Array.isArray(r.ConceptFiles) ? r.ConceptFiles : []),
+    ...(Array.isArray(r.FloorPlans) ? r.FloorPlans : []),
+  ];
+  const keyword = extractSearchKeyword(r?.FirstRefPath);
+  const formRows = metaFormRows(r);
+  const isMeta = (r.Source || "").toLowerCase() === "meta";
+  const inflowRows =
+    (r.Referral
+      ? `<dt>${isSlugLead(r) ? "마케팅 슬러그" : "경로"}</dt><dd>${escapeHtml(r.Referral)}</dd>`
+      : "") +
+    inflowDetailRows(r) +
+    (isMeta
+      ? `<dt>Meta 플랫폼</dt><dd>${escapeHtml(r.Platform || "—")}</dd>` +
+        `<dt>Meta 캠페인</dt><dd>${escapeHtml(r.Campaign || "—")}</dd>`
+      : "");
+  const inflowCount = (inflowRows.match(/<dt/g) || []).length;
+  const spaceText = [r.SpaceType, r.SpaceSize].filter(Boolean).join(" · ");
+  const addressText = [r.Postcode, r.Address, r.AddressDetail]
+    .filter(Boolean)
+    .join(" ");
+
   detail.innerHTML = `
-    <div class="detail-head">
-      <div>
-        <h2>
-          ${detailTitleHtml(r, sessionNo)}
-        </h2>
-        <div class="detail-sub">${fmtDateTime(r.SubmittedAt)} · IP ${escapeHtml(r.IP || "—")}</div>
+    <div class="nd-top">
+      <div class="nd-row1">
+        <span class="nd-name">${escapeHtml(r.Name || "이름 없음")}</span>
+        <span id="detailSessionSlot">${sessionBadgeHtml(sessionNo)}</span>
+        ${sourceBadges(r)}
+        ${keyword ? `<span class="nd-kw">🔍 ${escapeHtml(keyword)}</span>` : ""}
+        <span class="nd-sp"></span>
+        ${statusBadge(r.Status)}
       </div>
-      ${statusBadge(r.Status)}
+      <div class="nd-row2">
+        ${r.Phone ? `<a class="nd-act" href="tel:${escapeHtml(String(r.Phone).replace(/[^0-9+]/g, ""))}">📞 ${escapeHtml(r.Phone)}</a>` : ""}
+        ${r.Email ? `<a class="nd-act" href="mailto:${escapeHtml(r.Email)}">✉ ${escapeHtml(r.Email)}</a>` : ""}
+        ${r.Phone || r.Email ? `<button class="nd-act ghost" type="button" id="btnCopyContact">복사</button>` : ""}
+      </div>
+      <div class="nd-meta">
+        ${fmtDateTime(r.SubmittedAt)} 접수 · IP ${escapeHtml(r.IP || "—")} · 희망 지점 ${escapeHtml(r.Branch || "미지정")}
+      </div>
     </div>
 
-    <div class="est-detail-grid">
-      <section class="est-info-panel est-info-main">
-        <h3>접수 정보</h3>
-        <dl class="detail-dl">
-          <dt>연락처</dt><dd>${escapeHtml(r.Phone || "—")}</dd>
-          <dt>이메일</dt><dd>${escapeHtml(r.Email || "—")}</dd>
-          ${
-            [r.SpaceType, r.SpaceSize].filter(Boolean).length
-              ? `<dt>공간</dt><dd>${escapeHtml([r.SpaceType, r.SpaceSize].filter(Boolean).join(" · "))}</dd>`
-              : ""
-          }
-          ${
-            [r.Postcode, r.Address, r.AddressDetail].filter(Boolean).length
-              ? `<dt>주소/지역</dt><dd>${escapeHtml([r.Postcode, r.Address, r.AddressDetail].filter(Boolean).join(" "))}</dd>`
-              : ""
-          }
-          ${r.Schedule ? `<dt>일정</dt><dd>${escapeHtml(r.Schedule)}</dd>` : ""}
-          ${
-            r.ConsultAt
-              ? `<dt>상담 예약</dt><dd class="est-consult"><b>${escapeHtml(fmtConsultAt(r.ConsultAt))}</b>${
-                  r.ConsultBranch
-                    ? ` · ${escapeHtml(r.ConsultBranch)}`
-                    : " · 지점 미정"
-                }</dd>`
-              : ""
-          }
-          ${
-            r.Referral
-              ? `<dt>${isSlugLead(r) ? "마케팅 슬러그" : "경로"}</dt><dd>${escapeHtml(r.Referral)}</dd>`
-              : ""
-          }
-          ${inflowDetailRows(r)}
-          ${
-            (r.Source || "").toLowerCase() === "meta"
-              ? `
-          <dt>Meta 플랫폼</dt><dd>${escapeHtml(r.Platform || "—")}</dd>
-          <dt>Meta 캠페인</dt><dd>${escapeHtml(r.Campaign || "—")}</dd>
-        `
-              : ""
-          }
-          ${metaFormRows(r)}
-          ${r.Detail ? `<dt>상세내용</dt><dd><div class="detail-note">${escapeHtml(r.Detail)}</div></dd>` : ""}
-          ${
-            Array.isArray(r.ConceptFiles) && r.ConceptFiles.length
-              ? `<dt>컨셉파일</dt><dd>${filesList(r.ConceptFiles)}</dd>`
-              : ""
-          }
-          ${
-            Array.isArray(r.FloorPlans) && r.FloorPlans.length
-              ? `<dt>평면도</dt><dd>${filesList(r.FloorPlans)}</dd>`
-              : ""
-          }
-          ${r.Branch ? `<dt>지점</dt><dd>${escapeHtml(r.Branch)}</dd>` : ""}
-        </dl>
-      </section>
+    ${consultBandHtml(r)}
 
-      <section class="est-info-panel est-manage-panel">
-        <h3>상담 관리</h3>
-        <div class="est-manage-grid">
-          <div class="field">
-            <label>상태</label>
-            <select id="editStatus">
-              ${statusOptions(r.Status)}
-            </select>
-          </div>
-          <div class="field">
-            <label>담당자</label>
-            <input type="text" id="editAssignee" value="${escapeHtml(r.Assignee || "")}" />
-          </div>
-          <div class="field">
-            <label>첫 연락 일시</label>
-            <input type="datetime-local" id="editContactedAt" value="${(r.ContactedAt || "").slice(0, 16)}" />
-          </div>
-          <div class="field">
-            <label>상담 예약 일시</label>
-            <input type="datetime-local" id="editConsultAt" value="${(r.ConsultAt || "").slice(0, 16)}" />
-          </div>
-          <div class="field">
-            <label>상담 지점</label>
-            <select id="editConsultBranch">
-              <option value="">미정</option>
-              ${CONSULT_BRANCHES.map(
-                (b) =>
-                  `<option value="${escapeHtml(b)}"${r.ConsultBranch === b ? " selected" : ""}>${escapeHtml(b)}</option>`,
-              ).join("")}
-              ${
-                r.ConsultBranch && !CONSULT_BRANCHES.includes(r.ConsultBranch)
-                  ? `<option value="${escapeHtml(r.ConsultBranch)}" selected>${escapeHtml(r.ConsultBranch)}</option>`
-                  : ""
-              }
-            </select>
-          </div>
-        </div>
-        ${contractPanelHtml(r)}
-        <div class="form-actions">
-          <button class="btn btn-primary" id="btnPatch">상담 정보 저장</button>
-        </div>
-      </section>
-
-      <section class="est-info-panel est-history-panel" id="historyBox">
-        ${historyHtml(history)}
-      </section>
-
-      <section class="est-info-panel est-visit-history-panel" id="visitHistoryBox">
-        <h3>
-          방문 히스토리
-          <span class="visit-history-sub">자체 트래커 기준 · 첫 진입 → 폼 제출</span>
-        </h3>
-        <div class="visit-history-thread" id="visitHistoryThread">
-          <div class="visit-history-empty">불러오는 중...</div>
-        </div>
-      </section>
-
-      <section class="est-info-panel est-memo-panel">
-        <h3>메모</h3>
-        <div class="memo-thread" id="memoThread">
-          ${memoCache[id] ? memoThreadHtml(memoCache[id]) : '<div class="memo-empty">불러오는 중...</div>'}
-        </div>
-        <div class="memo-editor">
-          <textarea id="memoInput" placeholder="새 메모를 입력하세요 (Ctrl+Enter 저장)"></textarea>
-          <div class="memo-editor-row">
-            <input type="text" id="memoAuthor" placeholder="작성자 (선택)" style="width:140px;padding:6px 8px;border:1px solid var(--c-border);border-radius:6px;font-size:12px;" />
-            <button class="btn btn-primary" id="btnAddMemo" type="button">메모 추가</button>
-          </div>
-        </div>
-      </section>
+    <input class="pt" type="radio" name="ndTab" id="ndTab1" checked />
+    <input class="pt" type="radio" name="ndTab" id="ndTab2" />
+    <div class="nd-tabbar">
+      <div class="nd-seg">
+        <label class="lb1" for="ndTab1">접수 정보</label>
+        <label class="lb2" for="ndTab2">상담 처리 <i class="dot-unsaved"></i></label>
+      </div>
     </div>
 
+    <div class="nd-body">
+      <div class="nd-cols">
+        <div class="nd-col">
+          <div class="nd-colhead">고객 정보 <em>· 요청·현장·기록</em></div>
+
+          <div class="nd-card">
+            <div class="nd-card-h">
+              <b>요청 내용</b><span class="tail">고객이 직접 쓴 문장</span>
+            </div>
+            <div class="nd-quote">${r.Detail ? escapeHtml(r.Detail) : '<span style="color:#cbd2da">접수내용 없음</span>'}</div>
+          </div>
+
+          <div class="nd-card">
+            <div class="nd-card-h"><b>현장</b></div>
+            <div class="nd-grid">
+              <div class="nd-f">
+                <b>공간</b><span${spaceText ? "" : ' class="empty"'}>${escapeHtml(spaceText || "미입력")}</span>
+              </div>
+              <div class="nd-f">
+                <b>희망 일정</b><span${r.Schedule ? "" : ' class="empty"'}>${escapeHtml(r.Schedule || "미입력")}</span>
+              </div>
+              <div class="nd-f nd-wide">
+                <b>주소</b><span${addressText ? "" : ' class="empty"'}>${escapeHtml(addressText || "미입력")}</span>
+              </div>
+            </div>
+            ${
+              attachments.length
+                ? `<div class="nd-attach">
+                     <b>첨부 ${attachments.length}</b>
+                     ${attachments
+                       .map(
+                         (u) =>
+                           `<a class="nd-file" href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer">${escapeHtml(fileLabel(u))}</a>`,
+                       )
+                       .join("")}
+                   </div>`
+                : ""
+            }
+          </div>
+
+          ${
+            formRows
+              ? `<div class="nd-card">
+                   <div class="nd-card-h">
+                     <b>폼 응답</b><span class="tail">고객이 입력양식에 답한 원문</span>
+                   </div>
+                   <dl class="nd-kv">${formRows}</dl>
+                 </div>`
+              : ""
+          }
+
+          <div class="nd-card">
+            <div class="nd-card-h"><b>메모</b><span class="tail">내부용</span></div>
+            <div class="memo-thread" id="memoThread">
+              ${memoCache[id] ? memoThreadHtml(memoCache[id]) : '<div class="memo-empty">불러오는 중...</div>'}
+            </div>
+            <div class="memo-editor">
+              <textarea id="memoInput" placeholder="새 메모를 입력하세요 (Ctrl+Enter 저장)"></textarea>
+              <div class="memo-editor-row">
+                <input type="text" id="memoAuthor" placeholder="작성자 (선택)" style="width:140px;padding:6px 8px;border:1px solid var(--c-border);border-radius:6px;font-size:12px;" />
+                <button class="btn btn-primary" id="btnAddMemo" type="button">메모 추가</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="nd-col work">
+          <div class="nd-colhead">상담 처리 <em>· 일정·담당·계약</em></div>
+
+          <div class="nd-card">
+            <div class="nd-card-h"><b>상담 관리</b></div>
+            <div class="est-manage-grid">
+              <div class="field">
+                <label>상태</label>
+                <select id="editStatus">
+                  ${statusOptions(r.Status)}
+                </select>
+              </div>
+              <div class="field">
+                <label>담당자</label>
+                <input type="text" id="editAssignee" value="${escapeHtml(r.Assignee || "")}" />
+              </div>
+              <div class="field">
+                <label>첫 연락 일시</label>
+                <input type="datetime-local" id="editContactedAt" value="${(r.ContactedAt || "").slice(0, 16)}" />
+              </div>
+              <div class="field">
+                <label>상담 예약 일시</label>
+                <input type="datetime-local" id="editConsultAt" value="${(r.ConsultAt || "").slice(0, 16)}" />
+              </div>
+              <p class="nd-sync">
+                📅 저장하면 <b>일정관리 캘린더</b>에 자동으로 올라가고
+                <b>데이원디자인 일정관리</b> 채널로 알림이 갑니다. 비우면
+                캘린더에서도 지워집니다.
+              </p>
+              <div class="field">
+                <label>상담 지점</label>
+                <select id="editConsultBranch">
+                  <option value="">미정</option>
+                  ${CONSULT_BRANCHES.map(
+                    (b) =>
+                      `<option value="${escapeHtml(b)}"${r.ConsultBranch === b ? " selected" : ""}>${escapeHtml(b)}</option>`,
+                  ).join("")}
+                  ${
+                    r.ConsultBranch && !CONSULT_BRANCHES.includes(r.ConsultBranch)
+                      ? `<option value="${escapeHtml(r.ConsultBranch)}" selected>${escapeHtml(r.ConsultBranch)}</option>`
+                      : ""
+                  }
+                </select>
+              </div>
+            </div>
+            <div class="nd-contract">${contractPanelHtml(r)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="nd-folds">
+        ${
+          inflowCount
+            ? `<details class="nd-fold nd-fold-inflow">
+                 <summary>
+                   <span>
+                     <span class="lb">유입 경로</span>
+                     <span class="nd-hint">${inflowCount}항목 · 경로와 검색어</span>
+                   </span>
+                 </summary>
+                 <div class="in"><dl class="nd-kv">${inflowRows}</dl></div>
+               </details>`
+            : ""
+        }
+        <details class="nd-fold nd-fold-history">
+          <summary>
+            <span>
+              <span class="lb">변경 이력 · 방문 히스토리</span>
+              <span class="nd-hint">상태 변경과 첫 진입 → 폼 제출 흐름</span>
+            </span>
+          </summary>
+          <div class="in">
+            <div id="historyBox">${historyHtml(history)}</div>
+            <div class="visit-history-thread" id="visitHistoryThread" style="margin-top:10px">
+              <div class="visit-history-empty">불러오는 중...</div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="nd-savebar">
+      <span class="hint" id="saveHint">고치면 여기에 알려 드립니다</span>
+      <span class="sp"></span>
+      <button class="btn btn-primary" id="btnPatch">상담 정보 저장</button>
+    </div>
   `;
 
   openModal(detailModal);
+
+  // 고친 것이 있으면 저장 바와 탭에 표시한다 — 좁은 화면에서는 다른 탭으로
+  // 넘어가면 고친 칸이 화면에서 사라지므로 점으로 알린다
+  const markDirty = () => {
+    detail.classList.add("has-unsaved");
+    const hint = detail.querySelector("#saveHint");
+    if (hint) {
+      hint.textContent = "변경한 내용이 있습니다";
+      hint.classList.add("on");
+    }
+  };
+  detail
+    .querySelectorAll(".nd-col.work input, .nd-col.work select")
+    .forEach((el) => {
+      el.addEventListener("change", markDirty);
+      el.addEventListener("input", markDirty);
+    });
+
+  detail.querySelector("#btnCopyContact")?.addEventListener("click", () => {
+    const text = [r.Phone, r.Email].filter(Boolean).join(" / ");
+    if (!text) return;
+    navigator.clipboard
+      ?.writeText(text)
+      .then(() => adminUtil.toast("연락처를 복사했습니다"))
+      .catch(() => adminUtil.toast("복사하지 못했습니다", "error"));
+  });
+
   // 계약 입력칸은 '계약완료 처리' 를 누른 뒤에만 펼친다. 펼친 상태에서 저장하면
   // 상태가 계약완료로 바뀐다(doPatch 가 data-open 을 보고 판단한다).
   detail.querySelector("#btnContractOpen")?.addEventListener("click", () => {
@@ -1331,11 +1457,18 @@ async function doPatch(id) {
     const r = records.find((x) => x.id === id);
     Object.assign(r, d.updated);
     render();
-    // 상세 head 의 상태뱃지만 교체
-    const dh = detail.querySelector(".detail-head");
-    if (dh) {
-      const oldBadge = dh.querySelector(".badge");
-      if (oldBadge) oldBadge.outerHTML = statusBadge(payload.Status);
+    // 머리의 상태 뱃지와 예약 띠를 새 값으로 바꾼다. 예약을 고쳤으면 띠의
+    // 날짜와 D-day 도 같이 따라가야 한다
+    const row1 = detail.querySelector(".nd-row1");
+    const oldBadge = row1?.querySelector(".badge");
+    if (oldBadge) oldBadge.outerHTML = statusBadge(payload.Status);
+    const band = detail.querySelector(".nd-book");
+    if (band) band.outerHTML = consultBandHtml(r);
+    detail.classList.remove("has-unsaved");
+    const hint = detail.querySelector("#saveHint");
+    if (hint) {
+      hint.textContent = "저장했습니다";
+      hint.classList.remove("on");
     }
     adminUtil.toast("저장 완료");
   } catch (e) {

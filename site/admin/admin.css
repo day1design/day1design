@@ -2219,6 +2219,517 @@
   overflow: auto;
 }
 
+/* ========== 접수 상세 개편 (2026-09-03) ==========
+   왼쪽은 고객에게서 받은 정보, 오른쪽은 이번 상담을 처리하는 곳으로 가른다.
+   좁은 화면에서는 그 둘이 탭이 된다. 와이어프레임: 260903_est-detail-redesign.html */
+
+/* 각 영역이 자기 여백을 가지므로 바깥 여백은 없앤다 — 저장 바를 바닥에 붙이려면
+   본문이 가장자리까지 닿아 있어야 한다 */
+.est-detail-body {
+  padding: 0;
+}
+
+/* ── 머리 ── */
+.nd-top {
+  padding: 12px 16px 11px;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+.nd-row1 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.nd-name {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+.nd-kw {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #7c5a10;
+  background: #fef7e6;
+  border: 1px solid #f6e2b5;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.nd-sp {
+  margin-left: auto;
+}
+.nd-row2 {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+.nd-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-text);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  cursor: pointer;
+}
+.nd-act:hover {
+  border-color: var(--c-brand);
+  background: #f8fafc;
+}
+.nd-act.ghost {
+  color: var(--c-text-sub);
+  font-weight: 600;
+  font-size: 11.5px;
+  padding: 6px 9px;
+}
+.nd-meta {
+  font-size: 10.5px;
+  color: var(--c-text-muted);
+  margin-top: 8px;
+}
+
+/* ── 예약 띠 ── */
+.nd-book {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--c-brand, #5a5448);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.nd-book .dday {
+  margin-left: auto;
+  font-size: 10.5px;
+  background: rgba(255, 255, 255, 0.22);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.nd-book.none {
+  background: #f8fafc;
+  color: var(--c-text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--c-border-soft);
+}
+
+/* ── 본문 두 단 ── */
+.nd-body {
+  padding: 12px;
+  background: #f4f3f0;
+}
+.nd-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  gap: 10px;
+  align-items: start;
+}
+.nd-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.nd-col.work {
+  background: #ebe8e2;
+  border-radius: 11px;
+  padding: 9px;
+}
+.nd-colhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #6b6559;
+  letter-spacing: 0.3px;
+  padding: 0 1px;
+}
+.nd-colhead::before {
+  content: "";
+  width: 3px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--c-brand, #5a5448);
+}
+.nd-colhead em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--c-text-muted);
+}
+
+/* ── 카드 ── */
+.nd-card {
+  background: var(--c-surface);
+  border: 1px solid #e8e5df;
+  border-radius: 9px;
+  padding: 11px 12px;
+}
+.nd-card-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.nd-card-h b {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--c-text);
+  letter-spacing: -0.2px;
+}
+.nd-card-h .tail {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--c-text-muted);
+  font-weight: 600;
+}
+.nd-quote {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--c-text);
+  white-space: pre-line;
+  word-break: break-word;
+}
+.nd-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 14px;
+}
+.nd-f b {
+  display: block;
+  font-size: 9.5px;
+  color: var(--c-text-muted);
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  margin-bottom: 2px;
+}
+.nd-f span {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text);
+  word-break: break-word;
+  line-height: 1.4;
+}
+.nd-wide {
+  grid-column: 1 / -1;
+}
+.nd-attach {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed #efece6;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.nd-attach > b {
+  font-size: 9.5px;
+  color: var(--c-text-muted);
+  font-weight: 700;
+}
+.nd-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid #e2ded5;
+  background: var(--c-brand-soft, #f4efe4);
+  color: var(--c-brand, #5a5448);
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.nd-file:hover {
+  background: #ece5d6;
+  border-color: #d6cfc0;
+}
+
+/* ── 접어 두는 보조 정보 ── */
+.nd-folds {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+.nd-fold {
+  border: 1px solid #e8e5df;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--c-surface);
+}
+.nd-fold summary {
+  padding: 9px 12px;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nd-fold summary::-webkit-details-marker {
+  display: none;
+}
+.nd-fold summary .lb {
+  font-size: 12px;
+  font-weight: 800;
+  color: #4b5563;
+}
+/* 접힌 상태를 글자로 알린다 — 화살표만으로는 눌러야 하는지 모른다 */
+.nd-fold summary::after {
+  content: "펼쳐보기 ▾";
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--c-brand, #5a5448);
+  background: var(--c-brand-soft, #f4efe4);
+  border: 1px solid #e2ded5;
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.nd-fold[open] summary::after {
+  content: "접기 ▴";
+  color: var(--c-text-muted);
+  background: #f3f2ef;
+  border-color: #e8e5df;
+}
+.nd-fold summary:hover::after {
+  background: #ece5d6;
+}
+.nd-hint {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--c-text-muted);
+  margin-top: 2px;
+}
+.nd-fold[open] .nd-hint {
+  display: none;
+}
+.nd-fold .in {
+  padding: 10px 12px 11px;
+  border-top: 1px solid #f1f2f4;
+}
+.nd-kv {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 6px 10px;
+  font-size: 12px;
+  margin: 0;
+}
+.nd-kv dt {
+  color: var(--c-text-muted);
+}
+.nd-kv dd {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+.nd-kv dt.form-dt {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 오른쪽 처리판 ── */
+.nd-col.work .est-manage-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 9px;
+}
+.nd-col.work .field {
+  margin-bottom: 9px;
+}
+.nd-col.work .field label {
+  font-size: 10.5px;
+  margin-bottom: 3px;
+}
+.nd-col.work .field input,
+.nd-col.work .field select {
+  padding: 6px 9px;
+  font-size: 12.5px;
+}
+/* 저장하면 화면 밖에서 벌어지는 일을 그 자리에 적는다 */
+.nd-sync {
+  grid-column: 1 / -1;
+  margin: 0 0 9px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--c-text-sub);
+}
+.nd-sync b {
+  color: var(--c-brand, #5a5448);
+  font-weight: 700;
+}
+.nd-contract {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px dashed #efece6;
+}
+.nd-contract .est-contract {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.nd-col .memo-thread {
+  margin-bottom: 0;
+  max-height: 180px;
+  overflow: auto;
+}
+.nd-col .memo-empty {
+  padding: 4px 0 2px;
+  font-size: 11.5px;
+}
+.nd-col .memo-editor {
+  margin-top: 9px;
+}
+.nd-col .memo-editor textarea {
+  min-height: 62px;
+}
+
+/* ── 저장 바 — 스크롤 끝까지 내려가도 저장이 손에 닿게 ── */
+.nd-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(6px);
+  border-top: 1px solid var(--c-border);
+}
+.nd-savebar .hint {
+  font-size: 10.5px;
+  color: var(--c-text-muted);
+}
+.nd-savebar .hint.on {
+  color: #b45309;
+  font-weight: 700;
+}
+.nd-savebar .sp {
+  margin-left: auto;
+}
+
+/* ── 탭 — 넓은 화면에서는 두 단을 함께 보므로 탭바를 숨긴다 ── */
+.nd-tabbar {
+  display: none;
+}
+.est-detail-body input.pt {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .nd-tabbar {
+    display: block;
+    background: var(--c-surface);
+    padding: 9px 11px 10px;
+    border-bottom: 1px solid #e8e5df;
+  }
+  .nd-seg {
+    display: flex;
+    gap: 3px;
+    padding: 3px;
+    background: #eeece7;
+    border: 1px solid #e2ded5;
+    border-radius: 10px;
+  }
+  .nd-seg label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 8px 0;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #6b6559;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  /* 지금 안 보이는 탭에 저장하지 않은 변경이 있음을 알린다 */
+  .nd-seg .dot-unsaved {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #d97706;
+    display: none;
+  }
+  .est-detail-body.has-unsaved .nd-seg .dot-unsaved {
+    display: inline-block;
+  }
+  .nd-body {
+    padding: 10px;
+  }
+  .nd-cols {
+    grid-template-columns: 1fr;
+  }
+  /* 접기는 각자 짝이 되는 탭에 붙는다 — 부모 격자를 없애 형제로 만든다 */
+  .nd-folds {
+    display: contents;
+  }
+  .nd-fold {
+    margin-top: 8px;
+  }
+  .nd-col,
+  .nd-fold {
+    display: none;
+  }
+  #ndTab1:checked ~ .nd-tabbar .lb1,
+  #ndTab2:checked ~ .nd-tabbar .lb2 {
+    background: var(--c-surface);
+    color: var(--c-brand, #5a5448);
+    box-shadow: 0 1px 3px rgba(40, 34, 24, 0.18);
+  }
+  /* 열려 있는 탭에서는 점을 감춘다 — 눈앞에 보이는 것을 또 알릴 이유가 없다 */
+  #ndTab2:checked ~ .nd-tabbar .lb2 .dot-unsaved {
+    display: none;
+  }
+  #ndTab1:checked ~ .nd-body .nd-col:not(.work),
+  #ndTab2:checked ~ .nd-body .nd-col.work {
+    display: flex;
+  }
+  #ndTab1:checked ~ .nd-body .nd-fold-inflow,
+  #ndTab2:checked ~ .nd-body .nd-fold-history {
+    display: block;
+  }
+  .nd-col.work {
+    background: none;
+    padding: 0;
+  }
+  .nd-colhead {
+    display: none;
+  }
+  /* 상태·담당자는 짧아 두 열에 들어간다. 날짜·시각부터는 한 열을 통째로 쓴다 —
+     좁은 화면에서 두 열로 쪼개면 '오후 02' 에서 잘린다 */
+  .nd-col.work .est-manage-grid .field:nth-child(n + 3) {
+    grid-column: 1 / -1;
+  }
+  .nd-col.work .field {
+    margin-bottom: 8px;
+  }
+  .nd-col.work .field label {
+    font-size: 10px;
+    margin-bottom: 2px;
+  }
+  .nd-col.work .field input,
+  .nd-col.work .field select {
+    padding: 5px 9px;
+  }
+  .nd-card {
+    padding: 10px 11px;
+  }
+}
+
 /* 방문 히스토리 패널 (첫 진입 → 폼 제출까지 page_view 흐름) */
 .est-visit-history-panel h3 {
   display: flex;
@@ -2429,7 +2940,7 @@
     opacity: 0.7;
   }
   .sidebar-link.active {
-    color: var(--c-brand, #1a2f4e) !important;
+    color: var(--c-brand, #5a5448) !important;
     background: transparent !important;
   }
   .sidebar-link.active svg {
@@ -2443,7 +2954,7 @@
     left: 22%;
     right: 22%;
     height: 2.5px;
-    background: var(--c-brand, #1a2f4e);
+    background: var(--c-brand, #5a5448);
     border-radius: 0 0 3px 3px;
   }
   .nav-label-full {
