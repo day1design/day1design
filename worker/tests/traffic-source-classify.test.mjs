@@ -93,7 +93,15 @@ test("[가드] 도메인 형태는 기타로 떨어지지 않는다", () => {
   assert.equal(ch("unpa.me"), "referral");
   // 도메인도 아니고 아는 채널도 아닌 값만 기타다.
   assert.equal(ch("unknown-token"), "other");
-  assert.equal(ch(""), "other");
+});
+
+// 자체 집계는 UTM 도 referrer 도 없을 때 '(none)' 을 넣는다. 곧 직접 유입인데
+// direct 목록에 없어서 기타로 떨어지고 있었다.
+test("[가드] 출처가 비면 직접 유입으로 센다", () => {
+  assert.equal(ch("(none)"), "direct");
+  assert.equal(ch("(not set)"), "direct");
+  assert.equal(ch(""), "direct");
+  assert.equal(ch("(direct)"), "direct");
 });
 
 // [가드] 라이브에서 실제로 관측된 출처 전체가 기타로 떨어지지 않아야 한다.
