@@ -1261,9 +1261,10 @@ async function openDetail(id) {
                 <input type="datetime-local" id="editConsultAt" value="${(r.ConsultAt || "").slice(0, 16)}" />
               </div>
               <p class="nd-sync">
-                📅 저장하면 <b>상담 캘린더</b>에 자동으로 올라가고
-                <b>데이원디자인 상담일정관리</b> 채널로 알림이 갑니다. 비우면
-                캘린더에서도 지워집니다.
+                📅 저장하면 <b>상담 캘린더</b>에 올라가고
+                <b>데이원디자인 상담일정관리</b> 채널로 알림이 갑니다.
+                일시를 비우면 예약이 없던 것이 되고, 캘린더에서 취소하면
+                일정은 <b>취소됨</b>으로 남습니다.
               </p>
               <div class="field">
                 <label>상담 지점</label>
