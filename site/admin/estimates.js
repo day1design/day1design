@@ -482,6 +482,167 @@ function fmtShare(count, total) {
   return `${Math.round(pct)}%`;
 }
 
+// 고객이 자유롭게 쓴 예산 문구에서 금액을 만원 단위로 읽는다.
+//
+// 예산은 따로 저장되지 않는다. 워커가 `가용예산: 5000만원\n(상세)` 처럼 Detail
+// 한 칸에 이어 붙이므로 여기서 다시 뽑아 쓴다. 게다가 폼이 고르는 방식이 아니라
+// 자유 입력이라 '1억3천'·'9000~1억'·'3,000'·'2천대'·'미정' 이 다 들어온다.
+// 라이브 593건 실측으로 514건(86%)을 읽는다. 못 읽은 것은 감추지 않고
+// '금액 미기재' 로 따로 세어 합이 100%가 되게 한다.
+const BUDGET_UNDECIDED = /미정|상의|협의|결정|모르|문의|추후|생각중|고민/;
+const BUDGET_PER_PYEONG = /평당|평 당|1평|한평/;
+const BUDGET_HANGUL = {
+  일: 1,
+  이: 2,
+  삼: 3,
+  사: 4,
+  오: 5,
+  육: 6,
+  칠: 7,
+  팔: 8,
+  구: 9,
+  십: 10,
+};
+const BUDGET_BANDS = [
+  { max: 3000, label: "3천만원 미만", key: "b1" },
+  { max: 5000, label: "3~5천만원", key: "b2" },
+  { max: 7000, label: "5~7천만원", key: "b3" },
+  { max: 10000, label: "7천~1억", key: "b4" },
+  { max: 15000, label: "1억~1억5천", key: "b5" },
+  { max: Infinity, label: "1억5천 이상", key: "b6" },
+];
+
+function budgetTextOf(r) {
+  const m = /가용예산\s*:\s*([^\n\r]*)/.exec(String(r?.Detail || ""));
+  return m ? m[1].trim() : "";
+}
+
+function parseBudget(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  if (BUDGET_PER_PYEONG.test(s)) return null; // 총액이 아니라 단가다
+  if (BUDGET_UNDECIDED.test(s) && !/\d/.test(s)) return null;
+
+  let t = s.replace(/,/g, "").replace(/\s/g, "");
+  if (/^0\d{8,12}$/.test(t)) return null; // 연락처를 잘못 넣은 것
+
+  for (const [k, v] of Object.entries(BUDGET_HANGUL)) {
+    t = t.split(`${k}천`).join(`${v}천`).split(`${k}억`).join(`${v}억`);
+  }
+  t = t
+    .replace(/(^|[^0-9])천만/g, "$11000만")
+    .replace(/(^|[^0-9])천(?![만원])/g, "$11000");
+
+  // 범위는 앞 값을 쓰되 '6-7000' 처럼 앞이 짧으면 뒤 자릿수에 맞춘다
+  const parts = t.split(/[~\-–—]/);
+  if (parts.length >= 2) {
+    const a = parts[0].match(/\d+/);
+    const b = parts[1].match(/\d+/);
+    if (a && b && a[0].length < b[0].length && !parts[0].includes("억")) {
+      t =
+        a[0] +
+        "0".repeat(b[0].length - a[0].length) +
+        parts[1].slice(b.index + b[0].length);
+    } else {
+      t = parts[0];
+    }
+  }
+  t = t.split(/이상|이하|정도|내외|안팎/)[0];
+
+  let m = t.match(/(\d+(?:\.\d+)?)억\s*(\d+)?\s*(천|백)?/);
+  if (m) {
+    let v = parseFloat(m[1]) * 10000;
+    if (m[2]) {
+      const num = parseFloat(m[2]);
+      v += m[3] === "천" ? num * 1000 : m[3] === "백" ? num * 100 : num;
+    }
+    return Math.round(v);
+  }
+  m = t.match(/(\d+(?:\.\d+)?)천/);
+  if (m) return Math.round(parseFloat(m[1]) * 1000);
+  m = t.match(/(\d+)만/);
+  if (m) {
+    const num = Number(m[1]);
+    return num <= 200000 ? num : null;
+  }
+  m = t.match(/(\d{3,})/);
+  if (m) {
+    let num = Number(m[1]);
+    if (num >= 1000000) num = Math.floor(num / 10000); // 원 단위로 적은 것
+    return num >= 100 && num <= 200000 ? num : null;
+  }
+  return null;
+}
+
+// 막대 한 줄. 채널·예산이 같은 모양을 쓰므로 함께 쓴다
+function statBarRow(key, labelHtml, count, total, extraClass, titleAttr) {
+  return `
+      <div class="est-channel-item ${extraClass || ""}"${titleAttr || ""}>
+        <span class="est-channel-name">${labelHtml}</span>
+        <span class="est-channel-track">
+          <i class="est-channel-fill bar-${key}" style="width:${((count / total) * 100).toFixed(2)}%"></i>
+        </span>
+        <span class="est-channel-val"
+          ><strong>${fmtInt(count)}</strong><em>${fmtShare(count, total)}</em></span
+        >
+      </div>`;
+}
+
+function renderBudgetStats(list) {
+  const wrap = document.getElementById("estBudgetList");
+  const sub = document.getElementById("estBudgetSub");
+  if (!wrap) return;
+  const total = list.length;
+  if (!total) {
+    wrap.innerHTML =
+      '<div class="est-channel-empty">해당 조건의 접수가 없습니다</div>';
+    if (sub) sub.textContent = "가용 예산";
+    return;
+  }
+  const counts = new Map(BUDGET_BANDS.map((b) => [b.key, 0]));
+  let unknown = 0;
+  for (const r of list) {
+    const amount = parseBudget(budgetTextOf(r));
+    if (amount === null) {
+      unknown += 1;
+      continue;
+    }
+    const band = BUDGET_BANDS.find((b) => amount < b.max);
+    counts.set(band.key, counts.get(band.key) + 1);
+  }
+  const rows = BUDGET_BANDS.filter((b) => counts.get(b.key) > 0)
+    .sort((a, b) => counts.get(b.key) - counts.get(a.key))
+    .map((b) =>
+      statBarRow(
+        b.key,
+        escapeHtml(b.label),
+        counts.get(b.key),
+        total,
+        "",
+        ` title="${escapeHtml(b.label)} ${fmtInt(counts.get(b.key))}건 · ${fmtShare(counts.get(b.key), total)}"`,
+      ),
+    )
+    .join("");
+  const unknownRow = unknown
+    ? statBarRow(
+        "bnone",
+        "금액 미기재",
+        unknown,
+        total,
+        "is-none",
+        ' title="금액을 적지 않았거나 «미정»·«협의 후»·평당 단가로 답한 건"',
+      )
+    : "";
+  wrap.innerHTML =
+    rows || unknownRow
+      ? rows + unknownRow
+      : '<div class="est-channel-empty">예산을 적은 접수가 없습니다</div>';
+  if (sub) {
+    const read = total - unknown;
+    sub.textContent = `가용 예산 · ${fmtInt(read)}건 읽음`;
+  }
+}
+
 function renderChannelStats(list) {
   const wrap = document.getElementById("estChannelList");
   const sub = document.getElementById("estChannelSub");
@@ -509,16 +670,8 @@ function renderChannelStats(list) {
   const items = [...counts.values()].sort((a, b) => b.count - a.count);
   // 막대 길이 = 전체 대비 비중. 비중이 1% 미만이어도 막대가 사라지지 않도록
   // 최소 길이를 준다(CSS min-width).
-  const barRow = (key, labelHtml, count, extraClass, titleAttr) => `
-      <div class="est-channel-item ${extraClass || ""}"${titleAttr || ""}>
-        <span class="est-channel-name">${labelHtml}</span>
-        <span class="est-channel-track">
-          <i class="est-channel-fill bar-${key}" style="width:${((count / total) * 100).toFixed(2)}%"></i>
-        </span>
-        <span class="est-channel-val"
-          ><strong>${fmtInt(count)}</strong><em>${fmtShare(count, total)}</em></span
-        >
-      </div>`;
+  const barRow = (key, labelHtml, count, extraClass, titleAttr) =>
+    statBarRow(key, labelHtml, count, total, extraClass, titleAttr);
   const slugItem = slugCount
     ? barRow(
         "slug",
@@ -804,6 +957,7 @@ function briefText(r, fallback = "접수내용 없음") {
 function render() {
   const list = filtered();
   renderChannelStats(list);
+  renderBudgetStats(list);
   if (!list.length) {
     body.innerHTML = '<div class="empty-state">접수 내역이 없습니다.</div>';
     return;

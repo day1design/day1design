@@ -13,7 +13,7 @@
     />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260903-calendar2" />
+    <link rel="stylesheet" href="admin.css?v=20260903-budget" />
     <script>
       window.ADMIN_PAGE = { title: "상담신청", nav: "estimates" };
     </script>
@@ -31,9 +31,9 @@
         <!-- 접수채널별 유입량 — 기간 컨트롤은 이 화면에 하나뿐이다.
              여기서 고른 기간이 아래 접수카드 목록과 엑셀 다운로드까지 그대로 적용된다.
              (기간 입력을 툴바에 따로 두면 컨트롤이 둘이 돼 혼동이 생겼다) -->
-        <section class="est-inflow-box" aria-label="접수채널별 유입량">
+        <section class="est-inflow-box" aria-label="접수 통계">
           <div class="est-inflow-head">
-            <span class="est-stat-label">접수채널별 유입량</span>
+            <span class="est-stat-label">접수 통계</span>
             <span class="est-channel-sub" id="estChannelSub">—</span>
           </div>
           <div class="est-period-bar">
@@ -78,8 +78,19 @@
               </label>
             </div>
           </div>
-          <div class="est-channel-list" id="estChannelList">
-            <div class="est-channel-empty">불러오는 중...</div>
+          <div class="est-stat-cols">
+            <div class="est-stat-col">
+              <h4>어디서 왔나 <em id="estChannelColSub">접수채널</em></h4>
+              <div class="est-channel-list" id="estChannelList">
+                <div class="est-channel-empty">불러오는 중...</div>
+              </div>
+            </div>
+            <div class="est-stat-col">
+              <h4>얼마를 생각하나 <em id="estBudgetSub">가용 예산</em></h4>
+              <div class="est-channel-list" id="estBudgetList">
+                <div class="est-channel-empty">불러오는 중...</div>
+              </div>
+            </div>
           </div>
           <p class="est-inflow-note">
             선택한 기간이 아래 접수카드 목록과 엑셀 다운로드에도 함께
@@ -428,6 +439,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
     <script defer src="admin.js?v=20260903-calendar2"></script>
-    <script defer src="estimates.js?v=20260903-calendar2"></script>
+    <script defer src="estimates.js?v=20260903-budget2"></script>
   </body>
 </html>

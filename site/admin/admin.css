@@ -2261,6 +2261,72 @@
   overflow: auto;
 }
 
+/* 접수 통계 두 단 — 채널 옆에 예산대를 나란히 둔다 (2026-09-03) */
+.est-stat-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+.est-stat-col {
+  min-width: 0;
+}
+.est-stat-col > h4 {
+  font-size: 11px;
+  font-weight: 800;
+  color: #6b6559;
+  letter-spacing: 0.3px;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.est-stat-col > h4::before {
+  content: "";
+  width: 3px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--c-brand, #5a5448);
+}
+.est-stat-col > h4 em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--c-text-muted);
+  margin-left: auto;
+}
+/* 금액을 못 읽은 건은 눈에 덜 띄게 두되 감추지는 않는다 — 빼버리면 합이
+   100%가 안 되는데 그 사실이 화면에 나타나지 않는다 */
+.est-channel-item.is-none .est-channel-name,
+.est-channel-item.is-none .est-channel-val strong {
+  color: var(--c-text-muted);
+}
+.bar-b1 {
+  background: #cfd8e6;
+}
+.bar-b2 {
+  background: #9fb2cd;
+}
+.bar-b3 {
+  background: #6f8bb3;
+}
+.bar-b4 {
+  background: #4a6892;
+}
+.bar-b5 {
+  background: #2f4a6d;
+}
+.bar-b6 {
+  background: #1a2f4e;
+}
+.bar-bnone {
+  background: #e5e7eb;
+}
+@media (max-width: 900px) {
+  .est-stat-cols {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
 /* ========== 접수 상세 개편 (2026-09-03) ==========
    왼쪽은 고객에게서 받은 정보, 오른쪽은 이번 상담을 처리하는 곳으로 가른다.
    좁은 화면에서는 그 둘이 탭이 된다. 와이어프레임: 260903_est-detail-redesign.html */
