@@ -32,15 +32,20 @@ const SOURCE_LABELS = {
   facebook_ad: "[AD]FB",
   facebook: "FB",
   threads: "Threads",
+  meta_ad: "[AD]Meta",
   meta: "Meta",
   google: "Google",
   naver: "Naver",
   youtube: "YouTube",
   kakao: "Kakao",
-  direct: "Direct",
-  search: "Search",
+  ai: "AI 검색",
+  search: "검색(기타)",
+  community: "커뮤니티",
+  recruit: "채용사이트",
   social: "Social",
-  referral: "Referral",
+  internal: "내부·테스트",
+  referral: "외부유입",
+  direct: "Direct",
   other: "기타",
 };
 
@@ -58,15 +63,22 @@ const SOURCE_COLORS = {
   facebook_ad: "#1877F2",
   facebook: "#8AB4F8",
   threads: "#101010",
-  meta: "#0668E1",
+  meta_ad: "#0668E1",
+  meta: "#7FB2F0",
   google: "#FF9800",
   naver: "#03C75A",
   youtube: "#E84545",
   kakao: "#FAE100",
-  direct: "#6B7280",
+  // AI 답변 엔진·커뮤니티·채용은 광고/검색과 성격이 달라 색도 갈라 둔다.
+  // 채용과 내부는 고객 유입이 아니므로 채도를 낮춰 눈에 덜 띄게 한다.
+  ai: "#0891B2",
   search: "#0EA5E9",
+  community: "#F472B6",
+  recruit: "#78716C",
   social: "#8B5CF6",
+  internal: "#D1D5DB",
   referral: "#14B8A6",
+  direct: "#6B7280",
   other: "#B8C0CC",
 };
 
@@ -2085,7 +2097,10 @@ function renderSourceConversion() {
     ...trafficMap.keys(),
     ...Object.keys(submissionCounts),
   ]);
-  keys.delete("meta");
+  // Meta 계열은 전환율에서 뺀다 — 접수는 Source='meta' 한 덩어리로 들어오는데
+  // 방문은 게재면별로 갈려(instagram_ad·meta_ad…) 분모와 분자가 안 맞는다.
+  // 내부·테스트 유입도 고객이 아니라 분모에서 제외한다.
+  ["meta", "meta_ad", "internal"].forEach((key) => keys.delete(key));
   if (
     !keys.size &&
     submissionRecords == null &&
