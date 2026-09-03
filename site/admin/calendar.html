@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>상담 캘린더 · DAYONE ADMIN</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://day1design.co.kr" crossorigin />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
+    <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
+    <link rel="stylesheet" href="admin.css?v=20260903-detail" />
+    <style>
+      /* 상담 지점별 식별색 — 캘린더 칩과 필터 점이 같은 색을 쓴다 */
+      .cc {
+        --br-gangnam: #2563eb;
+        --br-pangyo: #16a34a;
+        --br-onsite: #f59e0b;
+        --br-online: #8b5cf6;
+        --br-etc: #64748b;
+      }
+
+      /* ── 요약 ── */
+      .cc-sum {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .cc-sum .card {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        box-shadow: var(--shadow-card);
+      }
+      .cc-sum .card.accent {
+        border-color: var(--c-brand);
+        background: var(--c-brand-soft);
+      }
+      .cc-sum .label {
+        font-size: 12px;
+        color: var(--c-text-sub);
+        margin-bottom: 6px;
+      }
+      .cc-sum .value {
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .cc-sum .value small {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--c-text-sub);
+        margin-left: 3px;
+      }
+
+      /* ── 툴바 ── */
+      .cc-bar {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+        box-shadow: var(--shadow-card);
+      }
+      .cc-month {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .cc-month .m {
+        font-size: 17px;
+        font-weight: 700;
+        min-width: 108px;
+        text-align: center;
+      }
+      .cc-sp {
+        flex: 1;
+      }
+      .cc-filter {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .cc-chip {
+        border: 1px solid var(--c-border);
+        background: var(--c-surface);
+        border-radius: 999px;
+        padding: 5px 11px;
+        font-size: 12px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-family: inherit;
+        color: var(--c-text-sub);
+      }
+      .cc-chip .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .cc-chip.on {
+        border-color: var(--c-text);
+        color: var(--c-text);
+        font-weight: 600;
+        background: #f9fafb;
+      }
+      .cc-chip:not(.on) {
+        opacity: 0.45;
+      }
+
+      /* ── 본문 2단 ── */
+      .cc-cols {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 16px;
+        align-items: start;
+      }
+
+      /* ── 월 캘린더 ── */
+      .cc-cal {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: var(--shadow-card);
+      }
+      .cc-dow {
+        display: grid;
+        /* 1fr 로 두면 칩의 nowrap 최소폭이 열을 밀어 격자가 화면을 넘는다 */
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        border-bottom: 1px solid var(--c-border);
+        background: #fafbfc;
+      }
+      .cc-dow div {
+        padding: 9px 0;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--c-text-sub);
+      }
+      .cc-dow div:first-child {
+        color: #dc2626;
+      }
+      .cc-dow div:last-child {
+        color: #2563eb;
+      }
+      .cc-grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+      }
+      .cc-cell {
+        min-height: 112px;
+        border-right: 1px solid var(--c-border-soft);
+        border-bottom: 1px solid var(--c-border-soft);
+        padding: 6px 6px 8px;
+        cursor: pointer;
+        background: var(--c-surface);
+        text-align: left;
+        font: inherit;
+        color: inherit;
+      }
+      .cc-cell:nth-child(7n) {
+        border-right: 0;
+      }
+      .cc-cell:hover {
+        background: #fafbfc;
+      }
+      .cc-cell.other {
+        background: #fbfbfc;
+      }
+      .cc-cell.other .d {
+        color: var(--c-text-muted);
+      }
+      .cc-cell.sel {
+        background: var(--c-brand-soft);
+        box-shadow: inset 0 0 0 2px var(--c-brand);
+      }
+      .cc-cell .d {
+        font-size: 13px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        margin-bottom: 4px;
+      }
+      .cc-cell.sun .d {
+        color: #dc2626;
+      }
+      .cc-cell.sat .d {
+        color: #2563eb;
+      }
+      .cc-cell.today .d {
+        background: var(--c-brand);
+        color: #fff;
+      }
+      .cc-ev {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        border-radius: 4px;
+        padding: 3px 6px;
+        margin-bottom: 3px;
+        font-size: 11.5px;
+        line-height: 1.35;
+        color: #fff;
+        font-family: inherit;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .cc-ev .t {
+        font-weight: 700;
+        margin-right: 4px;
+      }
+      .cc-ev.b-gangnam {
+        background: var(--br-gangnam);
+      }
+      .cc-ev.b-pangyo {
+        background: var(--br-pangyo);
+      }
+      .cc-ev.b-onsite {
+        background: var(--br-onsite);
+      }
+      .cc-ev.b-online {
+        background: var(--br-online);
+      }
+      .cc-ev.b-etc {
+        background: var(--br-etc);
+      }
+      .cc-ev.dim {
+        opacity: 0.45;
+      }
+      /* 취소는 지우지 않고 취소선으로 남긴다 */
+      .cc-ev.cancelled {
+        background: #e5e7eb;
+        color: #6b7280;
+        text-decoration: line-through;
+      }
+      .cc-more {
+        font-size: 11px;
+        color: var(--c-text-sub);
+        padding-left: 4px;
+      }
+
+      /* ── 선택일 패널 ── */
+      .cc-side {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+      }
+      .cc-side-head {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--c-border);
+        background: var(--c-sidebar);
+        color: #fff;
+      }
+      .cc-side-head .d {
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .cc-side-head .n {
+        font-size: 12px;
+        color: #cbd5e1;
+        margin-top: 3px;
+      }
+      .cc-side-body {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: 620px;
+        overflow-y: auto;
+      }
+      .cc-bk {
+        border: 1px solid var(--c-border);
+        border-left: 4px solid var(--c-border);
+        border-radius: var(--radius-sm);
+        padding: 11px 12px;
+      }
+      .cc-bk.b-gangnam {
+        border-left-color: var(--br-gangnam);
+      }
+      .cc-bk.b-pangyo {
+        border-left-color: var(--br-pangyo);
+      }
+      .cc-bk.b-onsite {
+        border-left-color: var(--br-onsite);
+      }
+      .cc-bk.b-online {
+        border-left-color: var(--br-online);
+      }
+      .cc-bk.b-etc {
+        border-left-color: var(--br-etc);
+      }
+      .cc-bk.cancelled {
+        border-left-color: #9ca3af;
+        background: #fafafa;
+      }
+      .cc-bk.cancelled .cc-bk-time,
+      .cc-bk.cancelled .cc-bk-name {
+        color: var(--c-text-sub);
+        text-decoration: line-through;
+      }
+      .cc-cancel-tag {
+        margin-left: auto;
+        font-size: 11px;
+        font-weight: 700;
+        color: #b91c1c;
+        background: #fef2f2;
+        border-radius: 999px;
+        padding: 2px 8px;
+      }
+      .cc-bk-status.off {
+        background: #f3f4f6;
+        color: var(--c-text-sub);
+      }
+      .cc-bk-top {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 7px;
+      }
+      .cc-bk-time {
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+      }
+      .cc-bk-branch {
+        font-size: 12px;
+        color: var(--c-text-sub);
+      }
+      .cc-bk-name {
+        font-size: 15px;
+        font-weight: 600;
+        margin-bottom: 2px;
+      }
+      .cc-bk-meta {
+        font-size: 12.5px;
+        color: var(--c-text-sub);
+        line-height: 1.6;
+      }
+      .cc-bk-status {
+        display: inline-block;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        margin-top: 7px;
+      }
+      .cc-bk-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .cc-bk-actions .btn {
+        flex: 1;
+        padding: 6px 0;
+        text-align: center;
+        font-size: 12.5px;
+      }
+      .cc-empty {
+        text-align: center;
+        color: var(--c-text-muted);
+        font-size: 13px;
+        padding: 36px 12px;
+        line-height: 1.7;
+      }
+
+      /* ── 다가오는 상담 ── */
+      .cc-up {
+        margin-top: 16px;
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+      }
+      .cc-up-head {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--c-border);
+        font-weight: 700;
+        font-size: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+      .cc-up-head .hint {
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--c-text-sub);
+      }
+      table.cc-up-t {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      table.cc-up-t th,
+      table.cc-up-t td {
+        text-align: left;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--c-border-soft);
+        font-size: 13px;
+      }
+      table.cc-up-t th {
+        font-size: 12px;
+        color: var(--c-text-sub);
+        font-weight: 600;
+        background: #fafbfc;
+      }
+      table.cc-up-t tr:last-child td {
+        border-bottom: 0;
+      }
+      .cc-dday {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #f3f4f6;
+        color: var(--c-text-sub);
+        white-space: nowrap;
+      }
+      .cc-dday.soon {
+        background: #fef2f2;
+        color: #b91c1c;
+      }
+      .cc-dday.today {
+        background: var(--c-brand);
+        color: #fff;
+      }
+      .cc-dday.cancel {
+        background: #fef2f2;
+        color: #b91c1c;
+      }
+      table.cc-up-t tr.off td {
+        color: var(--c-text-muted);
+      }
+      table.cc-up-t tr.off td:nth-child(3) {
+        text-decoration: line-through;
+      }
+      .cc-bdot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: 1px;
+      }
+
+      @media (max-width: 980px) {
+        .cc-cols {
+          grid-template-columns: 1fr;
+        }
+        .cc-sum {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 640px) {
+        .cc-cell {
+          min-height: 78px;
+          padding: 4px 3px;
+        }
+        /* 좁아도 빈 막대로 만들지 않는다. 시간을 윗줄로 올려 이름을 살린다 */
+        .cc-ev {
+          font-size: 9.5px;
+          line-height: 1.3;
+          padding: 2px 3px;
+          letter-spacing: -0.3px;
+          white-space: normal;
+        }
+        .cc-ev .t {
+          display: block;
+          margin-right: 0;
+        }
+        .cc-cell .d {
+          font-size: 12px;
+          width: 20px;
+          height: 20px;
+        }
+        .cc-side-body {
+          max-height: none;
+        }
+        /* 표를 좁히면 이름이 한 글자씩 세로로 떨어진다 → 카드로 바꾼다 */
+        table.cc-up-t thead {
+          display: none;
+        }
+        table.cc-up-t,
+        table.cc-up-t tbody,
+        table.cc-up-t tr,
+        table.cc-up-t td {
+          display: block;
+          width: auto;
+        }
+        table.cc-up-t tr {
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 3px 8px;
+          align-items: center;
+          padding: 12px 14px;
+          border-bottom: 1px solid var(--c-border-soft);
+        }
+        table.cc-up-t tr:last-child {
+          border-bottom: 0;
+        }
+        table.cc-up-t td {
+          border: 0;
+          padding: 0;
+          font-size: 13px;
+        }
+        table.cc-up-t td:nth-child(2) {
+          font-weight: 600;
+        }
+        table.cc-up-t td:nth-child(3) {
+          grid-column: 1 / -1;
+          font-size: 14px;
+          font-weight: 600;
+          margin-top: 3px;
+        }
+        table.cc-up-t td:nth-child(4),
+        table.cc-up-t td:nth-child(5) {
+          grid-column: 1 / -1;
+          color: var(--c-text-sub);
+          font-size: 12.5px;
+        }
+      }
+    </style>
+    <script>
+      window.ADMIN_PAGE = { title: "상담 캘린더", nav: "calendar" };
+    </script>
+  </head>
+  <body class="admin-body">
+    <aside
+      class="admin-sidebar"
+      id="adminSidebar"
+      aria-label="관리자 메뉴"
+    ></aside>
+    <div class="admin-backdrop" id="adminBackdrop" aria-hidden="true"></div>
+    <div class="admin-layout">
+      <header class="admin-topbar" id="adminTopbar"></header>
+      <main class="admin-content" id="adminContent">
+        <div class="page-header">
+          <div>
+            <h2>상담 캘린더</h2>
+            <p>
+              상담신청에서 <b>상담 예약 일시</b>를 저장한 건이 여기에
+              올라옵니다. 취소해도 일정은 지워지지 않고
+              <b>취소로 표시되어 남습니다</b>. 등록·변경·취소는
+              <b>데이원디자인 상담일정관리</b> 채널로 알립니다.
+            </p>
+          </div>
+          <div class="page-actions">
+            <a class="btn btn-ghost" href="estimates">상담신청으로</a>
+          </div>
+        </div>
+
+        <div class="cc">
+          <div class="cc-sum">
+            <div class="card accent">
+              <div class="label">오늘 상담</div>
+              <div class="value" id="ccToday">-<small>건</small></div>
+            </div>
+            <div class="card">
+              <div class="label">이번 주</div>
+              <div class="value" id="ccWeek">-<small>건</small></div>
+            </div>
+            <div class="card">
+              <div class="label" id="ccMonthLabel">이번 달</div>
+              <div class="value" id="ccMonth">-<small>건</small></div>
+            </div>
+            <div class="card">
+              <div class="label" id="ccContractLabel">이번 달 계약 전환</div>
+              <div class="value" id="ccContract">-<small>건</small></div>
+            </div>
+          </div>
+
+          <div class="cc-bar">
+            <div class="cc-month">
+              <button class="btn btn-ghost" type="button" id="ccPrev">◀</button>
+              <span class="m" id="ccLabel">-</span>
+              <button class="btn btn-ghost" type="button" id="ccNext">▶</button>
+              <button class="btn btn-ghost" type="button" id="ccToday2">
+                오늘
+              </button>
+            </div>
+            <div class="cc-sp"></div>
+            <div class="cc-filter" id="ccFilter"></div>
+          </div>
+
+          <div class="cc-cols">
+            <div class="cc-cal">
+              <div class="cc-dow">
+                <div>일</div>
+                <div>월</div>
+                <div>화</div>
+                <div>수</div>
+                <div>목</div>
+                <div>금</div>
+                <div>토</div>
+              </div>
+              <div class="cc-grid" id="ccGrid"></div>
+            </div>
+
+            <div class="cc-side">
+              <div class="cc-side-head">
+                <div class="d" id="ccSelDate">-</div>
+                <div class="n" id="ccSelCount">-</div>
+              </div>
+              <div class="cc-side-body" id="ccSelList"></div>
+            </div>
+          </div>
+
+          <div class="cc-up">
+            <div class="cc-up-head">
+              다가오는 상담
+              <span class="hint">오늘 이후 예약을 시간순으로 나열합니다</span>
+            </div>
+            <table class="cc-up-t">
+              <thead>
+                <tr>
+                  <th style="width: 92px">남은 기간</th>
+                  <th style="width: 180px">일시</th>
+                  <th>고객</th>
+                  <th style="width: 200px">연락처 · 담당</th>
+                  <th style="width: 160px">상태</th>
+                </tr>
+              </thead>
+              <tbody id="ccUpBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script defer src="config.js"></script>
+    <script defer src="admin.js?v=20260626-authfast"></script>
+    <script defer src="calendar.js?v=20260903"></script>
+  </body>
+</html>

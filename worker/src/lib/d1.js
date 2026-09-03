@@ -43,6 +43,7 @@ const SCHEMA = {
     "ContactedAt",
     "ConsultAt",
     "ConsultBranch",
+    "ConsultCancelledAt",
     "ContractAt",
     "ContractOwner",
     "ContractAmount",

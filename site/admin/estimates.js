@@ -396,6 +396,16 @@ function fmtConsultAt(iso) {
   }
 }
 
+// 상담 캘린더로 넘길 날짜(YYYY-MM-DD). 화면 표기(fmtConsultAt)와 같은 기준을
+// 써야 카드에 보이는 날짜와 캘린더가 여는 날짜가 어긋나지 않는다.
+function consultDateParam(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function fmtInt(n) {
   return Number(n || 0).toLocaleString("ko-KR");
 }
@@ -835,7 +845,10 @@ function render() {
             ? `
         <span class="est-card-consult">
           <b>상담 예약</b>
-          <em>${escapeHtml(fmtConsultAt(r.ConsultAt))}${r.ConsultBranch ? ` · ${escapeHtml(r.ConsultBranch)}` : ""}</em>
+          <em>${escapeHtml(fmtConsultAt(r.ConsultAt))}${r.ConsultBranch ? ` · ${escapeHtml(r.ConsultBranch)}` : ""}${
+            r.ConsultCancelledAt ? " · 취소됨" : ""
+          }</em>
+          <a class="est-card-cal" href="calendar?date=${consultDateParam(r.ConsultAt)}">일정 확인</a>
         </span>`
             : ""
         }
@@ -873,7 +886,12 @@ function render() {
     })
     .join("");
   body.querySelectorAll(".est-card").forEach((card) => {
-    card.addEventListener("click", () => openDetail(card.dataset.id));
+    card.addEventListener("click", (e) => {
+      // 카드 안의 링크('일정 확인' 등)는 링크대로 보낸다. 안 그러면 상세가
+      // 같이 열려 캘린더로 넘어가는 중에 화면이 겹친다.
+      if (e.target.closest("a")) return;
+      openDetail(card.dataset.id);
+    });
   });
 }
 
@@ -898,9 +916,12 @@ function consultBandHtml(r) {
     return `<div class="nd-book none"><span>📅 상담 예약 미정</span></div>`;
   }
   const dday = ddayText(r.ConsultAt);
-  return `<div class="nd-book">
+  const date = consultDateParam(r.ConsultAt);
+  const cancelled = !!r.ConsultCancelledAt;
+  return `<div class="nd-book${cancelled ? " cancelled" : ""}">
       <span>📅 ${escapeHtml(fmtConsultAt(r.ConsultAt))} · ${escapeHtml(r.ConsultBranch || "지점 미정")}</span>
-      ${dday ? `<span class="dday">${escapeHtml(dday)}</span>` : ""}
+      ${cancelled ? `<span class="dday">취소됨</span>` : dday ? `<span class="dday">${escapeHtml(dday)}</span>` : ""}
+      ${date ? `<a class="nd-book-link" href="calendar?date=${date}">일정 확인</a>` : ""}
     </div>`;
 }
 
@@ -1240,8 +1261,8 @@ async function openDetail(id) {
                 <input type="datetime-local" id="editConsultAt" value="${(r.ConsultAt || "").slice(0, 16)}" />
               </div>
               <p class="nd-sync">
-                📅 저장하면 <b>일정관리 캘린더</b>에 자동으로 올라가고
-                <b>데이원디자인 일정관리</b> 채널로 알림이 갑니다. 비우면
+                📅 저장하면 <b>상담 캘린더</b>에 자동으로 올라가고
+                <b>데이원디자인 상담일정관리</b> 채널로 알림이 갑니다. 비우면
                 캘린더에서도 지워집니다.
               </p>
               <div class="field">
@@ -1253,7 +1274,8 @@ async function openDetail(id) {
                       `<option value="${escapeHtml(b)}"${r.ConsultBranch === b ? " selected" : ""}>${escapeHtml(b)}</option>`,
                   ).join("")}
                   ${
-                    r.ConsultBranch && !CONSULT_BRANCHES.includes(r.ConsultBranch)
+                    r.ConsultBranch &&
+                    !CONSULT_BRANCHES.includes(r.ConsultBranch)
                       ? `<option value="${escapeHtml(r.ConsultBranch)}" selected>${escapeHtml(r.ConsultBranch)}</option>`
                       : ""
                   }
@@ -1738,6 +1760,10 @@ if (btnExportCsv) btnExportCsv.addEventListener("click", exportFilteredCsv);
     const d = await adminUtil.api("/api/estimates");
     records = d.records || [];
     render();
+    // 상담 캘린더에서 estimates?id=rec... 로 넘어오면 그 건을 바로 펼친다.
+    // 목록만 열리면 상담 인력이 캘린더에서 본 고객을 다시 찾아야 한다.
+    const wantId = new URLSearchParams(location.search).get("id");
+    if (wantId && records.some((r) => r.id === wantId)) openDetail(wantId);
   } catch (e) {
     body.innerHTML = `<div class="empty-state">로드 실패: ${escapeHtml(e.message)}</div>`;
   }

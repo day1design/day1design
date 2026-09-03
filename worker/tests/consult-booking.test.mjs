@@ -10,6 +10,7 @@ import test from "node:test";
 const FIELDS = [
   "ConsultAt",
   "ConsultBranch",
+  "ConsultCancelledAt",
   "ContractAt",
   "ContractOwner",
   "ContractAmount",
@@ -24,6 +25,10 @@ test("[가드] 상담 예약·계약 컬럼을 만드는 마이그레이션이 �
       ),
       readFile(
         new URL("../migrations/0042_contract_fields.sql", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../migrations/0043_consult_cancel.sql", import.meta.url),
         "utf8",
       ),
     ])

@@ -462,6 +462,14 @@ export async function handleEstimates(
       return jsonError(401, "Unauthorized");
     return listEstimates(request, env, ctx, services);
   }
+  // 상담 캘린더: 예약 일시가 잡힌 접수만 기간으로 훑는다. Estimates 를 그대로
+  // 읽으므로 접수를 지우면 캘린더에서도 함께 사라진다(별도 일정 테이블 없음).
+  // id 매칭보다 먼저 둔다 — 아래 정규식이 "calendar" 를 id 로 삼킨다.
+  if (path === "/calendar" && request.method === "GET") {
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
+    return listConsultCalendar(request, env);
+  }
   const idMatch = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (idMatch) {
     if (!(await verifyAdmin(request, env)))
@@ -523,6 +531,58 @@ async function getVisitHistory(env, id, services) {
   }
 }
 
+// ─── 상담 캘린더 ───
+// 기간 안에 예약이 잡힌 접수를 시간순으로 돌려준다. 어드민이 KST 로 계산한
+// 월 경계를 ISO(UTC)로 넘기고, 여기서는 문자열 비교만 한다
+// (ConsultAt 은 항상 ISO 문자열로 저장된다 — site/admin/estimates.js doPatch).
+async function listConsultCalendar(request, env) {
+  const url = new URL(request.url);
+  const from = url.searchParams.get("from") || "";
+  const to = url.searchParams.get("to") || "";
+  // 형식이 어긋난 값은 인덱스를 못 타고 전 구간을 훑는다 → 400 으로 끊는다
+  const isIso = (s) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s);
+  if (!isIso(from) || !isIso(to)) return jsonError(400, "Invalid range");
+  if (from >= to) return jsonError(400, "Invalid range");
+
+  try {
+    const res = await env.DB.prepare(
+      `SELECT id AS Id, Name, Phone, Status, Assignee, ConsultAt, ConsultBranch,
+              ConsultCancelledAt, Branch, SpaceType, SpaceSize, Address,
+              AddressDetail, Source
+       FROM Estimates
+       WHERE ConsultAt >= ? AND ConsultAt < ?
+       ORDER BY ConsultAt ASC
+       LIMIT 500`,
+    )
+      .bind(from, to)
+      .all();
+    const records = (res.results || []).map((r) => ({
+      id: r.Id,
+      name: r.Name || "",
+      phone: r.Phone || "",
+      status: r.Status || "",
+      assignee: r.Assignee || "",
+      consultAt: r.ConsultAt || "",
+      // 표시 지점은 ConsultBranch 다. Branch 는 접수 때 고른 희망 지점이라
+      // 실제 상담 지점과 다를 수 있다(마이그 0041 주석).
+      consultBranch: r.ConsultBranch || "",
+      // 취소해도 일정은 지우지 않는다. 값이 있으면 취소된 예약이고 캘린더에는
+      // '취소' 로 남는다(마이그 0043).
+      consultCancelledAt: r.ConsultCancelledAt || "",
+      branch: r.Branch || "",
+      spaceType: r.SpaceType || "",
+      spaceSize: r.SpaceSize || "",
+      address: [r.Address || "", r.AddressDetail || ""]
+        .filter(Boolean)
+        .join(" "),
+      source: r.Source || "",
+    }));
+    return jsonOk({ records });
+  } catch {
+    return jsonError(500, "Calendar lookup failed");
+  }
+}
+
 async function deleteEstimate(env, id, ctx, services) {
   if (!/^rec[a-zA-Z0-9]{14}$/.test(id)) {
     return jsonError(400, "Invalid id");
@@ -540,6 +600,18 @@ async function deleteEstimate(env, id, ctx, services) {
       ),
     );
     return jsonError(500, "Delete failed");
+  }
+  // 예약이 잡혀 있던 접수를 지우면 캘린더에서도 사라진다. 상담 인력이 모르고
+  // 나가는 일이 없도록 취소를 알린다(예약이 없던 접수는 알리지 않는다).
+  if (existing?.fields?.ConsultAt) {
+    notifyConsult(
+      env,
+      ctx,
+      consultNotifyText("deleted", existing.fields, {
+        at: existing.fields.ConsultAt,
+        branch: existing.fields.ConsultBranch || "",
+      }),
+    );
   }
   const fileUrls = [
     ...safeJsonParse(existing?.fields?.ConceptFiles),
@@ -1196,6 +1268,92 @@ async function listEstimates(request, env, ctx, services) {
   return jsonOk(payload);
 }
 
+// ─── 상담 예약 알림 (데이원디자인 상담일정관리 채널) ───
+// 전용 봇으로만 보낸다. 미설정이면 조용히 skip 한다 — 다른 채널로 새어 나가면
+// 상담 인력이 아닌 사람에게 고객 연락처가 간다.
+function notifyConsult(env, ctx, text) {
+  const botToken = String(env.CALENDAR_BOT_TOKEN || "").trim();
+  const chatId = String(env.CALENDAR_CHAT_ID || "").trim();
+  if (!botToken || !chatId) return;
+  const p = notifyTelegram(env, text, { botToken, chatId });
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(p);
+}
+
+const KST_OFFSET_MS = 9 * 3600 * 1000;
+const KST_DOW = ["일", "월", "화", "수", "목", "금", "토"];
+
+// 어드민 상세·캘린더와 같은 표기를 쓴다: 2026-09-12(토) 14:30
+function fmtConsultKst(iso) {
+  const t = Date.parse(iso);
+  if (!iso || Number.isNaN(t)) return String(iso || "");
+  const d = new Date(t + KST_OFFSET_MS);
+  const p = (n) => String(n).padStart(2, "0");
+  return (
+    `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}` +
+    `(${KST_DOW[d.getUTCDay()]}) ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`
+  );
+}
+
+// KST 날짜끼리 뺀다. 시각이 아니라 날짜 기준이라 오늘 저녁 예약도 '오늘' 이다.
+function ddayLabel(iso) {
+  const t = Date.parse(iso);
+  if (!iso || Number.isNaN(t)) return "";
+  const dayOf = (ms) => Math.floor((ms + KST_OFFSET_MS) / 86400000);
+  const diff = dayOf(t) - dayOf(Date.now());
+  if (diff === 0) return "오늘";
+  return diff > 0 ? `${diff}일 뒤` : `${-diff}일 전`;
+}
+
+function consultNotifyText(kind, fields, prev) {
+  const f = fields || {};
+  const at = (iso, branch) =>
+    `${fmtConsultKst(iso)}${branch ? ` · ${escapeHtml(branch)}` : ""}`;
+  const lines = [];
+  if (kind === "created") {
+    lines.push("[day1design/consult] 상담 예약");
+    lines.push(
+      `📅 ${at(f.ConsultAt, f.ConsultBranch)} · ${ddayLabel(f.ConsultAt)}`,
+    );
+  } else if (kind === "moved") {
+    lines.push("[day1design/consult] 상담 예약 변경");
+    lines.push(`이전 ${at(prev.at, prev.branch)}`);
+    lines.push(
+      `변경 ${at(f.ConsultAt, f.ConsultBranch)} · ${ddayLabel(f.ConsultAt)}`,
+    );
+  } else if (kind === "restored") {
+    lines.push("[day1design/consult] 상담 예약 되살림");
+    lines.push(
+      `📅 ${at(f.ConsultAt, f.ConsultBranch)} · ${ddayLabel(f.ConsultAt)}`,
+    );
+  } else if (kind === "cancelled") {
+    // 일정은 지우지 않았다. 캘린더에 '취소'로 남아 있다는 것을 알려 준다.
+    lines.push("[day1design/consult] 상담 예약 취소");
+    lines.push(
+      `📅 ${at(f.ConsultAt || prev.at, f.ConsultBranch || prev.branch)}`,
+    );
+    lines.push("캘린더에는 취소로 남습니다");
+  } else if (kind === "deleted") {
+    // 접수 자체가 지워진 경우. 이때만 캘린더에서도 카드가 사라진다.
+    lines.push("[day1design/consult] 상담 예약 취소 (접수 삭제)");
+    lines.push(`📅 ${at(prev.at, prev.branch)}`);
+    lines.push("접수가 지워져 캘린더에서도 사라집니다");
+  } else {
+    // 일시 자체를 비운 경우 — 잘못 넣은 예약을 되돌린 것이다.
+    lines.push("[day1design/consult] 상담 예약 일시 삭제");
+    lines.push(`📅 ${at(prev.at, prev.branch)}`);
+  }
+  lines.push(
+    `🙍 ${escapeHtml(f.Name || "")} · ${escapeHtml(f.Phone || "")}`.trimEnd(),
+  );
+  const space = [f.SpaceType, f.SpaceSize].filter(Boolean).join(" ");
+  const detail = [space, f.Address, f.AddressDetail]
+    .filter(Boolean)
+    .join(" · ");
+  if (detail) lines.push(`🏠 ${escapeHtml(detail)}`);
+  if (f.Assignee) lines.push(`👤 담당 ${escapeHtml(f.Assignee)}`);
+  return lines.join("\n");
+}
+
 async function patchEstimate(request, env, id, ctx, services) {
   let body;
   try {
@@ -1210,6 +1368,7 @@ async function patchEstimate(request, env, id, ctx, services) {
     "ContactedAt",
     "ConsultAt",
     "ConsultBranch",
+    "ConsultCancelledAt",
     "ContractAt",
     "ContractOwner",
     "ContractAmount",
@@ -1232,6 +1391,23 @@ async function patchEstimate(request, env, id, ctx, services) {
   const fields = {};
   for (const k of allowed) if (k in body) fields[k] = body[k];
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
+
+  // 알림은 "저장했다"가 아니라 "예약이 실제로 달라졌다"를 조건으로 한다.
+  // 저장만 해도 보내면, 이미 잡혀 있던 예약이 새 예약처럼 다시 알려져
+  // 상담 인력이 헛걸음한다 → 변경 전 값을 먼저 읽어 둔다.
+  const touchesConsult =
+    "ConsultAt" in fields ||
+    "ConsultBranch" in fields ||
+    "ConsultCancelledAt" in fields;
+  let before = null;
+  if (touchesConsult) {
+    try {
+      before = await services.estimates.get(id);
+    } catch {
+      before = null; // 못 읽으면 알림만 건너뛴다. 저장은 그대로 진행한다.
+    }
+  }
+
   let record;
   try {
     record = await services.estimates.update(id, fields);
@@ -1250,6 +1426,41 @@ async function patchEstimate(request, env, id, ctx, services) {
     ],
     ctx,
   );
+
+  // 예약이 잡혔는가·옮겨졌는가·취소됐는가·되살렸는가.
+  // 값이 그대로면 아무것도 보내지 않는다.
+  if (touchesConsult && before) {
+    const prevAt = String(before.fields?.ConsultAt || "");
+    const prevBranch = String(before.fields?.ConsultBranch || "");
+    const prevCancel = String(before.fields?.ConsultCancelledAt || "");
+    const nextAt = String(record.fields?.ConsultAt || "");
+    const nextBranch = String(record.fields?.ConsultBranch || "");
+    const nextCancel = String(record.fields?.ConsultCancelledAt || "");
+
+    let kind = "";
+    if (!prevCancel && nextCancel) {
+      // 취소는 일시를 지우지 않는다. 카드는 캘린더에 '취소'로 남는다.
+      kind = "cancelled";
+    } else if (prevCancel && !nextCancel) {
+      kind = "restored";
+    } else if (prevAt !== nextAt || prevBranch !== nextBranch) {
+      if (!prevAt && nextAt) kind = "created";
+      else if (prevAt && nextAt) kind = "moved";
+      // 일시를 아예 비우는 경로도 남아 있다(잘못 입력한 예약을 되돌릴 때).
+      else if (prevAt && !nextAt) kind = "cleared";
+      // 일시 없이 지점만 만지작거린 경우는 예약이 아니므로 알리지 않는다.
+    }
+    if (kind) {
+      notifyConsult(
+        env,
+        ctx,
+        consultNotifyText(kind, record.fields, {
+          at: prevAt,
+          branch: prevBranch,
+        }),
+      );
+    }
+  }
   return jsonOk({ id: record.id, updated: record.fields });
 }
 

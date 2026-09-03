@@ -2074,6 +2074,20 @@
   color: var(--c-primary, #1a2f4e);
   font-weight: 700;
 }
+.est-card-cal {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--c-brand, #5a5448);
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.est-card-cal:hover {
+  background: var(--c-brand-soft, #f4efe4);
+}
 .est-consult b {
   color: var(--c-primary, #1a2f4e);
 }
@@ -2318,6 +2332,27 @@
   color: var(--c-text-muted);
   font-weight: 600;
   border-bottom: 1px solid var(--c-border-soft);
+}
+/* 예약이 잡히면 여기서 바로 캘린더의 그 날짜로 넘어간다 */
+.nd-book-link {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  padding: 2px 9px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.nd-book-link:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+/* 취소해도 일정은 남는다 — 띠를 지우지 않고 색만 죽인다 */
+.nd-book.cancelled {
+  background: #6b7280;
+}
+.nd-book.cancelled > span:first-child {
+  text-decoration: line-through;
 }
 
 /* ── 본문 두 단 ── */
