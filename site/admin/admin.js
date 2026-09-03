@@ -305,7 +305,10 @@ function renderSidebar(currentNav) {
   const sidebar = document.getElementById("adminSidebar");
   if (!sidebar) return;
   sidebar.innerHTML = `<div class="sidebar-brand">
-       <div class="sidebar-brand-logo">D1</div>
+       <div class="sidebar-brand-logo">
+         <img src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-192.png"
+              alt="데이원디자인" width="30" height="30" decoding="async" />
+       </div>
        <div class="sidebar-brand-text">DAYONE<small>ADMIN</small></div>
      </div>
      <nav class="sidebar-nav" aria-label="주 메뉴">

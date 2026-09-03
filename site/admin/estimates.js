@@ -109,6 +109,20 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+// 지점 배지 — 색은 상담 캘린더의 지점색과 같게 맞춘다(강남 파랑·판교 초록·
+// 현장 주황). 목록을 훑을 때 어느 지점 건인지 글자를 읽지 않고 색으로 가른다.
+const BRANCH_BADGE = {
+  강남점: "badge branch-gangnam",
+  판교점: "badge branch-pangyo",
+  "고객 현장": "badge branch-onsite",
+};
+function branchBadge(b) {
+  const label = String(b || "").trim();
+  if (!label) return "";
+  const cls = BRANCH_BADGE[label] || "badge branch-etc";
+  return `<span class="${cls}">${escapeHtml(label)}</span>`;
+}
+
 function statusBadge(s) {
   const map = {
     접수대기: "badge status-pending",
@@ -1023,7 +1037,7 @@ function render() {
         </span>
         <span>
           <b>지점</b>
-          <em>${escapeHtml(branch)}</em>
+          <em>${branchBadge(branch)}</em>
         </span>
         <span>
           <b>유입</b>
