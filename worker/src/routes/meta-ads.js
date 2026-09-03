@@ -951,8 +951,33 @@ function buildBackfillChunks(startDate, endDate) {
 // cron 이 매시 돌면서 스스로 끝까지 채운다.
 // 마지막 구간은 어제까지 이어지며 날마다 늘어나므로, 끝 구간은 완료로 못박지 않고
 // 늘 다시 받는다(같은 키는 덮어쓰기라 행이 늘지 않는다).
+// D1 무료 플랜은 하루 읽기 행 수에 한도가 있다. 백필은 UPSERT 마다 인덱스를
+// 읽어 한도를 크게 먹는데, 한도에 걸린 뒤에도 cron 이 매시 재시도하면 접수·조회에
+// 쓸 몫까지 태운다. 같은 UTC 날짜 안에는 다시 시도하지 않고, 자정이 지나면 스스로
+// 재개한다.
+function isD1QuotaError(message) {
+  return /daily row read limit|exceeded .*(limit|quota)/i.test(
+    String(message || ""),
+  );
+}
+
 export async function runBackfillChunk(env, ctx) {
   if (!env?.DB) return { skipped: "no_db" };
+  const lastFail = await env.DB.prepare(
+    `SELECT ErrorMessage, CreatedAt FROM MetaSyncLog
+      WHERE SyncType = ? AND Status <> 'success'
+      ORDER BY CreatedAt DESC LIMIT 1`,
+  )
+    .bind(BACKFILL_CHUNK_TYPE)
+    .first();
+  if (
+    lastFail &&
+    isD1QuotaError(lastFail.ErrorMessage) &&
+    String(lastFail.CreatedAt).slice(0, 10) ===
+      new Date().toISOString().slice(0, 10)
+  ) {
+    return { skipped: "d1_quota", retryAfter: "다음 UTC 자정" };
+  }
   const endDate = kstYesterday();
   const chunks = buildBackfillChunks(BACKFILL_START_DATE, endDate);
   const doneRows = await env.DB.prepare(
