@@ -1206,6 +1206,9 @@ async function patchEstimate(request, env, id, ctx, services) {
     "ContactedAt",
     "ConsultAt",
     "ConsultBranch",
+    "ContractAt",
+    "ContractOwner",
+    "ContractAmount",
     "Memo",
     "EstimateAmount",
     // 고객 정보 (관리자 확인 후 수정)

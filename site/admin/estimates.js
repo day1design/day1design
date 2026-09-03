@@ -556,6 +556,77 @@ function filtered() {
 // 저장돼 있으면 그 값도 선택지에 남겨 덮어쓰지 않는다.
 const CONSULT_BRANCHES = ["강남점", "판교점", "고객 현장", "화상 상담"];
 
+// 상태 드롭다운. '계약완료' 는 여기 없다 — 계약은 일시·담당자·금액을 같이
+// 받아야 하므로 아래 계약 패널의 버튼으로만 처리한다. 드롭다운에 두면 금액을
+// 안 넣은 계약완료가 생긴다.
+const EST_STATUSES = [
+  "접수대기",
+  "고객 부재중",
+  "진행불가 (예산/범위/지역/일정등)",
+  "전화상담 후 미진행",
+  "전화상담 후 미팅예약",
+  "전화상담 후 대기중",
+  "보류",
+];
+
+const CONTRACT_STATUS = "계약완료";
+
+// 계약 패널 — 계약이 아닌 건에는 버튼 하나만 두고 입력칸을 감춘다. 쓰지도 않을
+// 칸이 늘 펼쳐져 있으면 상담 관리 화면이 계약서처럼 보인다.
+// 계약된 건은 값을 바로 펼쳐 두어 수정할 수 있게 한다.
+function contractPanelHtml(r) {
+  const done = r.Status === CONTRACT_STATUS;
+  const amount = Number(r.ContractAmount || 0) || Number(r.EstimateAmount || 0);
+  return `
+    <div class="est-contract ${done ? "is-done" : ""}" id="contractPanel" data-open="${done ? "1" : "0"}">
+      <div class="est-contract-head">
+        <span class="est-contract-title">계약</span>
+        ${
+          done
+            ? `<span class="est-contract-chip">계약완료</span>`
+            : `<button type="button" class="btn btn-sm btn-primary" id="btnContractOpen">계약완료 처리</button>`
+        }
+      </div>
+      <div class="est-contract-body" ${done ? "" : "hidden"}>
+        <div class="est-manage-grid">
+          <div class="field">
+            <label>계약 일시</label>
+            <input type="datetime-local" id="editContractAt" value="${(r.ContractAt || "").slice(0, 16)}" />
+          </div>
+          <div class="field">
+            <label>계약 담당자</label>
+            <input type="text" id="editContractOwner" value="${escapeHtml(r.ContractOwner || r.Assignee || "")}" />
+          </div>
+          <div class="field">
+            <label>계약 금액 (원)</label>
+            <input type="number" id="editContractAmount" min="0" value="${amount}" />
+          </div>
+        </div>
+        ${
+          done
+            ? `<button type="button" class="btn btn-ghost btn-sm" id="btnContractCancel">계약완료 해제</button>`
+            : `<p class="est-contract-note">저장하면 상태가 '계약완료' 로 바뀝니다.</p>`
+        }
+      </div>
+    </div>`;
+}
+
+// 목록에 없는 값이 이미 저장돼 있으면(계약완료, 옛 상태값) 선택지로 덧붙인다.
+// 안 그러면 그 카드를 열어 저장하는 순간 첫 항목으로 덮어써진다.
+function statusOptions(current) {
+  const list = EST_STATUSES.includes(current)
+    ? EST_STATUSES
+    : current
+      ? [...EST_STATUSES, current]
+      : EST_STATUSES;
+  return list
+    .map(
+      (s) =>
+        `<option value="${escapeHtml(s)}"${current === s ? " selected" : ""}>${escapeHtml(s)}</option>`,
+    )
+    .join("");
+}
+
 // ===== CSV 다운로드 (UTF-8 BOM, 엑셀 호환) =====
 const SOURCE_LABELS_EXPORT = {
   homepage: "홈페이지",
@@ -1052,24 +1123,7 @@ async function openDetail(id) {
           <div class="field">
             <label>상태</label>
             <select id="editStatus">
-              ${[
-                "접수대기",
-                "상담중",
-                "견적완료",
-                "계약완료",
-                "취소",
-                "고객 부재중",
-                "진행불가 (예산/범위/지역/일정등)",
-                "전화상담 후 미진행",
-                "전화상담 후 미팅예약",
-                "전화상담 후 대기중",
-                "보류",
-              ]
-                .map(
-                  (s) =>
-                    `<option ${r.Status === s ? "selected" : ""}>${s}</option>`,
-                )
-                .join("")}
+              ${statusOptions(r.Status)}
             </select>
           </div>
           <div class="field">
@@ -1100,13 +1154,13 @@ async function openDetail(id) {
             </select>
           </div>
           <div class="field">
-            <label>견적/계약 금액 (원)</label>
+            <label>견적 금액 (원)</label>
             <input type="number" id="editAmount" min="0" value="${r.EstimateAmount || 0}" />
           </div>
         </div>
+        ${contractPanelHtml(r)}
         <div class="form-actions">
           <button class="btn btn-primary" id="btnPatch">상담 정보 저장</button>
-          <button class="btn btn-danger" id="btnDelete" type="button">고객 삭제</button>
         </div>
       </section>
 
@@ -1142,12 +1196,33 @@ async function openDetail(id) {
   `;
 
   openModal(detailModal);
+  // 계약 입력칸은 '계약완료 처리' 를 누른 뒤에만 펼친다. 펼친 상태에서 저장하면
+  // 상태가 계약완료로 바뀐다(doPatch 가 data-open 을 보고 판단한다).
+  detail.querySelector("#btnContractOpen")?.addEventListener("click", () => {
+    const panel = detail.querySelector("#contractPanel");
+    const body = panel?.querySelector(".est-contract-body");
+    if (!panel || !body) return;
+    panel.dataset.open = "1";
+    body.hidden = false;
+    const at = detail.querySelector("#editContractAt");
+    // 계약일은 대개 오늘이라 비어 있으면 지금 시각을 넣어 준다(수정 가능).
+    if (at && !at.value) {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      at.value = now.toISOString().slice(0, 16);
+    }
+    detail.querySelector("#btnContractOpen")?.setAttribute("hidden", "");
+    at?.focus();
+  });
+  detail.querySelector("#btnContractCancel")?.addEventListener("click", () => {
+    const panel = detail.querySelector("#contractPanel");
+    if (!panel) return;
+    panel.dataset.open = "0";
+    adminUtil.toast("계약 해제 상태입니다. 저장을 눌러야 반영됩니다.");
+  });
   detail
     .querySelector("#btnPatch")
     .addEventListener("click", () => doPatch(id));
-  detail
-    .querySelector("#btnDelete")
-    .addEventListener("click", () => doDelete(id, r.Name));
   detail
     .querySelector("#btnAddMemo")
     .addEventListener("click", () => addMemo(id));
@@ -1224,6 +1299,27 @@ async function doPatch(id) {
     Assignee: detail.querySelector("#editAssignee").value.trim(),
     EstimateAmount: Number(detail.querySelector("#editAmount").value) || 0,
   };
+  // 계약 패널이 펼쳐져 있으면 계약으로 저장한다. 상태 드롭다운에는 계약완료가
+  // 없으므로 여기서만 그 상태가 붙는다. 해제하면 접수 흐름으로 되돌린다.
+  const contractPanel = detail.querySelector("#contractPanel");
+  if (contractPanel) {
+    if (contractPanel.dataset.open === "1") {
+      const at = detail.querySelector("#editContractAt").value;
+      payload.Status = CONTRACT_STATUS;
+      payload.ContractAt = at ? new Date(at).toISOString() : "";
+      payload.ContractOwner = detail
+        .querySelector("#editContractOwner")
+        .value.trim();
+      payload.ContractAmount =
+        Number(detail.querySelector("#editContractAmount").value) || 0;
+    } else if (payload.Status === CONTRACT_STATUS) {
+      // 계약을 해제했는데 상태가 계약완료로 남으면 집계가 어긋난다.
+      payload.Status = "접수대기";
+      payload.ContractAt = "";
+      payload.ContractOwner = "";
+      payload.ContractAmount = 0;
+    }
+  }
   const ca = detail.querySelector("#editContactedAt").value;
   if (ca) payload.ContactedAt = new Date(ca).toISOString();
   // 예약을 지우는 것도 저장이라 빈 값이면 빈 문자열을 보낸다 — if 로 감싸면
@@ -1299,6 +1395,9 @@ async function doSaveCustomer(id) {
   }
 }
 
+// 상세 화면에서 삭제 버튼을 뺐다(2026-09-03 요청) — 상담 관리 중에 잘못 눌러
+// 고객 기록이 사라지는 쪽이 더 큰 위험이다. 서버 DELETE 는 그대로 살아 있으니
+// 삭제가 필요하면 이 함수를 부르는 버튼을 다시 달면 된다.
 async function doDelete(id, name) {
   const label = name ? `"${name}"` : "이 접수 건";
   if (

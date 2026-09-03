@@ -185,7 +185,7 @@ export async function handlePixelEventsAdmin(request, env) {
             SUM(CASE WHEN Status='전화상담 후 미팅예약' THEN 1 ELSE 0 END) meetings,
             SUM(CASE WHEN Status IN ('견적완료','계약완료') THEN 1 ELSE 0 END) quoted,
             SUM(CASE WHEN Status='계약완료' THEN 1 ELSE 0 END) contracted,
-            SUM(CASE WHEN Status='계약완료' THEN COALESCE(EstimateAmount,0) ELSE 0 END) contract_value
+            SUM(CASE WHEN Status='계약완료' THEN COALESCE(NULLIF(ContractAmount,0), EstimateAmount, 0) ELSE 0 END) contract_value
        FROM Estimates
        WHERE SubmittedAt >= ${since} AND Status NOT IN ('작성중','오류')`,
   ).first();
@@ -198,7 +198,7 @@ export async function handlePixelEventsAdmin(request, env) {
             SUM(CASE WHEN ContactedAt <> '' OR Status IN ('상담중','견적완료','계약완료','전화상담 후 미진행','전화상담 후 미팅예약','전화상담 후 대기중') THEN 1 ELSE 0 END) contacted,
             SUM(CASE WHEN Status IN ('견적완료','계약완료') THEN 1 ELSE 0 END) quoted,
             SUM(CASE WHEN Status='계약완료' THEN 1 ELSE 0 END) contracted,
-            SUM(CASE WHEN Status='계약완료' THEN COALESCE(EstimateAmount,0) ELSE 0 END) contract_value
+            SUM(CASE WHEN Status='계약완료' THEN COALESCE(NULLIF(ContractAmount,0), EstimateAmount, 0) ELSE 0 END) contract_value
        FROM Estimates
        WHERE SubmittedAt >= ${since} AND Status NOT IN ('작성중','오류')
        GROUP BY label, ad_id, campaign

@@ -7,13 +7,27 @@ import test from "node:test";
 //   1) 마이그레이션이 컬럼을 만들고
 //   2) d1.js SCHEMA 화이트리스트가 컬럼을 통과시키고 (빠지면 fieldsToRow 가 버린다)
 //   3) PATCH 허용 목록이 요청 필드를 받는다
-const FIELDS = ["ConsultAt", "ConsultBranch"];
+const FIELDS = [
+  "ConsultAt",
+  "ConsultBranch",
+  "ContractAt",
+  "ContractOwner",
+  "ContractAmount",
+];
 
-test("[가드] 상담 예약 컬럼을 만드는 마이그레이션이 있다", async () => {
-  const sql = await readFile(
-    new URL("../migrations/0041_consult_booking.sql", import.meta.url),
-    "utf8",
-  );
+test("[가드] 상담 예약·계약 컬럼을 만드는 마이그레이션이 있다", async () => {
+  const sql = (
+    await Promise.all([
+      readFile(
+        new URL("../migrations/0041_consult_booking.sql", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../migrations/0042_contract_fields.sql", import.meta.url),
+        "utf8",
+      ),
+    ])
+  ).join("\n");
   for (const field of FIELDS) {
     assert.match(
       sql,
@@ -23,7 +37,7 @@ test("[가드] 상담 예약 컬럼을 만드는 마이그레이션이 있다", 
   }
 });
 
-test("[가드] d1 SCHEMA 화이트리스트가 상담 예약을 통과시킨다", async () => {
+test("[가드] d1 SCHEMA 화이트리스트가 상담 예약·계약을 통과시킨다", async () => {
   const src = await readFile(
     new URL("../src/lib/d1.js", import.meta.url),
     "utf8",
@@ -40,7 +54,7 @@ test("[가드] d1 SCHEMA 화이트리스트가 상담 예약을 통과시킨다"
   }
 });
 
-test("[가드] PATCH 가 상담 예약 필드를 받는다", async () => {
+test("[가드] PATCH 가 상담 예약·계약 필드를 받는다", async () => {
   const src = await readFile(
     new URL("../src/routes/estimates.js", import.meta.url),
     "utf8",
