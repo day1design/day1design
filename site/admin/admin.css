@@ -2026,6 +2026,16 @@
   background: #f3f4f6;
   color: var(--c-text-sub);
 }
+/* 상담 예약이 잡힌 건은 목록에서 바로 눈에 들어와야 한다 — 오늘 누구를
+   만나는지 카드를 열어 보고서야 아는 상황을 막는다. */
+.est-card-consult em {
+  color: var(--c-primary, #1a2f4e);
+  font-weight: 700;
+}
+.est-consult b {
+  color: var(--c-primary, #1a2f4e);
+}
+
 .est-card-info {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

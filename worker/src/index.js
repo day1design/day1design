@@ -27,6 +27,7 @@ import {
   handleMetaAds,
   runScheduledSync,
   prewarmOverviewCache,
+  runLeadRecountBackfill,
 } from "./routes/meta-ads.js";
 import { handleBrief } from "./routes/brief.js";
 import { handleSearchVolume } from "./routes/search-volume.js";
@@ -353,6 +354,31 @@ export default {
             );
           }
         }
+        // 리드를 두 번 세던 시절의 수치를 되돌리는 일회성 백필. 이미 돌았으면
+        // 스스로 건너뛰고, 실패하면 다음 cron 이 다시 시도한다.
+        try {
+          const recount = await runLeadRecountBackfill(env, ctx);
+          if (recount?.ran) {
+            await notifyTelegram(
+              env,
+              `[day1design/cron] Meta 리드 재집계 백필 ${recount.ok ? "완료" : "실패"}`,
+              {
+                botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
+                chatId: env.META_RATE_TELEGRAM_CHAT_ID,
+              },
+            );
+          }
+        } catch (e) {
+          await notifyTelegram(
+            env,
+            `[day1design/cron] Meta 리드 재집계 백필 오류\n${(e?.message || "").slice(0, 200)}`,
+            {
+              botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
+              chatId: env.META_RATE_TELEGRAM_CHAT_ID,
+            },
+          );
+        }
+
         // 헬스 점검: 매시간(하트비트, 오류만 알림) + 매일(풀 다이제스트)
         try {
           await runAndReportHealth(env, createServices(env), {

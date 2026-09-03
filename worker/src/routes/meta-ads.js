@@ -914,6 +914,41 @@ function addDays(ymd, n) {
   return d.toISOString().slice(0, 10);
 }
 
+// 리드 이중 계상 교정 백필 — 한 번만 돈다.
+//
+// 2026-09-03 이전에 저장된 리드는 두 action_type 을 더한 값이라 실측 2.02 배로
+// 부풀어 있다. MetaAdsDaily 는 ActionsJson 원문이 있어 되돌릴 수 있지만
+// MetaAdsAd·MetaAdsBreakdown 은 원문이 없어 Meta 에서 다시 받아야 한다.
+// 화면 버튼은 사람이 눌러야 하므로, 아직 안 돌았으면 cron 이 대신 한 번 돌린다.
+//
+// 멱등성은 MetaSyncLog 가 맡는다 — 성공 기록이 있으면 건너뛰고, 실패했으면
+// 다음 cron 이 다시 시도한다.
+const LEAD_RECOUNT_SYNC_TYPE = "lead-recount";
+export async function runLeadRecountBackfill(env, ctx) {
+  if (!env?.DB) return { skipped: "no_db" };
+  const done = await env.DB.prepare(
+    `SELECT 1 FROM MetaSyncLog
+      WHERE SyncType = ? AND Status = 'success' LIMIT 1`,
+  )
+    .bind(LEAD_RECOUNT_SYNC_TYPE)
+    .first();
+  if (done) return { skipped: "already_done" };
+
+  const res = await syncRange(
+    env,
+    ctx,
+    "2026-02-02",
+    kstYesterday(),
+    LEAD_RECOUNT_SYNC_TYPE,
+  );
+  if (res.status === 200) {
+    try {
+      await prewarmOverviewCache(env);
+    } catch {}
+  }
+  return { ran: true, ok: res.status === 200 };
+}
+
 // ─── 백필 / Cron sync 공통 ───────────────────────────────
 async function runBackfill(request, env, ctx) {
   let body = {};

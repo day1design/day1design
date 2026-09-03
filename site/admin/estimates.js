@@ -368,6 +368,21 @@ function fmtDateTime(iso) {
   }
 }
 
+// 상담 예약은 요일까지 읽혀야 한다 — "9/12 14:30" 만으로는 무슨 요일인지 몰라
+// 일정을 잡을 때 달력을 다시 열어 보게 된다.
+function fmtConsultAt(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const pad = (n) => String(n).padStart(2, "0");
+    const dow = "일월화수목금토"[d.getDay()];
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}(${dow}) ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch {
+    return iso;
+  }
+}
+
 function fmtInt(n) {
   return Number(n || 0).toLocaleString("ko-KR");
 }
@@ -536,6 +551,11 @@ function filtered() {
   });
 }
 
+// 상담을 실제로 진행하는 지점. 고객이 접수 때 고른 희망 지점(Branch)과 다를 수
+// 있어 따로 고른다. 지점이 늘면 여기에 추가하면 되고, 목록에 없는 값이 이미
+// 저장돼 있으면 그 값도 선택지에 남겨 덮어쓰지 않는다.
+const CONSULT_BRANCHES = ["강남점", "판교점", "고객 현장", "화상 상담"];
+
 // ===== CSV 다운로드 (UTF-8 BOM, 엑셀 호환) =====
 const SOURCE_LABELS_EXPORT = {
   homepage: "홈페이지",
@@ -582,6 +602,8 @@ function exportFilteredCsv() {
     "상세주소",
     "희망일정",
     "가용예산",
+    "상담예약일시",
+    "상담지점",
     "상태",
     "담당자",
     "메모",
@@ -604,6 +626,8 @@ function exportFilteredCsv() {
       r.AddressDetail || "",
       r.Schedule || "",
       r.Budget || r.Detail || "",
+      r.ConsultAt ? fmtConsultAt(r.ConsultAt) : "",
+      r.ConsultBranch || "",
       r.Status || "",
       r.Assignee || "",
       r.Memo || "",
@@ -731,6 +755,15 @@ function render() {
           <b>지점</b>
           <em>${escapeHtml(branch)}</em>
         </span>
+        ${
+          r.ConsultAt
+            ? `
+        <span class="est-card-consult">
+          <b>상담 예약</b>
+          <em>${escapeHtml(fmtConsultAt(r.ConsultAt))}${r.ConsultBranch ? ` · ${escapeHtml(r.ConsultBranch)}` : ""}</em>
+        </span>`
+            : ""
+        }
         <span>
           <b>유입</b>
           <em>${sourceBadges(r)} ${sessionBadgeHtml(sessionNo)}</em>
@@ -975,6 +1008,15 @@ async function openDetail(id) {
           }
           ${r.Schedule ? `<dt>일정</dt><dd>${escapeHtml(r.Schedule)}</dd>` : ""}
           ${
+            r.ConsultAt
+              ? `<dt>상담 예약</dt><dd class="est-consult"><b>${escapeHtml(fmtConsultAt(r.ConsultAt))}</b>${
+                  r.ConsultBranch
+                    ? ` · ${escapeHtml(r.ConsultBranch)}`
+                    : " · 지점 미정"
+                }</dd>`
+              : ""
+          }
+          ${
             r.Referral
               ? `<dt>${isSlugLead(r) ? "마케팅 슬러그" : "경로"}</dt><dd>${escapeHtml(r.Referral)}</dd>`
               : ""
@@ -1037,6 +1079,25 @@ async function openDetail(id) {
           <div class="field">
             <label>첫 연락 일시</label>
             <input type="datetime-local" id="editContactedAt" value="${(r.ContactedAt || "").slice(0, 16)}" />
+          </div>
+          <div class="field">
+            <label>상담 예약 일시</label>
+            <input type="datetime-local" id="editConsultAt" value="${(r.ConsultAt || "").slice(0, 16)}" />
+          </div>
+          <div class="field">
+            <label>상담 지점</label>
+            <select id="editConsultBranch">
+              <option value="">미정</option>
+              ${CONSULT_BRANCHES.map(
+                (b) =>
+                  `<option value="${escapeHtml(b)}"${r.ConsultBranch === b ? " selected" : ""}>${escapeHtml(b)}</option>`,
+              ).join("")}
+              ${
+                r.ConsultBranch && !CONSULT_BRANCHES.includes(r.ConsultBranch)
+                  ? `<option value="${escapeHtml(r.ConsultBranch)}" selected>${escapeHtml(r.ConsultBranch)}</option>`
+                  : ""
+              }
+            </select>
           </div>
           <div class="field">
             <label>견적/계약 금액 (원)</label>
@@ -1165,6 +1226,11 @@ async function doPatch(id) {
   };
   const ca = detail.querySelector("#editContactedAt").value;
   if (ca) payload.ContactedAt = new Date(ca).toISOString();
+  // 예약을 지우는 것도 저장이라 빈 값이면 빈 문자열을 보낸다 — if 로 감싸면
+  // 한 번 잡힌 예약을 화면에서 비워도 서버에 남는다.
+  const consultAt = detail.querySelector("#editConsultAt").value;
+  payload.ConsultAt = consultAt ? new Date(consultAt).toISOString() : "";
+  payload.ConsultBranch = detail.querySelector("#editConsultBranch").value;
   try {
     const d = await adminUtil.api(`/api/estimates/${id}`, {
       method: "PATCH",

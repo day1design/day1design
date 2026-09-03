@@ -41,6 +41,8 @@ const SCHEMA = {
     "Status",
     "Assignee",
     "ContactedAt",
+    "ConsultAt",
+    "ConsultBranch",
     "Memo",
     "EstimateAmount",
     "Source",
@@ -154,13 +156,7 @@ const SCHEMA = {
   ],
   HealthChecks: ["CheckedAt", "Overall", "Results", "TriggeredBy"],
   SystemHeartbeats: ["Source", "At", "Status", "Detail"],
-  MetaFormSchemas: [
-    "FormId",
-    "FormName",
-    "Questions",
-    "Mapping",
-    "UpdatedAt",
-  ],
+  MetaFormSchemas: ["FormId", "FormName", "Questions", "Mapping", "UpdatedAt"],
   IntakeEvents: [
     "At",
     "Channel",
