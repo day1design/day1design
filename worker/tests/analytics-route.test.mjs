@@ -72,9 +72,12 @@ function createServices() {
 
 function createAnalyticsDb() {
   const refreshLogs = [];
+  const queries = [];
   return {
     refreshLogs,
+    queries,
     prepare(sql) {
+      queries.push(sql);
       return {
         bind(...args) {
           return {
@@ -108,15 +111,24 @@ function createAnalyticsDb() {
                   results: [{ City: "Seoul", Country: "KR", Cnt: 4 }],
                 };
               }
-              if (sql.includes("GROUP BY src, med, ref")) {
+              if (sql.includes("GROUP BY ranked.src, ranked.med, ranked.ref")) {
+                // 방문자 4 명이 채널 두 곳에 나뉘어 귀속된 상태 — 합계가 touches 와
+                // 같아야 중복집계가 없는 것이다.
                 return {
                   results: [
                     {
                       src: "google",
                       med: "organic",
                       ref: "",
-                      Visitors: 2,
-                      Sessions: 3,
+                      Visitors: 3,
+                      Pageviews: 6,
+                    },
+                    {
+                      src: "(none)",
+                      med: "",
+                      ref: "",
+                      Visitors: 1,
+                      Pageviews: 2,
                     },
                   ],
                 };
@@ -579,6 +591,59 @@ test("analytics summary persists self rollups and preserves the existing respons
   assert.equal(services.snapshots[0].fields.Source, "self");
   assert.equal(services.raw.length, 1);
   assert.equal(db.refreshLogs.length, 1);
+});
+
+// [가드] 유입 출처 중복집계 회귀 방지.
+// 옛 집계는 페이지뷰마다 (UtmSource, UtmMedium, Referrer) 로 묶어서 세었다.
+// 방문자가 사이트 안을 돌아다니는 사이에 출처가 사라지므로(tracker 는 자기 호스트
+// referrer 를 빈값으로 보내고 UTM 도 다음 페이지에는 없다) 같은 사람이 광고 채널과
+// '직접 유입' 양쪽에 각각 세어졌다. 실측(2026-08-04~09-03) 결과 직접 유입이
+// 246 명인데 1,836 으로 표시됐고, 채널 비중을 재는 값에는 세션 수가 아니라
+// 페이지뷰가 들어가 있었다. 아래 세 가지가 깨지면 그 회귀다.
+test("[가드] 유입 출처는 방문자 한 명을 채널 하나에만 귀속한다", async () => {
+  const services = createServices();
+  const db = createAnalyticsDb();
+  const res = await handleAnalytics(
+    new Request(
+      "https://api.example.test/api/analytics/summary?range=custom&start=2026-05-12&end=2026-05-12&refresh=1",
+      { headers: { cookie: await adminCookie() } },
+    ),
+    { DB: db, JWT_SECRET },
+    {},
+    services,
+  );
+  const body = await res.json();
+  assert.equal(res.status, 200);
+
+  // 1) 채널별 합계가 전체 방문자 수(touches)를 넘지 않는다.
+  const sessionsSum = body.sources.reduce(
+    (sum, row) => sum + Number(row.sessions || 0),
+    0,
+  );
+  assert.equal(sessionsSum, body.summary.touches);
+  const visitorsSum = body.sources.reduce(
+    (sum, row) => sum + Number(row.visitors || 0),
+    0,
+  );
+  assert.equal(visitorsSum, body.summary.touches);
+
+  // 2) 페이지뷰는 채널 비중을 재는 자리가 아니라 별도 지표로 실린다.
+  const pageviewsSum = body.sources.reduce(
+    (sum, row) => sum + Number(row.pageviews || 0),
+    0,
+  );
+  assert.equal(pageviewsSum, body.self.pageviews);
+  assert.notEqual(sessionsSum, pageviewsSum);
+
+  // 3) 출처·디바이스·지역 집계는 세션당 대표 행 하나(first-touch)만 센다.
+  const perSessionQueries = db.queries.filter((sql) =>
+    sql.includes("PARTITION BY SessionId"),
+  );
+  assert.equal(perSessionQueries.length, 3);
+  for (const sql of perSessionQueries) {
+    assert.match(sql, /ROW_NUMBER\(\) OVER/);
+    assert.match(sql, /rn = 1/);
+  }
 });
 
 test("analytics summary exposes R2 archive failure while keeping the D1 snapshot", async () => {

@@ -975,8 +975,15 @@ function renderSourceSummary(rows) {
       const key = sourceKey(rawKey);
       const sessions = Number(row.sessions || 0);
       const visitors = Number(row.visitors || 0);
+      const pageviews = Number(row.pageviews || 0);
       const percent = total ? Math.round((sessions / total) * 100) : 0;
-      const visitorText = visitors ? ` · 방문자 ${fmtInt(visitors)}` : "";
+      // 자체 측정은 방문자 한 명을 채널 하나에 귀속시키므로 sessions 와 visitors 가
+      // 같은 값이다. 같은 수를 두 번 적지 않고, 대신 그 채널의 페이지뷰를 덧붙인다.
+      // GA4 폴백일 때만 세션과 방문자가 갈라지므로 그때는 방문자를 그대로 적는다.
+      let subDetail = "";
+      if (pageviews) subDetail = ` · 페이지뷰 ${fmtInt(pageviews)}`;
+      else if (visitors && visitors !== sessions)
+        subDetail = ` · 방문자 ${fmtInt(visitors)}`;
       return `
         <div class="source-kpi-item">
           <div class="source-kpi-name">
@@ -984,7 +991,7 @@ function renderSourceSummary(rows) {
             <span>${adminUtil.escapeHtml(sourceLabel(rawKey))}</span>
           </div>
           <div class="source-kpi-value">${fmtInt(sessions)}</div>
-          <div class="source-kpi-sub">${percent}%${visitorText}</div>
+          <div class="source-kpi-sub">${percent}%${subDetail}</div>
         </div>`;
     })
     .join("");
@@ -2950,7 +2957,6 @@ async function loadSearchKeywords() {
   }
 }
 
-
 // ─── 이탈 방지 팝업 성과 ───────────────────────────────────────
 // 나가려던 방문자를 붙잡았는지, 붙잡은 뒤 실제로 더 봤는지를 보여준다.
 // 수집이 시작되기 전(노출 0건)에는 섹션을 통째로 숨긴다 — 빈 표를 띄워두면
@@ -2993,7 +2999,11 @@ function renderExitGuard(data) {
     : 0;
 
   document.getElementById("exitGuardKpi").innerHTML = [
-    egKpi("붙잡은 비율", `${holdRate}%`, `노출 ${fmtInt(f.shown)}건 중 ${fmtInt(held)}건`),
+    egKpi(
+      "붙잡은 비율",
+      `${holdRate}%`,
+      `노출 ${fmtInt(f.shown)}건 중 ${fmtInt(held)}건`,
+    ),
     egKpi(
       "붙잡은 뒤 더 본 방문",
       `${keepRate}%`,
