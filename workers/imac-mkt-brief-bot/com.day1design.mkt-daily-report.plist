@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.day1design.mkt-daily-report</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/pola/day1design-mkt-bot/run_daily_report.sh</string>
+  </array>
+
+  <!-- 매일 오전 10시. 전날 하루치를 다음 날 아침에 본다 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <!-- 10시에 맥이 자고 있었으면 깨어난 뒤 한 번 따라 돈다 -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/pola/day1design-mkt-bot</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/pola/day1design-mkt-bot/logs/daily-report.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/pola/day1design-mkt-bot/logs/daily-report.err.log</string>
+</dict>
+</plist>

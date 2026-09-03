@@ -97,10 +97,50 @@ Meta 집계 리드 1.13배. 병목은 링크클릭→리드이고 통과율 30% 
   광고 성과로 계산된다(실측 $28 대 Meta 단독 $39.21). `leads.metaCostPerLead` 를 쓴다.
 - **접수 30건 미만이면 세분화하지 않는다.** 캠페인별로 쪼개면 대부분 잡음이다.
 
+## 매일 아침 리포트 (물어보지 않아도 온다)
+
+`daily-report.mjs` 가 **매일 오전 10시**에 전날 하루 성과를 흰 바탕 이미지 한 장으로
+만들어 같은 방에 올린다. 물어봐야 답하는 위 파이프라인과 별개로 도는 작업이다.
+
+- LaunchAgent: `com.day1design.mkt-daily-report` (`StartCalendarInterval` 10:00)
+- 실행 스크립트: `run_daily_report.sh` — 로그를 남기고 30일 지난 이미지를 지운다
+- 로그: `logs/daily-report.log`, 산출물: `report/daily-YYYYMMDD.png`
+
+담는 것은 어제 요약 카드, 어제 캠페인별(지출·노출·클릭·CTR·리드·리드단가), 최근 7일
+잠재고객 캠페인과 **다음 손** 권고다.
+
+**권고를 7일로 내는 이유**: 하루치는 리드가 한두 건이라 단가가 두 배씩 튄다. 그 숫자로
+증액을 정하면 어제 운이 좋았던 캠페인에 돈을 더 붓게 된다. 그래서 목표 이내이고 리드가
+3건 이상이면 증액, 목표의 2배를 넘으면 예산 대신 새 소재를 권하고, 리드 3건에 못 미치면
+판단하지 않는다.
+
+기준은 `.env` 로 바꾼다. 코드는 손대지 않는다.
+
+| 키 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `DAY1_TARGET_CPL` | `30` | 목표 리드단가(USD) |
+| `DAY1_CPL_ALERT_MULT` | `2` | 목표의 몇 배부터 새 소재를 권하는가 |
+
+### 텔레그램 전송만 curl 로 하는 이유
+
+이 맥에서는 **node 의 `fetch` 가 텔레그램 주소로 못 나간다.** IPv4 는 `ETIMEDOUT`,
+IPv6 는 `EHOSTUNREACH` 로 둘 다 막히는데(2026-09-03 실측) 같은 순간 `curl` 은 붙는다.
+그래서 전송은 `curl --config -` 에 맡긴다. 토큰을 명령행 인자에 두면 `ps` 에 그대로
+뜨므로 표준입력으로 넘겨 인자에는 남기지 않는다. 브리프 API 호출은 `fetch` 로 잘 나가서
+그대로 둔다.
+
+```bash
+node daily-report.mjs                 # 만들어서 보낸다
+node daily-report.mjs --no-send       # 이미지까지만
+node daily-report.mjs --from-dir DIR  # DIR 의 brief_yday.json·brief_7d.json 으로 시험
+```
+
 ## 배포
 
 ```bash
 scp bot.mjs stats.mjs run_bot.sh pola@<아이맥>:/Users/pola/day1design-mkt-bot/
+scp daily-report.mjs run_daily_report.sh pola@<아이맥>:/Users/pola/day1design-mkt-bot/
+scp com.day1design.mkt-daily-report.plist pola@<아이맥>:/Users/pola/Library/LaunchAgents/
 scp com.day1design.mkt-brief-bot.plist pola@<아이맥>:/Users/pola/Library/LaunchAgents/
 ssh pola@<아이맥> 'bash -lc "cd ~/day1design-mkt-bot && node --check bot.mjs && node --check stats.mjs"'
 ssh pola@<아이맥> 'bash -lc "launchctl kickstart -k gui/$(id -u)/com.day1design.mkt-brief-bot"'
