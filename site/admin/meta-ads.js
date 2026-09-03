@@ -1005,7 +1005,7 @@
     if (btn.disabled) return;
     if (
       !confirm(
-        "Meta 에서 광고 지표를 처음부터 다시 받아옵니다.\n저장된 수치는 새로 받은 값으로 바뀌고, 기간이 길면 1~2분 걸립니다.\n계속할까요?",
+        "Meta 에서 광고 지표를 다시 받아옵니다.\n한 번에 약 한 달 구간씩 받으며, 남은 구간은 자동으로 이어받습니다.\n계속할까요?",
       )
     )
       return;
@@ -1017,10 +1017,25 @@
         method: "POST",
         json: {},
       });
-      adminUtil.toast?.(
-        `광고 지표 ${Number(r?.recordsUpdated || 0).toLocaleString()}건을 다시 받았습니다`,
-        "success",
-      );
+      // 구간 단위로 도므로 어디까지 받았는지 같이 알려 준다. 남은 구간이 있으면
+      // 다시 눌러 이어받을 수 있고, 안 눌러도 cron 이 매시 이어받는다.
+      if (r?.skipped === "all_done") {
+        adminUtil.toast?.("이미 전 기간을 받아 두었습니다", "success");
+      } else if (r?.chunk) {
+        const left = Number(r.remaining || 0);
+        adminUtil.toast?.(
+          `${r.chunk.start} ~ ${r.chunk.end} 구간을 받았습니다` +
+            (left > 0
+              ? ` · 남은 구간 ${left}개는 이어서 받습니다`
+              : " · 전 구간 완료"),
+          "success",
+        );
+      } else {
+        adminUtil.toast?.(
+          `광고 지표 ${Number(r?.recordsUpdated || 0).toLocaleString()}건을 다시 받았습니다`,
+          "success",
+        );
+      }
       adminUtil.cacheInvalidate?.("/api/meta-ads");
       loadAll(currentRangeKey);
     } catch (e) {
