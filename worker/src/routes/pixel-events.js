@@ -18,6 +18,11 @@ const ALLOWED = new Set([
   "Contact",
   "InitiateCheckout",
   "Search",
+  "FormStart",
+  "SubmitAttempt",
+  "ValidationError",
+  "SubmitError",
+  "FormSuccess",
 ]);
 
 const s = (v, n) => String(v || "").slice(0, n);
@@ -36,8 +41,8 @@ export async function handlePixelEvents(request, env, ctx) {
     await env.DB.prepare(
       `INSERT INTO pixel_events
          (id, created_at, event_name, ga4_name, channel, event_id, page_path, source, session_id,
-          campaign, adset, ad, ad_id, fbclid, ip, ua)
-       VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, 'pixel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          campaign, adset, ad, ad_id, fbclid, event_detail, estimate_id, ip, ua)
+       VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, 'pixel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         generateId(),
@@ -52,6 +57,8 @@ export async function handlePixelEvents(request, env, ctx) {
         s(body.ad, 120),
         s(body.ad_id, 40),
         s(body.fbclid, 200),
+        s(body.event_detail, 160),
+        s(body.estimate_id, 40),
         clientIP(request),
         s(request.headers.get("user-agent"), 400),
       )
@@ -68,8 +75,8 @@ export async function logPixelEvent(env, row = {}) {
     await env.DB.prepare(
       `INSERT INTO pixel_events
          (id, created_at, event_name, ga4_name, channel, event_id, page_path, source, session_id,
-          campaign, adset, ad, ad_id, fbclid, capi_status, matched_fields, ip, ua)
-       VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          campaign, adset, ad, ad_id, fbclid, event_detail, estimate_id, capi_status, matched_fields, ip, ua)
+       VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         generateId(),
@@ -85,6 +92,8 @@ export async function logPixelEvent(env, row = {}) {
         s(row.ad, 120),
         s(row.ad_id, 40),
         s(row.fbclid, 200),
+        s(row.event_detail, 160),
+        s(row.estimate_id, 40),
         s(row.capi_status, 20),
         s(row.matched_fields, 120),
         s(row.ip, 60),
@@ -139,9 +148,36 @@ export async function handlePixelEventsAdmin(request, env) {
   ).first();
 
   const items = await env.DB.prepare(
-    `SELECT created_at, event_name, channel, event_id, page_path, source, campaign, ad, ad_id, capi_status
+    `SELECT created_at, event_name, channel, event_id, page_path, source, campaign, ad, ad_id,
+            event_detail, estimate_id, capi_status
        FROM pixel_events WHERE created_at >= ${since}
        ORDER BY created_at DESC LIMIT 200`,
+  ).all();
+
+  const outcome = await env.DB.prepare(
+    `SELECT COUNT(*) inquiries,
+            SUM(CASE WHEN ContactedAt <> '' OR Status IN ('상담중','견적완료','계약완료','전화상담 후 미진행','전화상담 후 미팅예약','전화상담 후 대기중') THEN 1 ELSE 0 END) contacted,
+            SUM(CASE WHEN Status='전화상담 후 미팅예약' THEN 1 ELSE 0 END) meetings,
+            SUM(CASE WHEN Status IN ('견적완료','계약완료') THEN 1 ELSE 0 END) quoted,
+            SUM(CASE WHEN Status='계약완료' THEN 1 ELSE 0 END) contracted,
+            SUM(CASE WHEN Status='계약완료' THEN COALESCE(EstimateAmount,0) ELSE 0 END) contract_value
+       FROM Estimates
+       WHERE SubmittedAt >= ${since} AND Status NOT IN ('작성중','오류')`,
+  ).first();
+
+  const byOutcome = await env.DB.prepare(
+    `SELECT COALESCE(NULLIF(MetaAd,''), NULLIF(MetaAdId,''), NULLIF(Campaign,''), '(미지정)') label,
+            MetaAdId ad_id,
+            COALESCE(NULLIF(MetaCampaign,''), NULLIF(UtmCampaign,''), NULLIF(Campaign,''), '') campaign,
+            COUNT(*) inquiries,
+            SUM(CASE WHEN ContactedAt <> '' OR Status IN ('상담중','견적완료','계약완료','전화상담 후 미진행','전화상담 후 미팅예약','전화상담 후 대기중') THEN 1 ELSE 0 END) contacted,
+            SUM(CASE WHEN Status IN ('견적완료','계약완료') THEN 1 ELSE 0 END) quoted,
+            SUM(CASE WHEN Status='계약완료' THEN 1 ELSE 0 END) contracted,
+            SUM(CASE WHEN Status='계약완료' THEN COALESCE(EstimateAmount,0) ELSE 0 END) contract_value
+       FROM Estimates
+       WHERE SubmittedAt >= ${since} AND Status NOT IN ('작성중','오류')
+       GROUP BY label, ad_id, campaign
+       ORDER BY inquiries DESC, contract_value DESC LIMIT 30`,
   ).all();
 
   const dailyMap = {};
@@ -170,6 +206,11 @@ export async function handlePixelEventsAdmin(request, env) {
       viewcontent: nameCount.ViewContent || 0,
       contact: nameCount.Contact || 0,
       cta: nameCount.InitiateCheckout || 0,
+      formStart: nameCount.FormStart || 0,
+      submitAttempt: nameCount.SubmitAttempt || 0,
+      validationError: nameCount.ValidationError || 0,
+      submitError: nameCount.SubmitError || 0,
+      formSuccess: nameCount.FormSuccess || 0,
       lead,
       dedupRate: leadTotal ? Math.round((leadDedup / leadTotal) * 100) : 0,
       cr: nameCount.PageView ? (lead / nameCount.PageView) * 100 : 0,
@@ -178,6 +219,11 @@ export async function handlePixelEventsAdmin(request, env) {
       pageview: nameCount.PageView || 0,
       viewcontent: nameCount.ViewContent || 0,
       cta_contact: (nameCount.InitiateCheckout || 0) + (nameCount.Contact || 0),
+      form_start: nameCount.FormStart || 0,
+      submit_attempt: nameCount.SubmitAttempt || 0,
+      validation_error: nameCount.ValidationError || 0,
+      submit_error: nameCount.SubmitError || 0,
+      form_success: nameCount.FormSuccess || 0,
       lead,
     },
     daily: Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date)),
@@ -191,6 +237,24 @@ export async function handlePixelEventsAdmin(request, env) {
       campaign: r.campaign || "",
       total: r.total,
       leads: r.leads,
+    })),
+    outcome: {
+      inquiries: Number(outcome?.inquiries || 0),
+      contacted: Number(outcome?.contacted || 0),
+      meetings: Number(outcome?.meetings || 0),
+      quoted: Number(outcome?.quoted || 0),
+      contracted: Number(outcome?.contracted || 0),
+      contractValue: Number(outcome?.contract_value || 0),
+    },
+    byOutcome: (byOutcome.results || []).map((r) => ({
+      label: r.label || "(미지정)",
+      ad_id: r.ad_id || "",
+      campaign: r.campaign || "",
+      inquiries: Number(r.inquiries || 0),
+      contacted: Number(r.contacted || 0),
+      quoted: Number(r.quoted || 0),
+      contracted: Number(r.contracted || 0),
+      contractValue: Number(r.contract_value || 0),
     })),
     items: items.results || [],
   });

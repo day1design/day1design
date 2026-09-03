@@ -29,6 +29,7 @@ function logLead(env, info, capiStatus, matched) {
     ad: info.ad || "",
     ad_id: info.adId || "",
     fbclid: info.fbclid || "",
+    estimate_id: info.estimateId || "",
     capi_status: capiStatus,
     matched_fields: matched || "",
     ip: info.ip || "",

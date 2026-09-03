@@ -1011,6 +1011,11 @@ async function openDetail(id) {
             <label>상태</label>
             <select id="editStatus">
               ${[
+                "접수대기",
+                "상담중",
+                "견적완료",
+                "계약완료",
+                "취소",
                 "고객 부재중",
                 "진행불가 (예산/범위/지역/일정등)",
                 "전화상담 후 미진행",
@@ -1034,7 +1039,7 @@ async function openDetail(id) {
             <input type="datetime-local" id="editContactedAt" value="${(r.ContactedAt || "").slice(0, 16)}" />
           </div>
           <div class="field">
-            <label>견적 금액 (원)</label>
+            <label>견적/계약 금액 (원)</label>
             <input type="number" id="editAmount" min="0" value="${r.EstimateAmount || 0}" />
           </div>
         </div>

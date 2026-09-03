@@ -20,6 +20,21 @@
     branch: ["강남점", "판교점", "지점 무관"],
   };
   const selections = {};
+  let formStarted = false;
+
+  function trackFormEvent(name, params = {}) {
+    if (typeof window.day1Track !== "function") return;
+    window.day1Track(name, { form_name: "estimate", ...params });
+  }
+
+  function markFormStarted() {
+    if (formStarted) return;
+    formStarted = true;
+    trackFormEvent("form_start");
+  }
+
+  form.addEventListener("input", markFormStarted, { once: true });
+  form.addEventListener("change", markFormStarted, { once: true });
 
   // ---------- Daum Postcode (주소 검색) ----------
   const btnAddr = document.getElementById("btnAddr");
@@ -166,6 +181,8 @@
   // ---------- Submit ----------
   const btnSubmit = document.getElementById("btnEstSubmit");
   btnSubmit.addEventListener("click", () => {
+    markFormStarted();
+    trackFormEvent("form_submit_attempt");
     const missing = REQUIRED.filter((r) => !r.get());
     document
       .querySelectorAll("[data-field]")
@@ -181,6 +198,10 @@
       errMsg.style.display = "block";
       const first = document.querySelector(`[data-field="${missing[0].f}"]`);
       if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+      trackFormEvent("form_validation_error", {
+        error_reason: missing.map((r) => r.f).join(","),
+        error_count: missing.length,
+      });
       return;
     }
     // 이메일 형식은 여기서 막는다. 완료 화면을 먼저 띄우는 구조라서, 형식이
@@ -193,6 +214,10 @@
       errMsg.textContent = "이메일 주소를 정확히 입력해주세요";
       errMsg.style.display = "block";
       if (grp) grp.scrollIntoView({ behavior: "smooth", block: "center" });
+      trackFormEvent("form_validation_error", {
+        error_reason: "email_format",
+        error_count: 1,
+      });
       return;
     }
     // 1) DOM 값 캡처 → 2) 즉시 완료 화면 → 3) 백그라운드 전송
@@ -337,7 +362,9 @@
       // 광고별 귀속 (pixel_events Lead 기록용)
       _fb_source: att.source || "",
       _fb_campaign: att.campaign || "",
+      _fb_campaign_id: att.campaignId || "",
       _fb_adset: att.adset || "",
+      _fb_adset_id: att.adsetId || "",
       _fb_ad: att.ad || "",
       _fb_adid: att.adId || "",
       _fbclid: att.fbclid || "",
@@ -378,6 +405,7 @@
 
   async function submitInBackground(payload) {
     if (!ESTIMATES_ENDPOINT) {
+      trackFormEvent("form_submit_error", { error_reason: "endpoint_missing" });
       queuePending(payload.fields);
       return;
     }
@@ -387,9 +415,16 @@
         body: payload.formData,
         keepalive: true,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(`http_${res.status}`);
+      const result = await res.json().catch(() => ({}));
+      trackFormEvent("form_submit_success", {
+        estimate_id: result.id || "",
+      });
       trackLeadConversion(payload.fields._fb_event_id);
     } catch (e) {
+      trackFormEvent("form_submit_error", {
+        error_reason: String(e?.message || "network_error").slice(0, 80),
+      });
       queuePending(payload.fields);
     }
   }
@@ -441,7 +476,13 @@
           body: fd,
         });
         if (!res.ok) remaining.push(fields);
-        else trackLeadConversion(fields._fb_event_id);
+        else {
+          const result = await res.json().catch(() => ({}));
+          trackFormEvent("form_submit_success", {
+            estimate_id: result.id || "",
+          });
+          trackLeadConversion(fields._fb_event_id);
+        }
       } catch (e) {
         remaining.push(fields);
       }

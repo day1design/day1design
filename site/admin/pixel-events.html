@@ -141,8 +141,8 @@
       <header class="admin-topbar" id="adminTopbar"></header>
       <main class="admin-content" id="adminContent">
         <p class="px-intro">
-          Meta 픽셀 기준 상호작용(PageView·ViewContent·Contact·CTA·Lead)을 D1에
-          영속 기록. 광고별 귀속은 추적 URL(마케팅 슬러그)·UTM 기준.
+          광고 클릭부터 폼 작성·제출 오류·실제 문의·상담·계약까지 한 흐름으로
+          확인합니다. 광고별 귀속은 추적 URL과 UTM 기준입니다.
         </p>
 
         <div class="seg" role="tablist" aria-label="기간" id="pxRange">
@@ -233,6 +233,32 @@
             </section>
           </div>
 
+          <section class="mads-section">
+            <div class="mads-section-head">
+              <div class="mads-section-title">실제 상담·계약 성과</div>
+              <div class="mads-section-sub">상담신청 상태와 견적 금액 기준</div>
+            </div>
+            <div class="kpi-grid px-grid px-grid-6" id="pxOutcomeKpi"></div>
+            <div class="panel table-wrap">
+              <table class="top-table">
+                <thead>
+                  <tr>
+                    <th>광고/소재</th>
+                    <th>캠페인</th>
+                    <th style="text-align:right">문의</th>
+                    <th style="text-align:right">연락</th>
+                    <th style="text-align:right">견적</th>
+                    <th style="text-align:right">계약</th>
+                    <th style="text-align:right">계약완료 금액</th>
+                  </tr>
+                </thead>
+                <tbody id="pxOutcomeRows">
+                  <tr><td colspan="7" class="empty-state">불러오는 중...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
           <!-- 광고별 -->
           <section class="mads-section">
             <div class="mads-section-head">
@@ -263,12 +289,13 @@
                       <th>경로</th>
                       <th>소스</th>
                       <th>광고/캠페인</th>
+                      <th>상세</th>
                       <th>상태</th>
                     </tr>
                   </thead>
                   <tbody id="pxRows">
                     <tr>
-                      <td colspan="7" class="empty-state">불러오는 중...</td>
+                      <td colspan="8" class="empty-state">불러오는 중...</td>
                     </tr>
                   </tbody>
                 </table>
@@ -281,6 +308,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js?v=20260602-pixel-data"></script>
     <script defer src="admin.js?v=20260626-authfast"></script>
-    <script defer src="pixel-events.js?v=20260602-pixel-data"></script>
+    <script defer src="pixel-events.js?v=20260903-conversion-funnel"></script>
   </body>
 </html>

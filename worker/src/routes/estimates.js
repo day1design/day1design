@@ -846,6 +846,18 @@ async function submitEstimate(request, env, ctx, services) {
     Source: attribution.source,
     Platform: attribution.platform,
     Campaign: attribution.campaign,
+    UtmSource: fields.utm_source || "",
+    UtmMedium: fields.utm_medium || "",
+    UtmCampaign: fields.utm_campaign || "",
+    MetaCampaign: fields._fb_campaign || "",
+    MetaCampaignId: fields._fb_campaign_id || "",
+    MetaAdset: fields._fb_adset || "",
+    MetaAdsetId: fields._fb_adset_id || "",
+    MetaAd: fields._fb_ad || "",
+    MetaAdId: fields._fb_adid || "",
+    Fbclid: fields._fbclid || "",
+    Fbp: fields._fbp || "",
+    Fbc: fields._fbc || "",
     SessionId: sessionId,
     FirstSource: firstTouch.source,
     FirstPlatform: firstTouch.platform,
@@ -1048,6 +1060,7 @@ async function submitEstimate(request, env, ctx, services) {
       ad: fields._fb_ad || "",
       adId: fields._fb_adid || "",
       fbclid: fields._fbclid || "",
+      estimateId: record.id,
     })
       .then(() => {
         steps.capi = "ok";

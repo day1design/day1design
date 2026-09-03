@@ -5,6 +5,7 @@
   const { api, escapeHtml } = window.adminUtil;
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
+  const fmtWon = (n) => `${fmt(n)}원`;
 
   const NAVY = "#1e3a8a";
   const SKY = "#60a5fa";
@@ -42,6 +43,7 @@
       (r.bySource || []).map((s) => ({ label: s.source, val: s.count })),
     );
     renderAds(r.byAd || []);
+    renderOutcome(r.outcome || {}, r.byOutcome || []);
     renderRows(r.items || []);
   }
 
@@ -95,10 +97,14 @@
 
   function funnelHtml(f) {
     const steps = [
-      ["PageView", f.pageview || 0, SKY],
-      ["ViewContent", f.viewcontent || 0, "#0ea5e9"],
-      ["CTA/Contact", f.cta_contact || 0, ORANGE],
-      ["Lead", f.lead || 0, GREEN],
+      ["페이지 방문", f.pageview || 0, SKY],
+      ["견적 페이지 조회", f.viewcontent || 0, "#0ea5e9"],
+      ["폼 작성 시작", f.form_start || 0, "#6366f1"],
+      ["제출 시도", f.submit_attempt || 0, ORANGE],
+      ["제출 성공", f.form_success || 0, GREEN],
+      ["실제 Lead", f.lead || 0, "#047857"],
+      ["입력 오류", f.validation_error || 0, "#f97316"],
+      ["서버/통신 오류", f.submit_error || 0, "#dc2626"],
     ];
     const max = Math.max(1, steps[0][1]);
     return steps
@@ -106,6 +112,41 @@
         const w = Math.max(2, (val / max) * 100);
         return `<div class="px-bar-row"><div class="px-bar-label">${label}</div><div class="px-bar-track"><div class="px-bar-fill" style="width:${w}%;background:${color}"></div></div><div class="px-bar-val">${fmt(val)}</div></div>`;
       })
+      .join("");
+  }
+
+  function renderOutcome(outcome, rows) {
+    $("pxOutcomeKpi").innerHTML = [
+      ["실제 문의", outcome.inquiries],
+      ["연락 완료", outcome.contacted],
+      ["미팅 예약", outcome.meetings],
+      ["견적 완료", outcome.quoted],
+      ["계약 완료", outcome.contracted],
+      ["계약완료 금액", fmtWon(outcome.contractValue)],
+    ]
+      .map(
+        ([label, value]) =>
+          `<article class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value">${typeof value === "number" ? fmt(value) : value}</div></article>`,
+      )
+      .join("");
+
+    if (!rows.length) {
+      $("pxOutcomeRows").innerHTML =
+        '<tr><td colspan="7" class="empty-state">해당 기간의 상담 데이터가 없습니다.</td></tr>';
+      return;
+    }
+    $("pxOutcomeRows").innerHTML = rows
+      .map(
+        (row) => `<tr>
+          <td>${escapeHtml(row.label)}</td>
+          <td>${escapeHtml(row.campaign || "—")}</td>
+          <td style="text-align:right">${fmt(row.inquiries)}</td>
+          <td style="text-align:right">${fmt(row.contacted)}</td>
+          <td style="text-align:right">${fmt(row.quoted)}</td>
+          <td style="text-align:right"><b>${fmt(row.contracted)}</b></td>
+          <td style="text-align:right">${fmtWon(row.contractValue)}</td>
+        </tr>`,
+      )
       .join("");
   }
 
@@ -159,6 +200,7 @@
           <td>${escapeHtml(it.page_path || "")}</td>
           <td>${escapeHtml(it.source || "")}</td>
           <td>${escapeHtml(ad)}</td>
+          <td>${escapeHtml(it.event_detail || it.estimate_id || "—")}</td>
           <td>${status}</td>
         </tr>`;
       })

@@ -213,6 +213,10 @@ export function normalizeLeadPayload(body = {}) {
     // 진짜 캠페인명은 campaignName 으로 따로 받아 Detail 에 덧붙인다.
     campaign: pick(body.campaign, body.adName, body.ad_name),
     campaignName: pick(body.campaignName, body.campaign_name),
+    campaignId: pick(body.campaignId, body.campaign_id),
+    adsetName: pick(body.adsetName, body.adset_name),
+    adsetId: pick(body.adsetId, body.adset_id),
+    adId: pick(body.adId, body.ad_id),
     timestamp: pick(body.timestamp, body.createdTime, body.created_time),
     extras: mapped.extras,
     formFields: mapped.pairs,
@@ -493,6 +497,12 @@ export async function handleMetaLead(
       Source: "meta",
       Platform: platform,
       Campaign: campaign,
+      MetaCampaign: lead.campaignName.slice(0, 200),
+      MetaCampaignId: lead.campaignId.slice(0, 64),
+      MetaAdset: lead.adsetName.slice(0, 200),
+      MetaAdsetId: lead.adsetId.slice(0, 64),
+      MetaAd: campaign,
+      MetaAdId: lead.adId.slice(0, 64),
       MetaLeadId: leadId,
       // 폼 원문 응답 전량. 상담카드가 이걸 렌더하므로 폼 질문이 바뀌어도 코드 수정이 없다.
       MetaFieldData: serializeFormFields(lead.formFields),
@@ -534,6 +544,10 @@ export async function handleMetaLead(
           phone: phoneDigits,
           source: "meta",
           campaign,
+          adset: lead.adsetName,
+          ad: campaign,
+          adId: lead.adId,
+          estimateId: recordId,
           pagePath: "",
         });
       } catch {

@@ -166,8 +166,20 @@ test("estimate submit stores normalized attribution source", async () => {
   form.append("referral", "포털검색");
   form.append("branch", "강남점");
   form.append("budget", "2500만원");
-  form.append("source", "google");
+  form.append("source", "meta");
   form.append("campaign", "spring-search");
+  form.append("utm_source", "facebook");
+  form.append("utm_medium", "paid_social");
+  form.append("utm_campaign", "autumn-interior");
+  form.append("_fb_campaign", "Autumn Campaign");
+  form.append("_fb_campaign_id", "cmp-101");
+  form.append("_fb_adset", "Gangnam 30s");
+  form.append("_fb_adset_id", "set-202");
+  form.append("_fb_ad", "Wood Creative");
+  form.append("_fb_adid", "ad-303");
+  form.append("_fbclid", "fb-click-404");
+  form.append("_fbp", "fb.1.123.456");
+  form.append("_fbc", "fb.1.123.fb-click-404");
 
   const res = await handleEstimates(
     new Request("https://api.example.test/api/estimates", {
@@ -198,9 +210,79 @@ test("estimate submit stores normalized attribution source", async () => {
 
   await Promise.all(waitUntilTasks);
   assert.equal(res.status, 200);
+  assert.equal(created[0].Source, "meta");
+  assert.equal(created[0].Platform, "Meta");
+  assert.equal(created[0].Campaign, "spring-search");
+  assert.equal(created[0].UtmSource, "facebook");
+  assert.equal(created[0].UtmMedium, "paid_social");
+  assert.equal(created[0].UtmCampaign, "autumn-interior");
+  assert.equal(created[0].MetaCampaign, "Autumn Campaign");
+  assert.equal(created[0].MetaCampaignId, "cmp-101");
+  assert.equal(created[0].MetaAdset, "Gangnam 30s");
+  assert.equal(created[0].MetaAdsetId, "set-202");
+  assert.equal(created[0].MetaAd, "Wood Creative");
+  assert.equal(created[0].MetaAdId, "ad-303");
+  assert.equal(created[0].Fbclid, "fb-click-404");
+  assert.equal(created[0].Fbp, "fb.1.123.456");
+  assert.equal(created[0].Fbc, "fb.1.123.fb-click-404");
+});
+
+// Meta 광고 식별자 저장을 검증하려고 위 테스트의 source 를 google 에서 meta 로
+// 바꾸면서 구글 유입 정규화(google → Google) 검증이 함께 사라졌다. 그 커버리지를
+// 여기서 되살린다 — 광고 칼럼이 늘어도 기존 채널 정규화는 그대로여야 한다.
+test("estimate submit keeps normalizing non-Meta attribution sources", async () => {
+  const created = [];
+  const waitUntilTasks = [];
+  const form = new FormData();
+  form.append("name", "검색고객");
+  form.append("phone", "010-4444-5555");
+  form.append("email", "search@example.com");
+  form.append("privacy_agreed", "true");
+  form.append("space_type", "아파트");
+  form.append("space_size", "30평");
+  form.append("address", "서울 강남구 테헤란로 3");
+  form.append("schedule", "2026년 9월");
+  form.append("referral", "포털검색");
+  form.append("branch", "강남점");
+  form.append("budget", "2500만원");
+  form.append("source", "google");
+  form.append("campaign", "spring-search");
+
+  const res = await handleEstimates(
+    new Request("https://api.example.test/api/estimates", {
+      method: "POST",
+      body: form,
+      headers: { "cf-connecting-ip": "203.0.113.21" },
+    }),
+    {},
+    {
+      waitUntil(task) {
+        waitUntilTasks.push(task);
+      },
+    },
+    {
+      media: {
+        async upload() {
+          throw new Error("unexpected upload");
+        },
+      },
+      estimates: {
+        async create(fields) {
+          created.push(fields);
+          return { id: "recSource0000002", fields };
+        },
+      },
+    },
+  );
+
+  await Promise.all(waitUntilTasks);
+  assert.equal(res.status, 200);
   assert.equal(created[0].Source, "google");
   assert.equal(created[0].Platform, "Google");
   assert.equal(created[0].Campaign, "spring-search");
+  // 광고 식별자가 없는 유입은 새 칼럼이 빈 문자열이어야 한다(누락이 아니라 빈값).
+  assert.equal(created[0].MetaAdId, "");
+  assert.equal(created[0].Fbclid, "");
 });
 
 test("estimate submit requires a project budget", async () => {

@@ -14,6 +14,13 @@
     email_click: "Contact",
     estimate_cta_click: "InitiateCheckout",
   };
+  const INTERNAL_EVENT_MAP = {
+    form_start: "FormStart",
+    form_submit_attempt: "SubmitAttempt",
+    form_validation_error: "ValidationError",
+    form_submit_error: "SubmitError",
+    form_submit_success: "FormSuccess",
+  };
 
   function cleanParams(params = {}) {
     return Object.fromEntries(
@@ -98,6 +105,8 @@
     const utmContent = params.get("utm_content") || "";
     const utmTerm = params.get("utm_term") || "";
     const adId = params.get("utm_id") || params.get("ad_id") || "";
+    const campaignId = params.get("campaign_id") || "";
+    const adsetId = params.get("adset_id") || "";
     const fbclid = params.get("fbclid") || "";
     const clickSource =
       (params.has("fbclid") && "fbclid") ||
@@ -126,6 +135,8 @@
           adset: "",
           ad: "",
           adId: "",
+          campaignId: "",
+          adsetId: "",
           fbclid: "",
         }
       );
@@ -140,6 +151,8 @@
       adset: utmContent,
       ad: utmTerm,
       adId,
+      campaignId,
+      adsetId,
       fbclid,
     };
     writeStoredAttribution(attribution);
@@ -161,7 +174,7 @@
       return "";
     }
   }
-  function pixelBeacon(metaName, gaName, eventId) {
+  function pixelBeacon(metaName, gaName, eventId, details = {}) {
     try {
       const base = String(window.DAY1_API_BASE || "").replace(/\/$/, "");
       if (!base || typeof navigator.sendBeacon !== "function") return;
@@ -177,6 +190,8 @@
         ad: attribution.ad || "",
         ad_id: attribution.adId || "",
         fbclid: attribution.fbclid || "",
+        event_detail: details.event_detail || details.error_reason || "",
+        estimate_id: details.estimate_id || "",
       });
       navigator.sendBeacon(
         base + "/api/pixel-events",
@@ -204,6 +219,7 @@
     // Meta Pixel — 매핑된 표준 이벤트만 전송 (Lead/Contact 등).
     // eventID 전달 시 서버 CAPI 와 중복제거(deduplication).
     const metaEvent = META_EVENT_MAP[name];
+    const internalEvent = INTERNAL_EVENT_MAP[name];
     if (pixelEnabled && metaEvent && typeof window.fbq === "function") {
       if (metaOpts && metaOpts.eventID) {
         window.fbq("track", metaEvent, {}, { eventID: metaOpts.eventID });
@@ -213,7 +229,9 @@
     }
     // pixel_events 적재 — Lead 는 서버 CAPI 가 channel=both 로 기록하므로 제외(중복방지)
     if (metaEvent && metaEvent !== "Lead") {
-      pixelBeacon(metaEvent, name, metaOpts && metaOpts.eventID);
+      pixelBeacon(metaEvent, name, metaOpts && metaOpts.eventID, params);
+    } else if (internalEvent) {
+      pixelBeacon(internalEvent, name, metaOpts && metaOpts.eventID, params);
     }
   };
 
