@@ -1,4 +1,4 @@
-import { handleEstimates } from "./routes/estimates.js";
+import { handleEstimates, runConsultReminders } from "./routes/estimates.js";
 import { handleHero } from "./routes/hero.js";
 import { handlePopups } from "./routes/popups.js";
 import { handlePortfolio } from "./routes/portfolio.js";
@@ -322,6 +322,23 @@ export default {
   //   "0 * * * *"  매시간 정각 — 헬스 하트비트 점검(기록만, 오류 시 텔레그램). 전원 인디케이터용.
   async scheduled(event, env, ctx) {
     const isDaily = event.cron === "0 19 * * *";
+    // 상담 리마인드는 15분마다 따로 돈다. 무거운 동기화 작업과 한 회차에
+    // 묶으면 그쪽이 실패할 때 리마인드까지 못 나간다.
+    if (event.cron === "*/15 * * * *") {
+      ctx.waitUntil(
+        (async () => {
+          try {
+            await runConsultReminders(env);
+          } catch (e) {
+            await notifyTelegram(
+              env,
+              `[day1design/cron] 상담 리마인드 실패\n${(e?.message || "").slice(0, 200)}`,
+            );
+          }
+        })(),
+      );
+      return;
+    }
     ctx.waitUntil(
       (async () => {
         if (isDaily) {

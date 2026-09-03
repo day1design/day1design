@@ -1398,6 +1398,89 @@ function consultNotifyText(kind, fields, prev) {
   return lines.join("\n");
 }
 
+// ─── 상담 리마인드 (하루 전 · 2시간 전) ───
+// cron 이 15분마다 부른다. 이미 보낸 건은 컬럼에 발송 시각이 박혀 있어
+// 몇 번을 돌아도 두 번 나가지 않는다(마이그 0044).
+const REMIND_WINDOW_MS = 25 * 3600 * 1000; // 하루 전 알림을 놓치지 않을 여유
+const REMIND_RULES = [
+  { key: "1d", column: "ConsultRemind1dAt", beforeMs: 24 * 3600 * 1000 },
+  { key: "2h", column: "ConsultRemind2hAt", beforeMs: 2 * 3600 * 1000 },
+];
+
+export async function runConsultReminders(env, nowMs = Date.now()) {
+  if (!env?.DB) return { sent: 0, checked: 0 };
+  const botToken = String(env.CALENDAR_BOT_TOKEN || "").trim();
+  const chatId = String(env.CALENDAR_CHAT_ID || "").trim();
+  if (!botToken || !chatId)
+    return { sent: 0, checked: 0, skipped: "no-config" };
+
+  const nowIso = new Date(nowMs).toISOString();
+  const untilIso = new Date(nowMs + REMIND_WINDOW_MS).toISOString();
+
+  let rows = [];
+  try {
+    const res = await env.DB.prepare(
+      `SELECT id, Name, Phone, Assignee, Status, ConsultAt, ConsultBranch,
+              SpaceType, SpaceSize, Address, AddressDetail,
+              ConsultRemind1dAt, ConsultRemind2hAt
+         FROM Estimates
+        WHERE ConsultAt >= ? AND ConsultAt <= ?
+          AND COALESCE(ConsultCancelledAt, '') = ''
+        ORDER BY ConsultAt ASC
+        LIMIT 100`,
+    )
+      .bind(nowIso, untilIso)
+      .all();
+    rows = res.results || [];
+  } catch {
+    return { sent: 0, checked: 0, error: "query" };
+  }
+
+  let sent = 0;
+  for (const r of rows) {
+    const at = Date.parse(r.ConsultAt);
+    if (Number.isNaN(at)) continue;
+    for (const rule of REMIND_RULES) {
+      // 이미 보냈으면 건너뛴다. 예약을 옮기면 patchEstimate 가 이 값을 비운다.
+      if (String(r[rule.column] || "")) continue;
+      // 아직 그 시점에 이르지 않았으면 다음 회차로 미룬다.
+      if (nowMs < at - rule.beforeMs) continue;
+      const text = consultRemindText(rule.key, r);
+      try {
+        await notifyTelegram(env, text, { botToken, chatId });
+        await env.DB.prepare(
+          `UPDATE Estimates SET ${rule.column} = ? WHERE id = ?`,
+        )
+          .bind(nowIso, r.id)
+          .run();
+        sent++;
+      } catch {
+        // 실패하면 컬럼을 안 채우므로 다음 회차가 다시 시도한다
+      }
+    }
+  }
+  return { sent, checked: rows.length };
+}
+
+function consultRemindText(key, r) {
+  const head =
+    key === "1d"
+      ? "[day1design/consult] 내일 상담 예정"
+      : "[day1design/consult] 2시간 뒤 상담";
+  const branch = r.ConsultBranch ? ` · ${escapeHtml(r.ConsultBranch)}` : "";
+  const lines = [head, `📅 ${fmtConsultKst(r.ConsultAt)}${branch}`];
+  lines.push(
+    `🙍 ${escapeHtml(r.Name || "")} · ${escapeHtml(r.Phone || "")}`.trimEnd(),
+  );
+  const space = [r.SpaceType, r.SpaceSize].filter(Boolean).join(" ");
+  const detail = [space, r.Address, r.AddressDetail]
+    .filter(Boolean)
+    .join(" · ");
+  if (detail) lines.push(`🏠 ${escapeHtml(detail)}`);
+  if (r.Assignee) lines.push(`👤 담당 ${escapeHtml(r.Assignee)}`);
+  return lines.join("\n");
+}
+
 async function patchEstimate(request, env, id, ctx, services) {
   let body;
   try {
@@ -1435,6 +1518,13 @@ async function patchEstimate(request, env, id, ctx, services) {
   const fields = {};
   for (const k of allowed) if (k in body) fields[k] = body[k];
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
+
+  // 예약 일시를 손대면 리마인드 발송 기록을 지운다. 안 지우면 옮긴 일정에
+  // 하루 전·2시간 전 알림이 영영 안 나간다(이미 보낸 것으로 남아 있으므로).
+  if ("ConsultAt" in fields) {
+    fields.ConsultRemind1dAt = "";
+    fields.ConsultRemind2hAt = "";
+  }
 
   // 알림은 "저장했다"가 아니라 "예약이 실제로 달라졌다"를 조건으로 한다.
   // 저장만 해도 보내면, 이미 잡혀 있던 예약이 새 예약처럼 다시 알려져

@@ -44,6 +44,8 @@ const SCHEMA = {
     "ConsultAt",
     "ConsultBranch",
     "ConsultCancelledAt",
+    "ConsultRemind1dAt",
+    "ConsultRemind2hAt",
     "ContractAt",
     "ContractOwner",
     "ContractAmount",
