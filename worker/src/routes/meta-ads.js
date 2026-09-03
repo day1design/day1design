@@ -961,15 +961,18 @@ function isD1QuotaError(message) {
   );
 }
 
-export async function runBackfillChunk(env, ctx) {
+export async function runBackfillChunk(env, ctx, { force = false } = {}) {
   if (!env?.DB) return { skipped: "no_db" };
-  const lastFail = await env.DB.prepare(
-    `SELECT ErrorMessage, CreatedAt FROM MetaSyncLog
+  // force 는 플랜을 올려 한도가 풀린 직후처럼, 같은 날인데도 다시 돌려야 할 때 쓴다.
+  const lastFail = force
+    ? null
+    : await env.DB.prepare(
+        `SELECT ErrorMessage, CreatedAt FROM MetaSyncLog
       WHERE SyncType = ? AND Status <> 'success'
       ORDER BY CreatedAt DESC LIMIT 1`,
-  )
-    .bind(BACKFILL_CHUNK_TYPE)
-    .first();
+      )
+        .bind(BACKFILL_CHUNK_TYPE)
+        .first();
   if (
     lastFail &&
     isD1QuotaError(lastFail.ErrorMessage) &&
@@ -1075,7 +1078,8 @@ async function runBackfill(request, env, ctx) {
   // 기간을 안 주면 한 구간씩 이어받는다 — 전 기간을 한 번에 요청하면 페이지가
   // 수십 장이 되어 subrequest 한도에 걸리고, 실패하면 통째로 날아간다.
   if (!body.startDate && !body.endDate) {
-    const r = await runBackfillChunk(env, ctx);
+    // force=true 는 한도 가드를 건너뛴다 — 플랜을 올려 한도가 풀린 직후에 쓴다.
+    const r = await runBackfillChunk(env, ctx, { force: body.force === true });
     return jsonOk({
       status: r.ok === false ? "failed" : "success",
       mode: "chunk",
