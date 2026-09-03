@@ -1451,6 +1451,15 @@ function firstActionValue(arr, types) {
   }
   return 0;
 }
+
+function preferredActionValue(arr, types) {
+  if (!Array.isArray(arr)) return 0;
+  for (const type of types) {
+    const action = arr.find((item) => item.action_type === type);
+    if (action) return Number(action.value || 0) || 0;
+  }
+  return 0;
+}
 function sumActionValue(arr, types) {
   if (!Array.isArray(arr)) return 0;
   let s = 0;
@@ -1459,17 +1468,12 @@ function sumActionValue(arr, types) {
   return s;
 }
 
-function mapInsight(row) {
+export function mapInsight(row) {
   const actions = Array.isArray(row.actions) ? row.actions : [];
-  let leads = 0;
-  for (const a of actions) {
-    if (
-      a.action_type === "offsite_complete_registration_add_meta_leads" ||
-      a.action_type === "lead"
-    ) {
-      leads += Number(a.value || 0);
-    }
-  }
+  const leads = preferredActionValue(actions, [
+    "offsite_complete_registration_add_meta_leads",
+    "lead",
+  ]);
   return {
     Impressions: Number(row.impressions || 0),
     Clicks: Number(row.clicks || 0),
