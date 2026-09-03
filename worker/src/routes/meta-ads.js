@@ -924,6 +924,71 @@ function addDays(ymd, n) {
 // 멱등성은 MetaSyncLog 가 맡는다 — 성공 기록이 있으면 건너뛰고, 실패했으면
 // 다음 cron 이 다시 시도한다.
 const LEAD_RECOUNT_SYNC_TYPE = "lead-recount";
+const BACKFILL_CHUNK_TYPE = "backfill-chunk";
+const BACKFILL_START_DATE = "2026-02-02";
+const BACKFILL_CHUNK_DAYS = 31;
+
+// 백필 기간을 한 달씩 잘라 목록으로 만든다. 전 기간을 한 번에 요청하면 페이지가
+// 수십 장이 되어 subrequest 한도에 부딪히고, 한 번 실패하면 통째로 날아간다.
+function buildBackfillChunks(startDate, endDate) {
+  const chunks = [];
+  const end = new Date(`${endDate}T00:00:00Z`);
+  let cursor = new Date(`${startDate}T00:00:00Z`);
+  while (cursor <= end && chunks.length < 60) {
+    const chunkEnd = new Date(cursor);
+    chunkEnd.setUTCDate(chunkEnd.getUTCDate() + BACKFILL_CHUNK_DAYS - 1);
+    chunks.push({
+      start: cursor.toISOString().slice(0, 10),
+      end: (chunkEnd > end ? end : chunkEnd).toISOString().slice(0, 10),
+    });
+    cursor = new Date(chunkEnd);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return chunks;
+}
+
+// 아직 안 받은 구간을 한 번에 하나씩 받는다. 남은 구간은 다음 호출이 이어받으므로
+// cron 이 매시 돌면서 스스로 끝까지 채운다.
+// 마지막 구간은 어제까지 이어지며 날마다 늘어나므로, 끝 구간은 완료로 못박지 않고
+// 늘 다시 받는다(같은 키는 덮어쓰기라 행이 늘지 않는다).
+export async function runBackfillChunk(env, ctx) {
+  if (!env?.DB) return { skipped: "no_db" };
+  const endDate = kstYesterday();
+  const chunks = buildBackfillChunks(BACKFILL_START_DATE, endDate);
+  const doneRows = await env.DB.prepare(
+    `SELECT DateRangeStart FROM MetaSyncLog
+      WHERE SyncType = ? AND Status = 'success'`,
+  )
+    .bind(BACKFILL_CHUNK_TYPE)
+    .all();
+  const done = new Set((doneRows.results || []).map((r) => r.DateRangeStart));
+  const pending = chunks.filter((c) => !done.has(c.start));
+  if (!pending.length) {
+    return { skipped: "all_done", chunks: chunks.length };
+  }
+  const chunk = pending[0];
+  const res = await syncRange(
+    env,
+    ctx,
+    chunk.start,
+    chunk.end,
+    BACKFILL_CHUNK_TYPE,
+  );
+  const ok = res.status === 200;
+  if (ok) {
+    try {
+      await prewarmOverviewCache(env);
+    } catch {}
+  }
+  return {
+    ran: true,
+    ok,
+    chunk,
+    remaining: pending.length - (ok ? 1 : 0),
+    total: chunks.length,
+  };
+}
+
 export async function runLeadRecountBackfill(env, ctx) {
   if (!env?.DB) return { skipped: "no_db" };
   const done = await env.DB.prepare(
@@ -955,7 +1020,17 @@ async function runBackfill(request, env, ctx) {
   try {
     body = await request.json();
   } catch {}
-  const startDate = String(body.startDate || "2026-02-02");
+  // 기간을 안 주면 한 구간씩 이어받는다 — 전 기간을 한 번에 요청하면 페이지가
+  // 수십 장이 되어 subrequest 한도에 걸리고, 실패하면 통째로 날아간다.
+  if (!body.startDate && !body.endDate) {
+    const r = await runBackfillChunk(env, ctx);
+    return jsonOk({
+      status: r.ok === false ? "failed" : "success",
+      mode: "chunk",
+      ...r,
+    });
+  }
+  const startDate = String(body.startDate || BACKFILL_START_DATE);
   const endDate = String(body.endDate || kstYesterday());
   const res = await syncRange(env, ctx, startDate, endDate, "backfill");
   // 개요는 30분 엣지 캐시를 탄다. 다시 받아 놓고 캐시를 그대로 두면 화면이
@@ -1238,17 +1313,26 @@ async function fetchInsights(token, accountId, startDate, endDate, level) {
     limit: "500",
     access_token: token,
   });
-  const url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/insights?${params}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(
-      `Meta API ${res.status}: ${data?.error?.message || "unknown"}`,
-    );
-    err.metaError = data?.error;
-    throw err;
+  // 페이지네이션 — limit=500 은 한 페이지 크기일 뿐이라 그냥 두면 첫 500 행에서
+  // 잘린다. ad 레벨은 (일수 × 광고 수) 라 한 달만 넘어도 500 을 우습게 넘는다.
+  // fetchBreakdown 은 진작 페이지를 따라가고 있었는데 이쪽만 빠져 있었다.
+  let url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/insights?${params}`;
+  const all = [];
+  const MAX_PAGES = 12; // subrequest 한도 보호. 기간은 청크로 잘라 들어온다
+  for (let page = 0; page < MAX_PAGES && url; page++) {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) {
+      const err = new Error(
+        `Meta API ${res.status}: ${data?.error?.message || "unknown"}`,
+      );
+      err.metaError = data?.error;
+      throw err;
+    }
+    all.push(...(data.data || []));
+    url = data?.paging?.next || null;
   }
-  return data.data || [];
+  return all;
 }
 
 async function fetchCampaignMeta(token, accountId) {

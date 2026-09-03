@@ -28,6 +28,7 @@ import {
   runScheduledSync,
   prewarmOverviewCache,
   runLeadRecountBackfill,
+  runBackfillChunk,
 } from "./routes/meta-ads.js";
 import { handleBrief } from "./routes/brief.js";
 import { handleSearchVolume } from "./routes/search-volume.js";
@@ -354,6 +355,33 @@ export default {
             );
           }
         }
+        // 과거 지표를 한 구간(약 한 달)씩 이어받는다. 전 기간을 한 번에 요청하면
+        // 페이지가 수십 장이 되어 subrequest 한도에 걸린다. 남은 구간은 다음 cron 이
+        // 이어받아 스스로 끝까지 채운다.
+        try {
+          const chunk = await runBackfillChunk(env, ctx);
+          if (chunk?.ran) {
+            await notifyTelegram(
+              env,
+              `[day1design/cron] Meta 지표 백필 ${chunk.ok ? "완료" : "실패"} — ` +
+                `${chunk.chunk.start}~${chunk.chunk.end} (남은 구간 ${chunk.remaining}/${chunk.total})`,
+              {
+                botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
+                chatId: env.META_RATE_TELEGRAM_CHAT_ID,
+              },
+            );
+          }
+        } catch (e) {
+          await notifyTelegram(
+            env,
+            `[day1design/cron] Meta 지표 백필 오류\n${(e?.message || "").slice(0, 200)}`,
+            {
+              botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
+              chatId: env.META_RATE_TELEGRAM_CHAT_ID,
+            },
+          );
+        }
+
         // 리드를 두 번 세던 시절의 수치를 되돌리는 일회성 백필. 이미 돌았으면
         // 스스로 건너뛰고, 실패하면 다음 cron 이 다시 시도한다.
         try {
