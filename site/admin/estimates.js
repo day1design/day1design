@@ -1153,10 +1153,6 @@ async function openDetail(id) {
               }
             </select>
           </div>
-          <div class="field">
-            <label>견적 금액 (원)</label>
-            <input type="number" id="editAmount" min="0" value="${r.EstimateAmount || 0}" />
-          </div>
         </div>
         ${contractPanelHtml(r)}
         <div class="form-actions">
@@ -1297,7 +1293,6 @@ async function doPatch(id) {
   const payload = {
     Status: detail.querySelector("#editStatus").value,
     Assignee: detail.querySelector("#editAssignee").value.trim(),
-    EstimateAmount: Number(detail.querySelector("#editAmount").value) || 0,
   };
   // 계약 패널이 펼쳐져 있으면 계약으로 저장한다. 상태 드롭다운에는 계약완료가
   // 없으므로 여기서만 그 상태가 붙는다. 해제하면 접수 흐름으로 되돌린다.
