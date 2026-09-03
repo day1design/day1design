@@ -37,7 +37,7 @@ afterEach(() => {
   globalThis.fetch = previousFetch;
 });
 
-const ID = "rec12345678901A";
+const ID = "rec12345678901ABC";
 const BOOKED = {
   Name: "김서연",
   Phone: "010-1234-5678",
@@ -51,6 +51,7 @@ const ENV = {
   JWT_SECRET: "jwt-secret",
   CALENDAR_BOT_TOKEN: "cal-token",
   CALENDAR_CHAT_ID: "-1003958269262",
+  ADMIN_ORIGINS: "https://admin.day1design.co.kr",
   // 캘린더 알림이 기본 관리자 채널로 새지 않는지 확인하기 위해 같이 둔다
   TELEGRAM_BOT_TOKEN: "admin-token",
   TELEGRAM_CHAT_ID: "-100999",
@@ -143,6 +144,54 @@ test("빈 값에서 예약이 잡히면 등록 알림을 전용 채널로 보낸
   // KST 로 환산해 보여야 한다 (05:30Z → 14:30 KST)
   assert.match(text, /2026-09-12\(토\) 14:30 · 강남점/);
   assert.match(text, /김서연/);
+});
+
+// 상담 인력은 채널만 보고 있다. 거기서 바로 일정을 열 수 있어야 한다.
+test("[가드] 알림에 캘린더·접수 이동 링크가 함께 간다", async () => {
+  const { calls } = await patch(
+    { ConsultAt: BOOKED.ConsultAt, ConsultBranch: "강남점" },
+    { ...BOOKED, ConsultAt: "", ConsultBranch: "" },
+  );
+  const text = calls[0].body.text;
+  // 캘린더는 KST 날짜로 열어야 그 날 일정이 펼쳐진다(UTC 로 열면 하루 밀린다)
+  assert.match(
+    text,
+    /href="https:\/\/admin\.day1design\.co\.kr\/calendar\?date=2026-09-12"/,
+    "캘린더 링크가 없거나 날짜가 어긋난다",
+  );
+  assert.match(
+    text,
+    new RegExp(
+      `href="https://admin\\.day1design\\.co\\.kr/estimates\\?id=${ID}"`,
+    ),
+    "접수 상세 링크가 없다",
+  );
+});
+
+test("접수를 삭제한 알림에는 캘린더 링크를 붙이지 않는다", async () => {
+  const calls = captureTelegram();
+  const tasks = [];
+  const jwt = await signJwt({ sub: "admin" }, "jwt-secret", 3600);
+  await handleEstimates(
+    new Request(`https://api.example.test/api/estimates/${ID}`, {
+      method: "DELETE",
+      headers: { cookie: `day1_admin=${encodeURIComponent(jwt)}` },
+    }),
+    ENV,
+    {
+      waitUntil(task) {
+        tasks.push(task);
+      },
+    },
+    makeServices(BOOKED),
+  );
+  await Promise.all(tasks);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].body.text, /접수 삭제/);
+  assert.ok(
+    !/calendar\?date=/.test(calls[0].body.text),
+    "지운 접수인데 캘린더 링크를 줬다 — 눌러도 아무것도 없다",
+  );
 });
 
 test("예약 일시가 바뀌면 이전 값과 새 값을 함께 알린다", async () => {

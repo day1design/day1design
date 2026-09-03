@@ -651,10 +651,16 @@ async function deleteEstimate(env, id, ctx, services) {
     notifyConsult(
       env,
       ctx,
-      consultNotifyText("deleted", existing.fields, {
-        at: existing.fields.ConsultAt,
-        branch: existing.fields.ConsultBranch || "",
-      }),
+      consultNotifyText(
+        "deleted",
+        existing.fields,
+        {
+          at: existing.fields.ConsultAt,
+          branch: existing.fields.ConsultBranch || "",
+        },
+        env,
+        id,
+      ),
     );
   }
   const fileUrls = [
@@ -1348,7 +1354,37 @@ function ddayLabel(iso) {
   return diff > 0 ? `${diff}일 뒤` : `${-diff}일 전`;
 }
 
-function consultNotifyText(kind, fields, prev) {
+// 알림에서 바로 눌러 들어갈 어드민 주소. ADMIN_ORIGINS 의 첫 값을 쓰므로
+// 도메인이 바뀌어도 코드를 고칠 일이 없다.
+function adminBase(env) {
+  const first = String(env?.ADMIN_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)[0];
+  return (first || "https://admin.day1design.co.kr").replace(/\/$/, "");
+}
+
+// 캘린더는 날짜로 열고(그 날 일정이 한눈에), 접수는 id 로 연다.
+// 상담 인력이 채널만 보고 있다가 그 자리에서 이동할 수 있어야 한다.
+function consultLinkLines(env, iso, id) {
+  const base = adminBase(env);
+  const out = [];
+  const t = Date.parse(iso);
+  if (iso && !Number.isNaN(t)) {
+    const d = new Date(t + KST_OFFSET_MS);
+    const p = (n) => String(n).padStart(2, "0");
+    const ymd = `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+    out.push(
+      `🔗 <a href="${base}/calendar?date=${ymd}">상담 캘린더에서 보기</a>`,
+    );
+  }
+  if (id && /^rec[a-zA-Z0-9]{14}$/.test(id)) {
+    out.push(`📋 <a href="${base}/estimates?id=${id}">접수 상세 보기</a>`);
+  }
+  return out;
+}
+
+function consultNotifyText(kind, fields, prev, env, id) {
   const f = fields || {};
   const at = (iso, branch) =>
     `${fmtConsultKst(iso)}${branch ? ` · ${escapeHtml(branch)}` : ""}`;
@@ -1395,6 +1431,10 @@ function consultNotifyText(kind, fields, prev) {
     .join(" · ");
   if (detail) lines.push(`🏠 ${escapeHtml(detail)}`);
   if (f.Assignee) lines.push(`👤 담당 ${escapeHtml(f.Assignee)}`);
+  // 접수를 지운 경우에는 캘린더에 남는 것이 없으므로 링크를 붙이지 않는다.
+  if (kind !== "deleted") {
+    lines.push(...consultLinkLines(env, f.ConsultAt || prev.at, id));
+  }
   return lines.join("\n");
 }
 
@@ -1445,7 +1485,7 @@ export async function runConsultReminders(env, nowMs = Date.now()) {
       if (String(r[rule.column] || "")) continue;
       // 아직 그 시점에 이르지 않았으면 다음 회차로 미룬다.
       if (nowMs < at - rule.beforeMs) continue;
-      const text = consultRemindText(rule.key, r);
+      const text = consultRemindText(rule.key, r, env);
       try {
         await notifyTelegram(env, text, { botToken, chatId });
         await env.DB.prepare(
@@ -1462,7 +1502,7 @@ export async function runConsultReminders(env, nowMs = Date.now()) {
   return { sent, checked: rows.length };
 }
 
-function consultRemindText(key, r) {
+function consultRemindText(key, r, env) {
   const head =
     key === "1d"
       ? "[day1design/consult] 내일 상담 예정"
@@ -1478,6 +1518,7 @@ function consultRemindText(key, r) {
     .join(" · ");
   if (detail) lines.push(`🏠 ${escapeHtml(detail)}`);
   if (r.Assignee) lines.push(`👤 담당 ${escapeHtml(r.Assignee)}`);
+  lines.push(...consultLinkLines(env, r.ConsultAt, r.id));
   return lines.join("\n");
 }
 
@@ -1588,10 +1629,13 @@ async function patchEstimate(request, env, id, ctx, services) {
       notifyConsult(
         env,
         ctx,
-        consultNotifyText(kind, record.fields, {
-          at: prevAt,
-          branch: prevBranch,
-        }),
+        consultNotifyText(
+          kind,
+          record.fields,
+          { at: prevAt, branch: prevBranch },
+          env,
+          id,
+        ),
       );
       // 예약 변경은 흔적을 남긴다 — D1 에 메타, R2 에 이전·이후 원문.
       // 캘린더는 현재 값만 보여 주므로 "언제 누가 어떻게 바꿨나"는 여기에만
