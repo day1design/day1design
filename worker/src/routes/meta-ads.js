@@ -527,7 +527,8 @@ function buildVideoBlock(r, impressions) {
     p50Sec: atSec(0.5),
     p75Sec: atSec(0.75),
     // 평균 시청이 영상의 몇 %까지인지. 길이가 없으면 초만으로는 판단할 수 없다
-    avgWatchRatio: lengthSec > 0 ? Number((avgWatchSec / lengthSec).toFixed(4)) : null,
+    avgWatchRatio:
+      lengthSec > 0 ? Number((avgWatchSec / lengthSec).toFixed(4)) : null,
     playRate: rate(plays, impressions),
     p25OfPlays: rate(p25, plays),
     p50OfPlays: rate(p50, plays),
@@ -546,7 +547,10 @@ async function listAds(request, env) {
     Math.min(200, parseInt(url.searchParams.get("limit") || "20", 10)),
   );
   // 페이지네이션. 광고가 늘어도 한 번에 다 긁지 않도록 offset 을 받는다
-  const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10));
+  const offset = Math.max(
+    0,
+    parseInt(url.searchParams.get("offset") || "0", 10),
+  );
   const sortMap = {
     spend: "Spend",
     cpl: "CPL",
@@ -918,7 +922,14 @@ async function runBackfill(request, env, ctx) {
   } catch {}
   const startDate = String(body.startDate || "2026-02-02");
   const endDate = String(body.endDate || kstYesterday());
-  return syncRange(env, ctx, startDate, endDate, "backfill");
+  const res = await syncRange(env, ctx, startDate, endDate, "backfill");
+  // 개요는 30분 엣지 캐시를 탄다. 다시 받아 놓고 캐시를 그대로 두면 화면이
+  // 옛 수치를 계속 보여줘서 "눌러도 안 바뀐다"가 된다. cron 과 같은 방식으로
+  // 캐시를 새 값으로 덮는다(백그라운드라 응답은 기다리지 않는다).
+  if (res.status === 200) {
+    ctx?.waitUntil(prewarmOverviewCache(env).catch(() => null));
+  }
+  return res;
 }
 
 async function syncRange(env, ctx, startDate, endDate, syncType) {

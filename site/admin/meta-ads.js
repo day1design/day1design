@@ -281,8 +281,7 @@
     const v = ad && ad.video;
     const rate = v && typeof v.p25OfPlays === "number" ? v.p25OfPlays : null;
     if (rate === null) return '<span class="mads-hook mads-hook-na">—</span>';
-    const cls =
-      rate >= HOOK_GOOD ? "good" : rate >= HOOK_WARN ? "warn" : "bad";
+    const cls = rate >= HOOK_GOOD ? "good" : rate >= HOOK_WARN ? "warn" : "bad";
     return `<span class="mads-hook mads-hook-${cls}">${Math.round(rate * 100)}%</span>`;
   }
 
@@ -345,7 +344,8 @@
       .map((ad) => {
         const v = ad.video;
         const hook = typeof v.p25OfPlays === "number" ? v.p25OfPlays : null;
-        const weakButConverting = hook !== null && hook < HOOK_WARN && ad.leads > 0;
+        const weakButConverting =
+          hook !== null && hook < HOOK_WARN && ad.leads > 0;
         return `
         <div class="mads-vid-card">
           <div class="mads-vid-head">
@@ -972,6 +972,43 @@
     customStart = s;
     customEnd = e;
     loadAll("custom");
+  });
+
+  // Meta 에서 광고 지표를 처음부터 다시 받아 저장된 수치를 덮어쓴다.
+  // 리드를 두 번 세던 시절의 값처럼 집계 규칙이 바뀌었을 때 과거 기간까지
+  // 되돌리는 통로다. 같은 (날짜, 광고) 는 덮어쓰기라 행이 늘지 않는다.
+  $("madsResync")?.addEventListener("click", async () => {
+    const btn = $("madsResync");
+    if (btn.disabled) return;
+    if (
+      !confirm(
+        "Meta 에서 광고 지표를 처음부터 다시 받아옵니다.\n저장된 수치는 새로 받은 값으로 바뀌고, 기간이 길면 1~2분 걸립니다.\n계속할까요?",
+      )
+    )
+      return;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "다시 받는 중...";
+    try {
+      const r = await adminUtil.api("/api/meta-ads/backfill", {
+        method: "POST",
+        json: {},
+      });
+      adminUtil.toast?.(
+        `광고 지표 ${Number(r?.recordsUpdated || 0).toLocaleString()}건을 다시 받았습니다`,
+        "success",
+      );
+      adminUtil.cacheInvalidate?.("/api/meta-ads");
+      loadAll(currentRangeKey);
+    } catch (e) {
+      adminUtil.toast?.(
+        `다시 받지 못했습니다 — ${e?.message || "알 수 없는 오류"}`,
+        "error",
+      );
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
   });
 
   document.querySelectorAll("[data-ads-order]").forEach((b) => {
