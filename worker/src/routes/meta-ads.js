@@ -989,6 +989,33 @@ export async function runBackfillChunk(env, ctx) {
   };
 }
 
+// 한 번 실행에 몇 구간까지 이어서 받을지. 구간 하나가 Meta API 를 대략 10~20회
+// 부르므로 세 구간이면 50 안쪽이다(Cloudflare subrequest 한도). 이 값을 올리면
+// 백필은 빨라지지만 한도에 부딪힐 위험이 커진다.
+const BACKFILL_CHUNKS_PER_RUN = 3;
+export async function runBackfillChunks(
+  env,
+  ctx,
+  limit = BACKFILL_CHUNKS_PER_RUN,
+) {
+  const processed = [];
+  let last = null;
+  for (let i = 0; i < limit; i++) {
+    last = await runBackfillChunk(env, ctx);
+    if (!last?.ran) break;
+    processed.push(last.chunk);
+    if (!last.ok) break; // 실패하면 멈춘다 — 다음 cron 이 같은 구간부터 다시 잡는다
+    if (last.remaining === 0) break;
+  }
+  return {
+    ran: processed.length > 0,
+    processed,
+    remaining: last?.remaining ?? 0,
+    total: last?.total ?? 0,
+    ok: last?.ok !== false,
+  };
+}
+
 export async function runLeadRecountBackfill(env, ctx) {
   if (!env?.DB) return { skipped: "no_db" };
   const done = await env.DB.prepare(

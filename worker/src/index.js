@@ -28,7 +28,7 @@ import {
   runScheduledSync,
   prewarmOverviewCache,
   runLeadRecountBackfill,
-  runBackfillChunk,
+  runBackfillChunks,
 } from "./routes/meta-ads.js";
 import { handleBrief } from "./routes/brief.js";
 import { handleSearchVolume } from "./routes/search-volume.js";
@@ -359,12 +359,15 @@ export default {
         // 페이지가 수십 장이 되어 subrequest 한도에 걸린다. 남은 구간은 다음 cron 이
         // 이어받아 스스로 끝까지 채운다.
         try {
-          const chunk = await runBackfillChunk(env, ctx);
+          const chunk = await runBackfillChunks(env, ctx);
           if (chunk?.ran) {
+            const span = chunk.processed.length
+              ? `${chunk.processed[0].start}~${chunk.processed[chunk.processed.length - 1].end}`
+              : "";
             await notifyTelegram(
               env,
               `[day1design/cron] Meta 지표 백필 ${chunk.ok ? "완료" : "실패"} — ` +
-                `${chunk.chunk.start}~${chunk.chunk.end} (남은 구간 ${chunk.remaining}/${chunk.total})`,
+                `${span} ${chunk.processed.length}구간 (남은 구간 ${chunk.remaining}/${chunk.total})`,
               {
                 botToken: env.META_RATE_TELEGRAM_BOT_TOKEN,
                 chatId: env.META_RATE_TELEGRAM_CHAT_ID,
