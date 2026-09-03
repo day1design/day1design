@@ -2,8 +2,8 @@ import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { createServices } from "../lib/services.js";
 import {
-  edgeCacheGet,
-  edgeCachePut,
+  edgeCacheGetSwr,
+  edgeCachePutSwr,
   edgeCacheDeleteMany,
 } from "../lib/edge-cache.js";
 
@@ -111,36 +111,47 @@ async function listCommunity(request, env, ctx, services) {
   const url = new URL(request.url);
   const board = url.searchParams.get("board");
   const ns = listCacheNs(board);
-  const cached = await edgeCacheGet(ns);
-  if (cached) return jsonOk(cached);
+  const hit = await edgeCacheGetSwr(ns, CACHE_TTL);
+  if (hit?.fresh) return jsonOk(hit.data);
 
-  const where = board ? { Board: board } : undefined;
-  const records = await services.community.listAll({
-    where,
-    sort: [{ field: "Date", direction: "desc" }],
-  });
-  const payload = {
-    total: records.length,
-    posts: records.map(toListClient),
-  };
-  await edgeCachePut(ns, payload, CACHE_TTL, ctx);
-  return jsonOk(payload);
+  try {
+    const where = board ? { Board: board } : undefined;
+    const records = await services.community.listAll({
+      where,
+      sort: [{ field: "Date", direction: "desc" }],
+    });
+    const payload = {
+      total: records.length,
+      posts: records.map(toListClient),
+    };
+    await edgeCachePutSwr(ns, payload, ctx);
+    return jsonOk(payload);
+  } catch (error) {
+    // D1 이 못 받아 주면 옛 값이라도 내보낸다(무료 플랜 읽기 한도 등).
+    if (hit) return jsonOk(hit.data);
+    throw error;
+  }
 }
 
 async function getPost(env, idx, ctx, services) {
   const ns = postCacheNs(idx);
-  const cached = await edgeCacheGet(ns);
-  if (cached) return jsonOk(cached);
+  const hit = await edgeCacheGetSwr(ns, CACHE_TTL);
+  if (hit?.fresh) return jsonOk(hit.data);
 
-  const data = await services.community.list({
-    where: { Idx: idx },
-    pageSize: 1,
-  });
-  const r = (data.records || [])[0];
-  if (!r) return jsonError(404, "Post not found");
-  const payload = { post: toDetailClient(r) };
-  await edgeCachePut(ns, payload, CACHE_TTL, ctx);
-  return jsonOk(payload);
+  try {
+    const data = await services.community.list({
+      where: { Idx: idx },
+      pageSize: 1,
+    });
+    const r = (data.records || [])[0];
+    if (!r) return jsonError(404, "Post not found");
+    const payload = { post: toDetailClient(r) };
+    await edgeCachePutSwr(ns, payload, ctx);
+    return jsonOk(payload);
+  } catch (error) {
+    if (hit) return jsonOk(hit.data);
+    throw error;
+  }
 }
 
 async function createPost(request, env, ctx, services) {

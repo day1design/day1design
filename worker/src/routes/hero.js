@@ -4,8 +4,8 @@ import { safeFileName, datePrefix, randomId } from "../lib/r2.js";
 import { createServices } from "../lib/services.js";
 import { assertUploadPolicy, fileExt } from "../lib/upload-policy.js";
 import {
-  edgeCacheGet,
-  edgeCachePut,
+  edgeCacheGetSwr,
+  edgeCachePutSwr,
   edgeCacheDelete,
 } from "../lib/edge-cache.js";
 
@@ -39,28 +39,35 @@ export async function handleHero(
 }
 
 async function getSlides(env, ctx, services) {
-  const cached = await edgeCacheGet(CACHE_NS);
-  if (cached) return jsonOk(cached);
+  const hit = await edgeCacheGetSwr(CACHE_NS, CACHE_TTL);
+  if (hit?.fresh) return jsonOk(hit.data);
 
-  const records = await services.heroSlides.listAll({
-    sort: [{ field: "Order", direction: "asc" }],
-  });
-  const slides = records
-    .filter((r) => r.fields.Active !== false)
-    .map((r) => ({
-      id: r.id,
-      image: r.fields.Image || "",
-      href: r.fields.Href || "",
-      alt: r.fields.Alt || "",
-      order: r.fields.Order ?? 0,
-      lqip: r.fields.Lqip || "",
-    }));
-  const payload = {
-    config: { maxSlides: 10, autoPlayMs: 6000 },
-    slides,
-  };
-  await edgeCachePut(CACHE_NS, payload, CACHE_TTL, ctx);
-  return jsonOk(payload);
+  try {
+    const records = await services.heroSlides.listAll({
+      sort: [{ field: "Order", direction: "asc" }],
+    });
+    const slides = records
+      .filter((r) => r.fields.Active !== false)
+      .map((r) => ({
+        id: r.id,
+        image: r.fields.Image || "",
+        href: r.fields.Href || "",
+        alt: r.fields.Alt || "",
+        order: r.fields.Order ?? 0,
+        lqip: r.fields.Lqip || "",
+      }));
+    const payload = {
+      config: { maxSlides: 10, autoPlayMs: 6000 },
+      slides,
+    };
+    await edgeCachePutSwr(CACHE_NS, payload, ctx);
+    return jsonOk(payload);
+  } catch (error) {
+    // D1 이 못 받아 주면(무료 플랜 하루 읽기 한도 등) 옛 값이라도 내보낸다.
+    // 히어로가 빈 채로 뜨는 것보다 어제 슬라이드가 보이는 편이 낫다.
+    if (hit) return jsonOk(hit.data);
+    throw error;
+  }
 }
 
 /** 전체 배열 교체: D1 ReplaceAll (DELETE + batch INSERT) */

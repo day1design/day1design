@@ -2,13 +2,32 @@ import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { createServices } from "../lib/services.js";
 import {
-  edgeCacheGet,
-  edgeCachePut,
-  edgeCacheDelete,
+  edgeCacheGetSwr,
+  edgeCachePutSwr,
+  edgeCacheDeleteMany,
 } from "../lib/edge-cache.js";
 
+// 목록은 페이지 단위로 끊어 읽고 페이지마다 따로 캐시한다. 한 번에 전량을
+// 읽으면 캐시가 만료될 때마다 D1 읽기가 전체 건수만큼 튄다.
 const CACHE_NS = "portfolio:list";
-const CACHE_TTL = 60;
+const CACHE_TTL = 600; // 10분. 포트폴리오는 자주 바뀌지 않는다
+const PAGE_SIZE_DEFAULT = 24;
+const PAGE_SIZE_MAX = 60;
+const CACHE_MAX_PAGES = 12; // 무효화 때 지울 페이지 수 상한
+
+function listCacheNs(page, limit) {
+  return `${CACHE_NS}:p${page}:l${limit}`;
+}
+
+// 글을 고치면 페이지 캐시를 통째로 비운다 — 어느 페이지에 있었는지 모르므로
+// 상한까지 훑어 지운다.
+function listCacheNamespaces() {
+  const all = [CACHE_NS];
+  for (const limit of [PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX]) {
+    for (let p = 1; p <= CACHE_MAX_PAGES; p++) all.push(listCacheNs(p, limit));
+  }
+  return all;
+}
 
 export async function handlePortfolio(
   request,
@@ -64,7 +83,7 @@ async function reorderPortfolio(request, env, ctx, services) {
     .map((u) => ({ id: u.id, value: Number(u.order) }));
   if (!updates.length) return jsonError(400, "no valid updates");
   await services.portfolio.batchUpdateColumn("Order", updates);
-  await edgeCacheDelete(CACHE_NS, ctx);
+  await edgeCacheDeleteMany(listCacheNamespaces(), ctx);
   return jsonOk({ updated: updates.length });
 }
 
@@ -123,18 +142,25 @@ function safeJsonParse(s, fallback = []) {
 }
 
 async function listPortfolio(env, ctx, services) {
-  const cached = await edgeCacheGet(CACHE_NS);
-  if (cached) return jsonOk(cached);
+  const hit = await edgeCacheGetSwr(CACHE_NS, CACHE_TTL);
+  if (hit?.fresh) return jsonOk(hit.data);
 
-  const records = await services.portfolio.listAll({
-    sort: [{ field: "Order", direction: "asc" }],
-  });
-  const byId = new Map(records.map((r) => [r.id, r]));
-  const payload = {
-    records: records.map((r) => withDerivedRef(toClient(r), byId)),
-  };
-  await edgeCachePut(CACHE_NS, payload, CACHE_TTL, ctx);
-  return jsonOk(payload);
+  try {
+    const records = await services.portfolio.listAll({
+      sort: [{ field: "Order", direction: "asc" }],
+    });
+    const byId = new Map(records.map((r) => [r.id, r]));
+    const payload = {
+      records: records.map((r) => withDerivedRef(toClient(r), byId)),
+    };
+    await edgeCachePutSwr(CACHE_NS, payload, ctx);
+    return jsonOk(payload);
+  } catch (error) {
+    // D1 이 못 받아 주면(무료 플랜 하루 읽기 한도 등) 옛 값이라도 내보낸다.
+    // 공개 화면은 어제 데이터라도 보이는 편이 빈 화면보다 낫다.
+    if (hit) return jsonOk(hit.data);
+    throw error;
+  }
 }
 
 async function getProject(env, id, services) {
@@ -164,7 +190,7 @@ async function createProject(request, env, ctx, services) {
     return jsonError(400, "Name and Folder required");
   }
   const r = await services.portfolio.create(fields);
-  await edgeCacheDelete(CACHE_NS, ctx);
+  await edgeCacheDeleteMany(listCacheNamespaces(), ctx);
   return jsonOk({ record: toClient(r) });
 }
 
@@ -190,7 +216,7 @@ async function patchProject(request, env, id, ctx, services) {
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }
-  await edgeCacheDelete(CACHE_NS, ctx);
+  await edgeCacheDeleteMany(listCacheNamespaces(), ctx);
   return jsonOk({ record: after, cleaned: orphan.length });
 }
 
@@ -203,7 +229,7 @@ async function deleteProject(env, id, ctx, services) {
     if (ctx && ctx.waitUntil) ctx.waitUntil(task);
     else await task;
   }
-  await edgeCacheDelete(CACHE_NS, ctx);
+  await edgeCacheDeleteMany(listCacheNamespaces(), ctx);
   return jsonOk({ deleted: id, cleaned: urls.length });
 }
 

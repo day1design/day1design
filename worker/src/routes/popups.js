@@ -2,8 +2,8 @@ import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin } from "../lib/auth.js";
 import { createServices } from "../lib/services.js";
 import {
-  edgeCacheGet,
-  edgeCachePut,
+  edgeCacheGetSwr,
+  edgeCachePutSwr,
   edgeCacheDelete,
 } from "../lib/edge-cache.js";
 
@@ -90,16 +90,24 @@ function recordToDto(r) {
 }
 
 async function listPublic(env, ctx, services) {
-  const cached = await edgeCacheGet(CACHE_NS);
-  if (cached) return jsonOk(cached);
-  const [records, displayMode] = await Promise.all([
-    services.popups.listAll({ sort: [{ field: "Order", direction: "asc" }] }),
-    getDisplayMode(services),
-  ]);
-  const popups = records.map(recordToDto).filter((p) => p.active && p.imageUrl);
-  const payload = { popups, displayMode };
-  await edgeCachePut(CACHE_NS, payload, CACHE_TTL, ctx);
-  return jsonOk(payload);
+  const hit = await edgeCacheGetSwr(CACHE_NS, CACHE_TTL);
+  if (hit?.fresh) return jsonOk(hit.data);
+  try {
+    const [records, displayMode] = await Promise.all([
+      services.popups.listAll({ sort: [{ field: "Order", direction: "asc" }] }),
+      getDisplayMode(services),
+    ]);
+    const popups = records
+      .map(recordToDto)
+      .filter((p) => p.active && p.imageUrl);
+    const payload = { popups, displayMode };
+    await edgeCachePutSwr(CACHE_NS, payload, ctx);
+    return jsonOk(payload);
+  } catch (error) {
+    // D1 이 못 받아 주면 옛 값이라도 내보낸다(무료 플랜 읽기 한도 등).
+    if (hit) return jsonOk(hit.data);
+    throw error;
+  }
 }
 
 async function listAll(env, services) {
