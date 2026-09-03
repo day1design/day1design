@@ -142,7 +142,9 @@ function fieldValueOf(field) {
 export function matchStandardField(rawKey) {
   const key = normalizeQuestionKey(rawKey);
   if (!key) return "";
-  const lower = String(rawKey ?? "").trim().toLowerCase();
+  const lower = String(rawKey ?? "")
+    .trim()
+    .toLowerCase();
   if (lower === "first_name" || lower === "last_name") return "name";
   const hit = FIELD_RULES.find(([, tokens]) =>
     tokens.some((t) => key.includes(t)),
@@ -542,6 +544,11 @@ export async function handleMetaLead(
           channel: "capi",
           eventId: `meta-lead:${phoneDigits}:${timestamp || ""}`,
           phone: phoneDigits,
+          // 인스턴트폼 리드는 브라우저 신호(fbp·fbc·ua)가 없어 전화번호 하나로만
+          // 매칭됐다. 폼이 이미 받아둔 이름·이메일을 같이 보내 신호를 늘린다.
+          name: lead.name,
+          email: lead.email,
+          externalId: recordId || leadId,
           source: "meta",
           campaign,
           adset: lead.adsetName,
@@ -824,7 +831,11 @@ export async function handleMetaFormSchema(
     .trim()
     .slice(0, 120);
   const questions = (Array.isArray(body.questions) ? body.questions : [])
-    .map((q) => String(q ?? "").trim().slice(0, 200))
+    .map((q) =>
+      String(q ?? "")
+        .trim()
+        .slice(0, 200),
+    )
     .filter(Boolean)
     .slice(0, 60);
   if (!questions.length) return jsonError(400, "questions required");
@@ -873,7 +884,8 @@ export async function handleMetaFormSchema(
   };
   try {
     if (prevRecord) {
-      if (changed) await services.metaFormSchemas.update(prevRecord.id, snapshot);
+      if (changed)
+        await services.metaFormSchemas.update(prevRecord.id, snapshot);
     } else {
       await services.metaFormSchemas.create(snapshot);
     }

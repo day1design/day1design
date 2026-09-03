@@ -43,8 +43,57 @@
       (r.bySource || []).map((s) => ({ label: s.source, val: s.count })),
     );
     renderAds(r.byAd || []);
+    renderMatch(r.match || {});
     renderOutcome(r.outcome || {}, r.byOutcome || []);
     renderRows(r.items || []);
+  }
+
+  // Meta 가 전환을 광고에 붙이려면 사람을 알아볼 신호가 필요하다. 신호를 몇 개
+  // 실어 보냈는지와, 실제 접수 대비 계측이 새지 않았는지를 같이 본다.
+  function renderMatch(match) {
+    const kpi = $("pxMatchKpi");
+    const body = $("pxMatchRows");
+    if (!kpi || !body) return;
+    const rows = match.rows || [];
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
+    const weighted = rows.reduce((sum, row) => sum + row.signals * row.count, 0);
+    const avg = total ? (weighted / total).toFixed(1) : "0";
+    const weak = rows
+      .filter((row) => row.signals > 0 && row.signals <= 2)
+      .reduce((sum, row) => sum + row.count, 0);
+    const failed = rows
+      .filter((row) => row.capiStatus && row.capiStatus !== "sent")
+      .reduce((sum, row) => sum + row.count, 0);
+
+    kpi.innerHTML = [
+      ["평균 매칭 신호", `${avg}개`],
+      ["신호 2개 이하", fmt(weak)],
+      ["전송 실패", fmt(failed)],
+      ["접수 기록", fmt(match.recorded || 0)],
+      ["계측된 문의", fmt(match.tracked || 0)],
+      ["추적 누락", fmt(match.missing || 0)],
+    ]
+      .map(
+        ([label, value]) =>
+          `<article class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div></article>`,
+      )
+      .join("");
+
+    if (!rows.length) {
+      body.innerHTML =
+        '<tr><td colspan="4" class="empty-state">해당 기간의 Lead 이벤트가 없습니다.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows
+      .map(
+        (row) => `<tr>
+          <td>${escapeHtml(row.channel || "—")}</td>
+          <td>${escapeHtml(row.fields || "—")}</td>
+          <td style="text-align:right">${row.signals}</td>
+          <td style="text-align:right">${fmt(row.count)}</td>
+        </tr>`,
+      )
+      .join("");
   }
 
   // 일별 스택 막대 (PageView/상호작용/Lead)

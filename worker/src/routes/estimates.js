@@ -1048,6 +1048,8 @@ async function submitEstimate(request, env, ctx, services) {
       eventId: fields._fb_event_id,
       email: fields.email,
       phone: fields.phone,
+      name: fields.name,
+      externalId: record.id,
       ip,
       ua: request.headers.get("user-agent") || "",
       fbp: fields._fbp,

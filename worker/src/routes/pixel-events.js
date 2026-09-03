@@ -147,6 +147,31 @@ export async function handlePixelEventsAdmin(request, env) {
        FROM pixel_events WHERE created_at >= ${since} AND event_name='Lead'`,
   ).first();
 
+  // CAPI 매칭 신호 진단 — Meta 가 전환을 광고에 붙일 수 있느냐는 사람을 알아볼
+  // 신호를 몇 개나 실어 보냈는지에 달려 있다. 전화번호 하나만 보내던 경로가
+  // 있는지 여기서 드러난다.
+  const matchRows = await env.DB.prepare(
+    `SELECT channel,
+            COALESCE(NULLIF(matched_fields,''),'(없음)') matched_fields,
+            capi_status,
+            COUNT(*) n
+       FROM pixel_events
+      WHERE created_at >= ${since} AND event_name='Lead'
+      GROUP BY channel, matched_fields, capi_status
+      ORDER BY n DESC LIMIT 30`,
+  ).all();
+
+  // 홈페이지 접수(브라우저를 거친 경로)와 실제 접수 레코드 수를 맞대어
+  // 계측이 새는지 본다. Meta 인스턴트폼은 브라우저를 안 거치므로 뺀다.
+  const leadReconcile = await env.DB.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM pixel_events
+         WHERE created_at >= ${since} AND event_name='Lead' AND channel <> 'capi') tracked,
+       (SELECT COUNT(*) FROM Estimates
+         WHERE SubmittedAt >= ${since} AND Status NOT IN ('작성중','오류')
+           AND Source <> 'meta') recorded`,
+  ).first();
+
   const items = await env.DB.prepare(
     `SELECT created_at, event_name, channel, event_id, page_path, source, campaign, ad, ad_id,
             event_detail, estimate_id, capi_status
@@ -238,6 +263,25 @@ export async function handlePixelEventsAdmin(request, env) {
       total: r.total,
       leads: r.leads,
     })),
+    match: {
+      rows: (matchRows.results || []).map((r) => {
+        const fields = String(r.matched_fields || "");
+        return {
+          channel: r.channel || "",
+          capiStatus: r.capi_status || "",
+          fields,
+          signals: fields && fields !== "(없음)" ? fields.split(",").length : 0,
+          count: Number(r.n || 0),
+        };
+      }),
+      tracked: Number(leadReconcile?.tracked || 0),
+      recorded: Number(leadReconcile?.recorded || 0),
+      missing: Math.max(
+        0,
+        Number(leadReconcile?.recorded || 0) -
+          Number(leadReconcile?.tracked || 0),
+      ),
+    },
     outcome: {
       inquiries: Number(outcome?.inquiries || 0),
       contacted: Number(outcome?.contacted || 0),

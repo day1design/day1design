@@ -51,6 +51,16 @@ function normEmail(v) {
     .toLowerCase();
 }
 
+// 이름은 Meta 규격대로 공백·구두점을 털고 소문자로 눕힌 뒤 해싱한다.
+// 한국 이름은 성과 이름을 나누기 어려워 통째로 fn 에 넣는다 — Meta 는 fn 만
+// 와도 신호로 받아들이며, ln 을 억지로 쪼개면 오히려 틀린 값이 들어간다.
+function normName(v) {
+  return String(v || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s.,'"-]/g, "");
+}
+
 // 한국 번호 → 국가코드 포함 숫자(E.164 형식의 숫자부). 010xxxx → 8210xxxx
 function normPhone(v) {
   const d = String(v || "").replace(/[^0-9]/g, "");
@@ -80,6 +90,14 @@ export async function sendMetaCapiLead(env, ctx, info = {}) {
   if (em) userData.em = [await sha256Hex(em)];
   const ph = normPhone(info.phone);
   if (ph) userData.ph = [await sha256Hex(ph)];
+  // 이름과 접수 식별자를 함께 보내 매칭 신호를 늘린다. Meta 인스턴트폼 리드는
+  // 브라우저 신호(fbp·fbc·ua)가 아예 없어 전화번호 하나로만 매칭되던 상태였다.
+  const fn = normName(info.name);
+  if (fn) userData.fn = [await sha256Hex(fn)];
+  // external_id 는 우리 쪽 접수 식별자다. 같은 사람이 다시 접수해도 같은 값이
+  // 아니므로 사람 식별이 아니라 이벤트 대조용으로 쓰인다.
+  if (info.externalId)
+    userData.external_id = [await sha256Hex(String(info.externalId))];
   if (info.ip) userData.client_ip_address = info.ip;
   if (info.ua) userData.client_user_agent = info.ua;
   if (info.fbp) userData.fbp = info.fbp;

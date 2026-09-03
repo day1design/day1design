@@ -141,8 +141,8 @@
       <header class="admin-topbar" id="adminTopbar"></header>
       <main class="admin-content" id="adminContent">
         <p class="px-intro">
-          광고 클릭부터 폼 작성·제출 오류·실제 문의·상담·계약까지 한 흐름으로
-          확인합니다. 광고별 귀속은 추적 URL과 UTM 기준입니다.
+          광고 클릭부터 폼 작성·제출 오류·실제 문의·상담·계약까지 처음부터
+          끝까지 확인합니다. 광고별 귀속은 추적 URL과 UTM 기준입니다.
         </p>
 
         <div class="seg" role="tablist" aria-label="기간" id="pxRange">
@@ -235,6 +235,34 @@
 
           <section class="mads-section">
             <div class="mads-section-head">
+              <div class="mads-section-title">Meta 전달 상태</div>
+              <div class="mads-section-sub">
+                문의 한 건을 Meta 가 광고에 붙이려면 사람을 알아볼 신호가
+                필요합니다. 신호가 적을수록 광고 성과로 인정되지 않습니다.
+              </div>
+            </div>
+            <div class="kpi-grid px-grid px-grid-6" id="pxMatchKpi"></div>
+            <div class="panel table-wrap">
+              <table class="top-table">
+                <thead>
+                  <tr>
+                    <th>경로</th>
+                    <th>보낸 신호</th>
+                    <th style="text-align: right">신호 수</th>
+                    <th style="text-align: right">건수</th>
+                  </tr>
+                </thead>
+                <tbody id="pxMatchRows">
+                  <tr>
+                    <td colspan="4" class="empty-state">불러오는 중...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="mads-section">
+            <div class="mads-section-head">
               <div class="mads-section-title">실제 상담·계약 성과</div>
               <div class="mads-section-sub">상담신청 상태와 견적 금액 기준</div>
             </div>
@@ -245,15 +273,17 @@
                   <tr>
                     <th>광고/소재</th>
                     <th>캠페인</th>
-                    <th style="text-align:right">문의</th>
-                    <th style="text-align:right">연락</th>
-                    <th style="text-align:right">견적</th>
-                    <th style="text-align:right">계약</th>
-                    <th style="text-align:right">계약완료 금액</th>
+                    <th style="text-align: right">문의</th>
+                    <th style="text-align: right">연락</th>
+                    <th style="text-align: right">견적</th>
+                    <th style="text-align: right">계약</th>
+                    <th style="text-align: right">계약완료 금액</th>
                   </tr>
                 </thead>
                 <tbody id="pxOutcomeRows">
-                  <tr><td colspan="7" class="empty-state">불러오는 중...</td></tr>
+                  <tr>
+                    <td colspan="7" class="empty-state">불러오는 중...</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -308,6 +338,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js?v=20260602-pixel-data"></script>
     <script defer src="admin.js?v=20260626-authfast"></script>
-    <script defer src="pixel-events.js?v=20260903-conversion-funnel"></script>
+    <script defer src="pixel-events.js?v=20260903-capi-match"></script>
   </body>
 </html>
