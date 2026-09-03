@@ -980,8 +980,11 @@ function renderSourceSummary(rows) {
       '<div class="source-kpi-item"><div class="source-kpi-name"><span>출처</span></div><div class="source-kpi-value">—</div><div class="source-kpi-sub">데이터 없음</div></div>';
     return;
   }
+  // 상위 6개만 자르면 커뮤니티·채용·AI 검색처럼 비중이 작아도 성격이 다른
+  // 채널이 화면에서 사라진다. 그리드가 auto-fit 이라 줄만 늘어나므로 방문자가
+  // 있는 채널은 전부 보여준다.
   wrap.innerHTML = rows
-    .slice(0, 6)
+    .filter((row) => Number(row.sessions || 0) > 0)
     .map((row, index) => {
       const rawKey = row.key || row.name;
       const key = sourceKey(rawKey);

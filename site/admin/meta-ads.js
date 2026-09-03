@@ -73,8 +73,11 @@
     $("madsCpl").textContent = s.leads > 0 ? fmtUsd(s.cpl) : "—";
     $("madsThruPlay").textContent =
       s.thruPlay > 0 ? fmtCompact(s.thruPlay) : "—";
+    // 평균 시청은 2~3초 대라 정수로 반올림하면 2.6 과 3.4 가 같은 값이 된다.
     $("madsVideoSub").textContent =
-      s.avgWatchSec > 0 ? `ThruPlay · avg ${Math.round(s.avgWatchSec)}초` : "";
+      s.avgWatchSec > 0
+        ? `ThruPlay · 평균 ${s.avgWatchSec.toFixed(1)}초 시청`
+        : "";
 
     $("madsSpendSub").textContent =
       s.spend > 0
@@ -285,6 +288,25 @@
     return `<span class="mads-hook mads-hook-${cls}">${Math.round(rate * 100)}%</span>`;
   }
 
+  // 후킹(25% 도달률)만으로는 "그래서 몇 초를 보고 떠났나"를 알 수 없다.
+  // 길이가 다른 소재를 같은 표에 놓고 비교하려면 초와 길이를 함께 적어야 한다.
+  function watchCell(ad) {
+    const v = ad && ad.video;
+    const sec = v && typeof v.avgWatchSec === "number" ? v.avgWatchSec : 0;
+    if (!sec) return '<span class="mads-hook mads-hook-na">—</span>';
+    const len =
+      v && typeof v.lengthSec === "number" && v.lengthSec > 0
+        ? v.lengthSec
+        : null;
+    const pct =
+      v && typeof v.avgWatchRatio === "number"
+        ? Math.round(v.avgWatchRatio * 100)
+        : null;
+    return `<span class="mads-watch"><b>${sec.toFixed(1)}초</b>${
+      len ? `<em>/${len.toFixed(0)}초</em>` : ""
+    }${pct !== null ? `<i>${pct}%</i>` : ""}</span>`;
+  }
+
   function pctText(v) {
     return typeof v === "number" ? (v * 100).toFixed(1) + "%" : "—";
   }
@@ -384,7 +406,7 @@
     if (!tbody) return;
     if (!rows || !rows.length) {
       tbody.innerHTML =
-        '<tr><td colspan="13" class="empty-state">광고 데이터 없음</td></tr>';
+        '<tr><td colspan="14" class="empty-state">광고 데이터 없음</td></tr>';
       return;
     }
     tbody.innerHTML = rows
@@ -414,6 +436,7 @@
           <td class="num" style="text-align:right">${fmtInt(ad.leads)}</td>
           <td class="num" style="text-align:right">${ad.leads > 0 ? fmtUsd(ad.cpl) : "—"}</td>
           <td class="text-center">${hookBadge(ad)}</td>
+          <td class="text-center">${watchCell(ad)}</td>
           <td class="text-center"><span class="mads-grade mads-grade-${grade.cls}">${grade.grade}</span></td>
         </tr>`;
       })

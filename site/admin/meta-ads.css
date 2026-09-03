@@ -651,6 +651,35 @@
   color: var(--c-text-muted);
 }
 
+/* 시청 칸 — 실제로 몇 초를 보고 떠났는지. 길이가 다른 소재를 같은 표에 놓고
+   비교하려면 초와 영상 길이를 함께 읽혀야 한다. */
+.mads-watch {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mads-watch b {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+.mads-watch em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--c-text-muted);
+}
+.mads-watch i {
+  font-style: normal;
+  font-size: 10px;
+  margin-left: 3px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--c-bg-subtle, #f1f5f9);
+  color: var(--c-text-muted);
+}
+
 .mads-video-verdict {
   margin-bottom: 14px;
   padding: 12px 14px;
