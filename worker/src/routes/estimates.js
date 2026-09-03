@@ -1366,22 +1366,41 @@ function adminBase(env) {
 
 // 캘린더는 날짜로 열고(그 날 일정이 한눈에), 접수는 id 로 연다.
 // 상담 인력이 채널만 보고 있다가 그 자리에서 이동할 수 있어야 한다.
-function consultLinkLines(env, iso, id) {
+// 알림에서 눌러 들어갈 주소. 날짜 계산을 한 곳에 두고 문구만 갈라 쓴다.
+function consultLinkTargets(env, iso, id) {
   const base = adminBase(env);
-  const out = [];
+  const out = {};
   const t = Date.parse(iso);
   if (iso && !Number.isNaN(t)) {
+    // 캘린더는 KST 날짜로 열어야 그 날 일정이 펼쳐진다(UTC 로 넘기면 하루 밀린다)
     const d = new Date(t + KST_OFFSET_MS);
     const p = (n) => String(n).padStart(2, "0");
     const ymd = `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
-    out.push(
-      `🔗 <a href="${base}/calendar?date=${ymd}">상담 캘린더에서 보기</a>`,
-    );
+    out.calendar = `${base}/calendar?date=${ymd}`;
   }
   if (id && /^rec[a-zA-Z0-9]{14}$/.test(id)) {
-    out.push(`📋 <a href="${base}/estimates?id=${id}">접수 상세 보기</a>`);
+    out.detail = `${base}/estimates?id=${id}`;
   }
   return out;
+}
+
+// 예약 알림 — 두 줄로 또박또박
+function consultLinkLines(env, iso, id) {
+  const t = consultLinkTargets(env, iso, id);
+  const out = [];
+  if (t.calendar)
+    out.push(`🔗 <a href="${t.calendar}">상담 캘린더에서 보기</a>`);
+  if (t.detail) out.push(`📋 <a href="${t.detail}">접수 상세 보기</a>`);
+  return out;
+}
+
+// 리마인드 — 한 줄로 압축. 두 줄을 쓰면 짧게 만든 뜻이 없어진다.
+function consultLinkLine(env, iso, id) {
+  const t = consultLinkTargets(env, iso, id);
+  const out = [];
+  if (t.calendar) out.push(`<a href="${t.calendar}">🔗 캘린더</a>`);
+  if (t.detail) out.push(`<a href="${t.detail}">📋 접수 상세</a>`);
+  return out.join(" · ");
 }
 
 function consultNotifyText(kind, fields, prev, env, id) {
@@ -1502,23 +1521,27 @@ export async function runConsultReminders(env, nowMs = Date.now()) {
   return { sent, checked: rows.length };
 }
 
+// 리마인드는 예약 알림과 눈에 띄게 달라야 한다. 같은 모양으로 세 번(등록·
+// 하루 전·2시간 전) 오면 담당자가 반복 알림으로 읽고 흘려 버린다.
+// 그래서 ⏰ 로 머리를 다르게 열고, 누구를 언제 만나는지와 이동 링크만 남긴다.
+// 평형·주소 같은 상세는 접수 링크를 눌러 보면 된다.
 function consultRemindText(key, r, env) {
-  const head =
-    key === "1d"
-      ? "[day1design/consult] 내일 상담 예정"
-      : "[day1design/consult] 2시간 뒤 상담";
+  const kind = key === "1d" ? "내일 상담" : "2시간 뒤 상담";
   const branch = r.ConsultBranch ? ` · ${escapeHtml(r.ConsultBranch)}` : "";
-  const lines = [head, `📅 ${fmtConsultKst(r.ConsultAt)}${branch}`];
-  lines.push(
-    `🙍 ${escapeHtml(r.Name || "")} · ${escapeHtml(r.Phone || "")}`.trimEnd(),
-  );
-  const space = [r.SpaceType, r.SpaceSize].filter(Boolean).join(" ");
-  const detail = [space, r.Address, r.AddressDetail]
+  const who = [
+    escapeHtml(r.Name || ""),
+    escapeHtml(r.Phone || ""),
+    r.Assignee ? `담당 ${escapeHtml(r.Assignee)}` : "",
+  ]
     .filter(Boolean)
     .join(" · ");
-  if (detail) lines.push(`🏠 ${escapeHtml(detail)}`);
-  if (r.Assignee) lines.push(`👤 담당 ${escapeHtml(r.Assignee)}`);
-  lines.push(...consultLinkLines(env, r.ConsultAt, r.id));
+  const lines = [
+    `[day1design/consult] ⏰ 리마인드 — ${kind}`,
+    `📅 ${fmtConsultKst(r.ConsultAt)}${branch}`,
+  ];
+  if (who) lines.push(`🙍 ${who}`);
+  const link = consultLinkLine(env, r.ConsultAt, r.id);
+  if (link) lines.push(link);
   return lines.join("\n");
 }
 

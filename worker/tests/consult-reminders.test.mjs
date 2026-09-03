@@ -66,7 +66,7 @@ function captureTelegram() {
 
 const NOW = Date.parse("2026-09-03T02:00:00.000Z"); // KST 11:00
 const row = (over = {}) => ({
-  id: "rec12345678901A",
+  id: "rec12345678901ABC",
   Name: "박아연",
   Phone: "010-1234-5678",
   Assignee: "유재원",
@@ -86,11 +86,42 @@ test("하루 전 구간에 들어오면 내일 상담 알림을 보낸다", asyn
   const res = await runConsultReminders(env, NOW);
   assert.equal(res.sent, 1);
   assert.equal(calls.length, 1);
-  assert.match(calls[0].text, /내일 상담 예정/);
+  assert.match(calls[0].text, /리마인드 — 내일 상담/);
   assert.match(calls[0].text, /2026-09-04\(금\) 10:00 · 강남점/);
   assert.match(calls[0].text, /박아연/);
   assert.equal(updates.length, 1);
   assert.match(updates[0].sql, /ConsultRemind1dAt/);
+});
+
+// 예약 알림과 같은 모양으로 세 번(등록·하루 전·2시간 전) 오면 담당자가
+// 반복 알림으로 읽고 흘려 버린다. 리마인드는 짧게, 머리도 다르게 유지한다.
+test("[가드] 리마인드는 예약 알림과 구분되게 축약된 형태다", async () => {
+  const calls = captureTelegram();
+  const { env } = makeEnv([row()], {
+    env: { ADMIN_ORIGINS: "https://admin.day1design.co.kr" },
+  });
+  await runConsultReminders(env, NOW);
+  const text = calls[0].text;
+  assert.match(text, /⏰ 리마인드 —/, "리마인드임이 머리에서 드러나야 한다");
+  assert.ok(
+    !/상담 예약$/m.test(text.split("\n")[0]),
+    "예약 등록 알림과 같은 머리글을 쓰고 있다",
+  );
+  // 상세(평형·주소)는 접수 링크로 넘어가 보면 된다 — 알림에 늘어놓지 않는다
+  assert.ok(
+    !text.includes("40~50평") && !text.includes("사가정로"),
+    "리마인드에 접수 상세가 그대로 들어가 길어졌다",
+  );
+  // 담당자·연락처와 이동 링크는 남아야 쓸모가 있다
+  assert.match(text, /박아연/);
+  assert.match(text, /담당 유재원/);
+  assert.match(text, /calendar\?date=2026-09-04/);
+  assert.match(text, /estimates\?id=/);
+  // 링크는 한 줄로 합친다
+  assert.ok(
+    text.split("\n").length <= 4,
+    `리마인드가 ${text.split("\n").length}줄이다 — 4줄 안으로 유지한다`,
+  );
 });
 
 test("[가드] 이미 보낸 리마인드는 다시 보내지 않는다", async () => {
@@ -113,7 +144,7 @@ test("2시간 전에 이르면 두 번째 알림이 나간다", async () => {
   ]);
   const res = await runConsultReminders(env, now);
   assert.equal(res.sent, 1);
-  assert.match(calls[0].text, /2시간 뒤 상담/);
+  assert.match(calls[0].text, /리마인드 — 2시간 뒤 상담/);
 });
 
 test("아직 하루 전에 이르지 않았으면 아무것도 보내지 않는다", async () => {
