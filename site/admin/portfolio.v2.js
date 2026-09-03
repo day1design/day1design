@@ -760,11 +760,25 @@ function diffedChanges() {
   return { orderUpdates, fieldPatches };
 }
 
+// 목록 API 가 페이지 단위로 응답한다(서버가 전량을 한 번에 읽으면 캐시 만료
+// 때마다 D1 읽기가 전체 건수만큼 튄다). 어드민은 순서 편집을 하므로 전 건이
+// 필요해 페이지를 이어 받는다.
+async function fetchAllPortfolio() {
+  const LIMIT = 60;
+  const MAX_PAGES = 10; // 안전망 — hasMore 가 잘못 와도 무한히 돌지 않게
+  const out = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const d = await adminUtil.api(`/api/portfolio?page=${page}&limit=${LIMIT}`);
+    out.push(...(d.records || []));
+    if (!d.hasMore) break;
+  }
+  return out;
+}
+
 // 저장 후 클라이언트/D1 동기 — 강제 refetch 로 stale 상태 차단
 async function reloadFromServer() {
   adminUtil.cacheInvalidate("/api/portfolio");
-  const d = await adminUtil.api("/api/portfolio");
-  records = d.records || [];
+  records = await fetchAllPortfolio();
   records.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   original = JSON.parse(JSON.stringify(records));
   setDirty(false);
@@ -833,8 +847,7 @@ document.getElementById("btnSave").addEventListener("click", async () => {
 (async () => {
   try {
     // 캐시 무시. 어드민 진입 시점에는 항상 최신 D1 상태 확인.
-    const d = await adminUtil.api("/api/portfolio");
-    records = d.records || [];
+    records = await fetchAllPortfolio();
     records.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     original = JSON.parse(JSON.stringify(records));
     render();

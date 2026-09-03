@@ -309,7 +309,7 @@ function assertTable(table) {
 export async function d1List(
   env,
   table,
-  { where, sort, limit, pageSize } = {},
+  { where, sort, limit, pageSize, offset } = {},
 ) {
   assertTable(table);
   if (!env.DB) throw new Error("D1 binding (DB) missing");
@@ -341,6 +341,10 @@ export async function d1List(
   if (lim) {
     const n = Math.max(1, Math.min(parseInt(lim, 10) || 100, 1000));
     sql += " LIMIT " + n;
+    // OFFSET 은 LIMIT 이 있을 때만 의미가 있다. 페이지 단위 조회에 쓴다 —
+    // 목록 전체를 매번 읽으면 캐시가 만료될 때마다 D1 읽기가 전체 건수만큼 튄다.
+    const off = Math.max(0, parseInt(offset, 10) || 0);
+    if (off > 0) sql += " OFFSET " + off;
   }
   const result = await env.DB.prepare(sql)
     .bind(...binds)

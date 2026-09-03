@@ -44,20 +44,23 @@ async function adminCookie() {
 test("portfolio GET reads records through injected D1 repository", async () => {
   const services = {
     portfolio: {
-      async listAll() {
-        return [
-          {
-            id: "recPortfolio001",
-            fields: {
-              Name: "Sample House",
-              Folder: "sample-house",
-              Count: 2,
-              Category: "HOUSE",
-              Order: 1,
-              Images: JSON.stringify(["https://assets.example.test/a.webp"]),
+      // 목록은 페이지 단위로 읽는다(limit + 1 로 다음 페이지 유무 판단).
+      async list() {
+        return {
+          records: [
+            {
+              id: "recPortfolio001",
+              fields: {
+                Name: "Sample House",
+                Folder: "sample-house",
+                Count: 2,
+                Category: "HOUSE",
+                Order: 1,
+                Images: JSON.stringify(["https://assets.example.test/a.webp"]),
+              },
             },
-          },
-        ];
+          ],
+        };
       },
     },
     media: {

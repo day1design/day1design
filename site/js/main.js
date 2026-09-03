@@ -1088,10 +1088,23 @@ async function syncPortfolioFromApi() {
     (typeof window !== "undefined" && window.DAY1_API_BASE) || "";
   if (!API_BASE || !grid) return;
   try {
-    const res = await fetch(`${API_BASE}/api/portfolio?ts=${Date.now()}`);
-    if (!res.ok) return;
-    const d = await res.json();
-    if (!Array.isArray(d.records)) return;
+    // 페이지 단위로 이어 받는다. 서버가 목록 전체를 한 번에 읽으면 캐시가 만료될
+    // 때마다 D1 읽기가 전체 건수만큼 튄다(2026-09-03 무료 플랜 읽기 한도 소진 사고).
+    // 페이지마다 따로 캐시되므로 대부분은 D1 을 거치지 않는다.
+    const LIMIT = 60;
+    const MAX_PAGES = 10; // 안전망 — hasMore 가 잘못 와도 무한히 돌지 않게
+    const records = [];
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const res = await fetch(
+        `${API_BASE}/api/portfolio?page=${page}&limit=${LIMIT}&ts=${Date.now()}`,
+      );
+      if (!res.ok) return;
+      const d = await res.json();
+      if (!Array.isArray(d.records)) return;
+      records.push(...d.records);
+      if (!d.hasMore) break;
+    }
+    const d = { records };
 
     // 변경 감지용 signature — id/order/사진/참조 (rightId 우선) 모두 포함
     const sig = d.records

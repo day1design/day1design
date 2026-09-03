@@ -39,7 +39,7 @@ export async function handlePortfolio(
   const path = url.pathname.replace(/^\/api\/portfolio/, "") || "/";
 
   if (path === "/" && request.method === "GET")
-    return listPortfolio(env, ctx, services);
+    return listPortfolio(request, env, ctx, services);
   if (path === "/" && request.method === "POST") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
@@ -141,19 +141,45 @@ function safeJsonParse(s, fallback = []) {
   }
 }
 
-async function listPortfolio(env, ctx, services) {
-  const hit = await edgeCacheGetSwr(CACHE_NS, CACHE_TTL);
+async function listPortfolio(request, env, ctx, services) {
+  const url = new URL(request.url);
+  const page = Math.max(
+    1,
+    Math.min(parseInt(url.searchParams.get("page") || "1", 10) || 1, 200),
+  );
+  const limit = Math.max(
+    1,
+    Math.min(
+      parseInt(url.searchParams.get("limit") || "", 10) || PAGE_SIZE_DEFAULT,
+      PAGE_SIZE_MAX,
+    ),
+  );
+  const ns = listCacheNs(page, limit);
+  const hit = await edgeCacheGetSwr(ns, CACHE_TTL);
   if (hit?.fresh) return jsonOk(hit.data);
 
   try {
-    const records = await services.portfolio.listAll({
+    // limit + 1 만큼 받아 다음 페이지가 있는지 본다 — 총 건수를 세는 COUNT 쿼리를
+    // 따로 돌리지 않으려는 것이다(그 자체가 전체 스캔이라 읽기를 먹는다).
+    const res = await services.portfolio.list({
       sort: [{ field: "Order", direction: "asc" }],
+      limit: limit + 1,
+      offset: (page - 1) * limit,
     });
-    const byId = new Map(records.map((r) => [r.id, r]));
+    const rows = res.records || [];
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    // 페어 상대가 같은 페이지에 있으면 원본 이름·이미지수를 끌어와 덮고, 다른
+    // 페이지에 있으면 레코드에 저장된 RightName/RightFolder/RightCount 를 그대로
+    // 쓴다. 상대를 매번 개별 조회하면 페이지네이션으로 아낀 읽기를 도로 쓴다.
+    const byId = new Map(pageRows.map((r) => [r.id, r]));
     const payload = {
-      records: records.map((r) => withDerivedRef(toClient(r), byId)),
+      records: pageRows.map((r) => withDerivedRef(toClient(r), byId)),
+      page,
+      limit,
+      hasMore,
     };
-    await edgeCachePutSwr(CACHE_NS, payload, ctx);
+    await edgeCachePutSwr(ns, payload, ctx);
     return jsonOk(payload);
   } catch (error) {
     // D1 이 못 받아 주면(무료 플랜 하루 읽기 한도 등) 옛 값이라도 내보낸다.
