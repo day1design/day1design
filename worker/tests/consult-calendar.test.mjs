@@ -272,6 +272,120 @@ test("캘린더 조회는 기간 안의 예약을 시간순으로 돌려준다",
   assert.match(bound.sql, /ORDER BY ConsultAt ASC/);
 });
 
+// limit+1 을 읽어 다음 쪽 여부를 판단하므로, 상한을 넘기면 nextCursor 가 온다.
+test("예약이 상한을 넘으면 다음 쪽 커서를 준다", async () => {
+  const jwt = await signJwt({ sub: "admin" }, "jwt-secret", 3600);
+  let bound = null;
+  const env = {
+    ...ENV,
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            bound = { sql, args };
+            const limitPlusOne = args[2];
+            return {
+              async all() {
+                return {
+                  results: Array.from({ length: limitPlusOne }, (_, i) => ({
+                    Id: "rec" + String(i).padStart(14, "0"),
+                    Name: "고객" + i,
+                    ConsultAt: `2026-09-${String((i % 28) + 1).padStart(2, "0")}T01:00:00.000Z`,
+                    ConsultBranch: "강남점",
+                  })),
+                };
+              },
+            };
+          },
+        };
+      },
+    },
+  };
+  const res = await handleEstimates(
+    new Request(
+      "https://api.example.test/api/estimates/calendar?from=2026-09-01T00:00:00.000Z&to=2026-10-01T00:00:00.000Z&limit=3",
+      { headers: { cookie: `day1_admin=${encodeURIComponent(jwt)}` } },
+    ),
+    env,
+    { waitUntil() {} },
+    makeServices(BOOKED),
+  );
+  const body = await res.json();
+  assert.equal(bound.args[2], 4, "다음 쪽 판단을 위해 한 건 더 읽어야 한다");
+  assert.equal(body.records.length, 3, "요청한 쪽 크기를 넘겨 돌려줬다");
+  assert.equal(body.hasMore, true);
+  assert.ok(body.nextCursor, "다음 쪽이 있는데 커서를 주지 않았다");
+});
+
+test("[가드] 잘못된 커서는 400 으로 끊는다", async () => {
+  const jwt = await signJwt({ sub: "admin" }, "jwt-secret", 3600);
+  const res = await handleEstimates(
+    new Request(
+      "https://api.example.test/api/estimates/calendar?from=2026-09-01T00:00:00.000Z&to=2026-10-01T00:00:00.000Z&cursor=zzz",
+      { headers: { cookie: `day1_admin=${encodeURIComponent(jwt)}` } },
+    ),
+    ENV,
+    { waitUntil() {} },
+    makeServices(BOOKED),
+  );
+  assert.equal(res.status, 400);
+});
+
+test("[가드] 예약 변경은 감사 로그(D1 메타 + R2 원문)로 영속된다", async () => {
+  captureTelegram();
+  const audits = [];
+  const r2 = [];
+  const tasks = [];
+  const jwt = await signJwt({ sub: "admin" }, "jwt-secret", 3600);
+  const env = {
+    ...ENV,
+    IMAGES: {
+      async put(key, value) {
+        r2.push({ key, value });
+      },
+    },
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              async run() {
+                if (/AdminAuditLogs/.test(sql)) audits.push(args);
+                return { meta: { changes: 1 } };
+              },
+            };
+          },
+        };
+      },
+    },
+  };
+  await handleEstimates(
+    new Request(`https://api.example.test/api/estimates/${ID}`, {
+      method: "PATCH",
+      headers: {
+        cookie: `day1_admin=${encodeURIComponent(jwt)}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ ConsultCancelledAt: "2026-09-04T01:00:00.000Z" }),
+    }),
+    env,
+    {
+      waitUntil(task) {
+        tasks.push(task);
+      },
+    },
+    makeServices(BOOKED),
+  );
+  await Promise.all(tasks);
+  assert.equal(audits.length, 1, "예약 변경 이력이 D1 에 남지 않았다");
+  assert.equal(audits[0][1], "consult_cancelled", "이력 종류가 어긋난다");
+  assert.equal(r2.length, 1, "이전·이후 원문이 R2 에 남지 않았다");
+  const payload = JSON.parse(r2[0].value);
+  assert.equal(payload.before.consultAt, BOOKED.ConsultAt);
+  assert.equal(payload.after.cancelledAt, "2026-09-04T01:00:00.000Z");
+  assert.equal(payload.customer.name, "김서연");
+});
+
 test("[가드] 캘린더 조회는 어드민 인증을 요구한다", async () => {
   const res = await handleEstimates(
     new Request(

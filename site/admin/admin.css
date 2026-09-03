@@ -2074,8 +2074,36 @@
   color: var(--c-primary, #1a2f4e);
   font-weight: 700;
 }
+/* 예약 메모 — 접수 카드 아래에 붙는 한 줄 노트. 오늘 누구를 만나는지
+   카드를 열지 않고도 보이고, 그 자리에서 캘린더로 넘어간다. */
+.est-card-booking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--c-brand-soft, #f4efe4);
+  border: 1px solid rgba(90, 84, 72, 0.18);
+}
+.est-card-booking em {
+  font-style: normal;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-brand-hover, #3f3a31);
+}
+.est-card-booking.is-cancelled {
+  background: #f3f4f6;
+  border-color: var(--c-border);
+}
+.est-card-booking.is-cancelled em {
+  color: var(--c-text-sub);
+  text-decoration: line-through;
+}
+
 .est-card-cal {
-  margin-left: 6px;
+  margin-left: auto;
   font-size: 11px;
   font-weight: 700;
   color: var(--c-brand, #5a5448);

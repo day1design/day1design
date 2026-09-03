@@ -1,6 +1,7 @@
 /* 상담 캘린더 — 예약 일시가 잡힌 접수를 월 단위로 본다.
-   데이터 원본은 Estimates 하나뿐이다(별도 일정 테이블 없음). 그래서 접수를
-   지우거나 예약을 비우면 캘린더에서도 그대로 사라진다 — 동기화 코드가 없다. */
+   데이터 원본은 Estimates 하나뿐이다(별도 일정 테이블 없음) — 동기화 코드가
+   없다. 취소는 삭제가 아니라 표시다: ConsultCancelledAt 만 적고 일정과 접수는
+   그대로 남는다. 변경 이력은 감사 로그(D1 메타 + R2 원문)에 영속된다. */
 (function () {
   const { api, escapeHtml, toast } = window.adminUtil;
   const $ = (id) => document.getElementById(id);
@@ -9,20 +10,19 @@
   const DOW = ["일", "월", "화", "수", "목", "금", "토"];
   const pad = (n) => String(n).padStart(2, "0");
 
-  // 지점 → 색 클래스. 마이그 0041 기준 4종이고, 그 밖의 값은 회색으로 둔다.
+  // 지점 → 색 클래스. 화상 상담은 쓰지 않는다(2026-09-03 제외).
+  // 목록에 없는 값이 들어와도 회색으로 그려 빠뜨리지 않는다.
   const BRANCH_CLASS = {
     강남점: "b-gangnam",
     판교점: "b-pangyo",
     "고객 현장": "b-onsite",
-    "화상 상담": "b-online",
   };
   const BRANCH_COLOR = {
     강남점: "var(--br-gangnam)",
     판교점: "var(--br-pangyo)",
     "고객 현장": "var(--br-onsite)",
-    "화상 상담": "var(--br-online)",
   };
-  const BRANCHES = ["강남점", "판교점", "고객 현장", "화상 상담"];
+  const BRANCHES = ["강남점", "판교점", "고객 현장"];
   // 상담이 성사되지 않은 상태는 흐리게 둔다(지우지는 않는다 — 기록은 남는다)
   const DIM_STATUS = ["진행불가 (예산/범위/지역/일정등)", "전화상담 후 미진행"];
 
@@ -101,19 +101,36 @@
   }
 
   /* ---------- 로드 ---------- */
-  async function fetchRange(from, to) {
-    const res = await api(
-      `/api/estimates/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-    );
-    return (res && res.records) || [];
+  // 서버가 쪽 단위로 끊어 주므로 nextCursor 가 빌 때까지 이어 받는다.
+  // fresh=1 은 방금 내가 저장·취소한 값을 캐시 없이 바로 보기 위한 것이다.
+  async function fetchRange(from, to, fresh) {
+    const out = [];
+    const seen = new Set();
+    let cursor = "";
+    for (let guard = 0; guard < 20; guard++) {
+      const qs =
+        `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "") +
+        (fresh ? "&fresh=1" : "");
+      const res = await api(`/api/estimates/calendar?${qs}`);
+      for (const r of (res && res.records) || []) {
+        // 커서가 마지막 건을 다시 포함하므로 id 로 중복을 걸러낸다
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        out.push(r);
+      }
+      if (!res || !res.nextCursor || res.nextCursor === cursor) break;
+      cursor = res.nextCursor;
+    }
+    return out;
   }
 
-  async function load() {
+  async function load(fresh) {
     if (state.loading) return;
     state.loading = true;
     const { from, to } = monthRange(state.ym);
     try {
-      state.records = await fetchRange(from, to);
+      state.records = await fetchRange(from, to, fresh);
     } catch {
       state.records = [];
       toast("상담 일정을 불러오지 못했습니다");
@@ -126,7 +143,7 @@
   // 이번 주 일요일 00:00(KST)부터 90일. 달을 넘겨 봐도 이 목록은 그대로 남는다.
   // 시작을 오늘이 아니라 주 첫날로 잡아야 '이번 주' 집계에 주 초반이 들어간다
   // (목록 자체는 아래에서 오늘 이후만 추린다).
-  async function loadUpcoming() {
+  async function loadUpcoming(fresh) {
     const t = todayKst();
     const [y, m, d] = t.split("-").map(Number);
     const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
@@ -135,7 +152,7 @@
       Date.UTC(y, m - 1, d + UPCOMING_DAYS) - KST,
     ).toISOString();
     try {
-      state.upcoming = await fetchRange(from, to);
+      state.upcoming = await fetchRange(from, to, fresh);
     } catch {
       state.upcoming = [];
     }
@@ -421,7 +438,7 @@
         json: { ConsultCancelledAt: cancelled ? "" : new Date().toISOString() },
       });
       toast(cancelled ? "예약을 되살렸습니다" : "예약을 취소로 표시했습니다");
-      await Promise.all([load(), loadUpcoming()]);
+      await Promise.all([load(true), loadUpcoming(true)]);
     } catch {
       toast(cancelled ? "되살리지 못했습니다" : "취소하지 못했습니다");
     }

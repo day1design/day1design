@@ -27,6 +27,7 @@ import {
   CUSTOMER_SMS_SUBJECT,
 } from "../lib/sens.js";
 import { logIntakeEvent } from "../lib/intake-log.js";
+import { queueAudit } from "../lib/audit-log.js";
 import { appendLeadToSheet } from "../lib/sheets.js";
 import {
   edgeCacheGet,
@@ -44,6 +45,16 @@ const CACHE_TTL = 30;
 const ESTIMATE_RATE_LIMIT_PER_HOUR = 60;
 function listCacheNs(status) {
   return `estimates:list:${status || "all"}`;
+}
+
+// 상담 캘린더 — 예약은 담당자가 저장할 때만 바뀌므로 목록보다 조금 길게 둔다.
+// 저장·삭제 시 아래 calendarCacheNs 범위를 통째로 지우므로 옛 값이 남지 않는다.
+const CALENDAR_CACHE_TTL = 60;
+const CALENDAR_PAGE_SIZE = 200;
+const CALENDAR_MAX_PAGE_SIZE = 500;
+const CALENDAR_CACHE_PREFIX = "estimates:calendar";
+function calendarCacheNs(from, to, limit) {
+  return `${CALENDAR_CACHE_PREFIX}:${from}:${to}:${limit}`;
 }
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_DOCUMENT_TYPES = [
@@ -468,7 +479,7 @@ export async function handleEstimates(
   if (path === "/calendar" && request.method === "GET") {
     if (!(await verifyAdmin(request, env)))
       return jsonError(401, "Unauthorized");
-    return listConsultCalendar(request, env);
+    return listConsultCalendar(request, env, ctx);
   }
   const idMatch = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (idMatch) {
@@ -535,7 +546,7 @@ async function getVisitHistory(env, id, services) {
 // 기간 안에 예약이 잡힌 접수를 시간순으로 돌려준다. 어드민이 KST 로 계산한
 // 월 경계를 ISO(UTC)로 넘기고, 여기서는 문자열 비교만 한다
 // (ConsultAt 은 항상 ISO 문자열로 저장된다 — site/admin/estimates.js doPatch).
-async function listConsultCalendar(request, env) {
+async function listConsultCalendar(request, env, ctx) {
   const url = new URL(request.url);
   const from = url.searchParams.get("from") || "";
   const to = url.searchParams.get("to") || "";
@@ -543,6 +554,29 @@ async function listConsultCalendar(request, env) {
   const isIso = (s) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s);
   if (!isIso(from) || !isIso(to)) return jsonError(400, "Invalid range");
   if (from >= to) return jsonError(400, "Invalid range");
+
+  // 페이지네이션 — 한 달치는 한 번에 오지만 90일 조회나 예약이 몰린 구간에서
+  // 상한에 걸릴 수 있다. cursor 는 마지막으로 읽은 ConsultAt 이다.
+  const cursor = url.searchParams.get("cursor") || "";
+  if (cursor && !isIso(cursor)) return jsonError(400, "Invalid cursor");
+  const limitRaw = Number(url.searchParams.get("limit") || CALENDAR_PAGE_SIZE);
+  const limit =
+    Number.isFinite(limitRaw) && limitRaw > 0
+      ? Math.min(Math.floor(limitRaw), CALENDAR_MAX_PAGE_SIZE)
+      : CALENDAR_PAGE_SIZE;
+  const start = cursor > from ? cursor : from;
+
+  // 목록과 같은 edge cache 를 쓴다. 다만 캐시 키가 기간·쪽 조합마다 달라
+  // 쓰기 시점에 전부 지울 수가 없다. 그래서 두 가지로 나눈다.
+  //   - 담당자가 방금 저장·취소한 직후에는 fresh=1 로 캐시를 건너뛴다
+  //     (자기가 바꾼 값이 화면에 바로 보여야 한다)
+  //   - 다른 사람이 바꾼 경우는 TTL(60초) 안에 따라잡는다
+  const fresh = url.searchParams.get("fresh") === "1";
+  const ns = calendarCacheNs(start, to, limit);
+  if (!fresh) {
+    const cached = await edgeCacheGet(ns);
+    if (cached) return jsonOk(cached);
+  }
 
   try {
     const res = await env.DB.prepare(
@@ -552,11 +586,15 @@ async function listConsultCalendar(request, env) {
        FROM Estimates
        WHERE ConsultAt >= ? AND ConsultAt < ?
        ORDER BY ConsultAt ASC
-       LIMIT 500`,
+       LIMIT ?`,
     )
-      .bind(from, to)
+      // 다음 쪽이 있는지 알아야 하므로 한 건 더 읽는다
+      .bind(start, to, limit + 1)
       .all();
-    const records = (res.results || []).map((r) => ({
+    const rows = res.results || [];
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const records = page.map((r) => ({
       id: r.Id,
       name: r.Name || "",
       phone: r.Phone || "",
@@ -577,7 +615,13 @@ async function listConsultCalendar(request, env) {
         .join(" "),
       source: r.Source || "",
     }));
-    return jsonOk({ records });
+    // 다음 쪽 시작점. 같은 시각에 여러 건이 몰려도 마지막 건을 포함해 다시
+    // 읽으므로 빠지는 예약이 없다(중복은 클라이언트가 id 로 걸러낸다).
+    const nextCursor =
+      hasMore && records.length ? records[records.length - 1].consultAt : "";
+    const payload = { records, nextCursor, hasMore };
+    await edgeCachePut(ns, payload, CALENDAR_CACHE_TTL, ctx);
+    return jsonOk(payload);
   } catch {
     return jsonError(500, "Calendar lookup failed");
   }
@@ -1459,6 +1503,37 @@ async function patchEstimate(request, env, id, ctx, services) {
           branch: prevBranch,
         }),
       );
+      // 예약 변경은 흔적을 남긴다 — D1 에 메타, R2 에 이전·이후 원문.
+      // 캘린더는 현재 값만 보여 주므로 "언제 누가 어떻게 바꿨나"는 여기에만
+      // 남는다(어드민 감사 로그에서 조회).
+      queueAudit(ctx, env, request, {
+        type: `consult_${kind}`,
+        severity: kind === "cancelled" ? "warn" : "info",
+        status: 200,
+        message:
+          `${record.fields?.Name || ""} ${fmtConsultKst(nextAt || prevAt)}` +
+          `${nextBranch || prevBranch ? ` · ${nextBranch || prevBranch}` : ""}`.trim(),
+        payload: {
+          estimateId: id,
+          kind,
+          before: {
+            consultAt: prevAt,
+            consultBranch: prevBranch,
+            cancelledAt: prevCancel,
+          },
+          after: {
+            consultAt: nextAt,
+            consultBranch: nextBranch,
+            cancelledAt: nextCancel,
+          },
+          customer: {
+            name: record.fields?.Name || "",
+            phone: record.fields?.Phone || "",
+            assignee: record.fields?.Assignee || "",
+            status: record.fields?.Status || "",
+          },
+        },
+      });
     }
   }
   return jsonOk({ id: record.id, updated: record.fields });

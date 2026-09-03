@@ -396,6 +396,21 @@ function fmtConsultAt(iso) {
   }
 }
 
+// 카드 아래에 붙는 예약 메모. 예약이 잡힌 건만 나오고, 그 날짜의 캘린더로
+// 바로 넘어가는 링크를 함께 단다. 예약이 없으면 줄 자체를 그리지 않는다.
+function bookingNoteHtml(r) {
+  if (!r.ConsultAt) return "";
+  const cancelled = !!r.ConsultCancelledAt;
+  const when = escapeHtml(fmtConsultAt(r.ConsultAt));
+  const branch = r.ConsultBranch ? ` · ${escapeHtml(r.ConsultBranch)}` : "";
+  const date = consultDateParam(r.ConsultAt);
+  return `
+      <span class="est-card-booking${cancelled ? " is-cancelled" : ""}">
+        <em>📅 ${when}${branch} ${cancelled ? "예약 취소됨" : "상담 예약"}</em>
+        ${date ? `<a class="est-card-cal" href="calendar?date=${date}">일정 보기</a>` : ""}
+      </span>`;
+}
+
 // 상담 캘린더로 넘길 날짜(YYYY-MM-DD). 화면 표기(fmtConsultAt)와 같은 기준을
 // 써야 카드에 보이는 날짜와 캘린더가 여는 날짜가 어긋나지 않는다.
 function consultDateParam(iso) {
@@ -577,7 +592,7 @@ function filtered() {
 // 상담을 실제로 진행하는 지점. 고객이 접수 때 고른 희망 지점(Branch)과 다를 수
 // 있어 따로 고른다. 지점이 늘면 여기에 추가하면 되고, 목록에 없는 값이 이미
 // 저장돼 있으면 그 값도 선택지에 남겨 덮어쓰지 않는다.
-const CONSULT_BRANCHES = ["강남점", "판교점", "고객 현장", "화상 상담"];
+const CONSULT_BRANCHES = ["강남점", "판교점", "고객 현장"];
 
 // 상태 드롭다운. '계약완료' 는 여기 없다 — 계약은 일시·담당자·금액을 같이
 // 받아야 하므로 아래 계약 패널의 버튼으로만 처리한다. 드롭다운에 두면 금액을
@@ -840,18 +855,6 @@ function render() {
           <b>지점</b>
           <em>${escapeHtml(branch)}</em>
         </span>
-        ${
-          r.ConsultAt
-            ? `
-        <span class="est-card-consult">
-          <b>상담 예약</b>
-          <em>${escapeHtml(fmtConsultAt(r.ConsultAt))}${r.ConsultBranch ? ` · ${escapeHtml(r.ConsultBranch)}` : ""}${
-            r.ConsultCancelledAt ? " · 취소됨" : ""
-          }</em>
-          <a class="est-card-cal" href="calendar?date=${consultDateParam(r.ConsultAt)}">일정 확인</a>
-        </span>`
-            : ""
-        }
         <span>
           <b>유입</b>
           <em>${sourceBadges(r)} ${sessionBadgeHtml(sessionNo)}</em>
@@ -871,6 +874,7 @@ function render() {
         <b>접수내용</b>
         <em>${escapeHtml(summary)}</em>
       </span>
+      ${bookingNoteHtml(r)}
       <span class="est-card-action">상세 보기</span>
     </button>`;
         })
