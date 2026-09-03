@@ -396,6 +396,22 @@ function fmtConsultAt(iso) {
   }
 }
 
+// datetime-local 입력칸에 넣을 값(YYYY-MM-DDTHH:mm).
+// 🔴 UTC ISO 문자열을 그대로 넣으면 안 된다. 이 입력칸은 값을 "로컬 시간"으로
+// 읽으므로 KST 담당자에게 9시간 이른 시각이 보이고(10:00 예약이 01:00 으로),
+// 그 상태로 저장하면 new Date(...).toISOString() 이 다시 9시간을 빼서
+// 예약이 실제로 앞당겨진다. 화면 표기(fmtConsultAt)와도 어긋난다.
+function toLocalInputValue(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
+
 // 카드 아래에 붙는 예약 메모. 예약이 잡힌 건만 나오고, 그 날짜의 캘린더로
 // 바로 넘어가는 링크를 함께 단다. 예약이 없으면 줄 자체를 그리지 않는다.
 function bookingNoteHtml(r) {
@@ -1412,11 +1428,11 @@ async function openDetail(id) {
               </div>
               <div class="field">
                 <label>첫 연락 일시</label>
-                <input type="datetime-local" id="editContactedAt" value="${(r.ContactedAt || "").slice(0, 16)}" />
+                <input type="datetime-local" id="editContactedAt" value="${toLocalInputValue(r.ContactedAt)}" />
               </div>
               <div class="field">
                 <label>상담 예약 일시</label>
-                <input type="datetime-local" id="editConsultAt" value="${(r.ConsultAt || "").slice(0, 16)}" />
+                <input type="datetime-local" id="editConsultAt" value="${toLocalInputValue(r.ConsultAt)}" />
               </div>
               <p class="nd-sync">
                 📅 저장하면 <b>상담 캘린더</b>에 올라가고

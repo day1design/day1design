@@ -59,6 +59,37 @@ test("[가드] d1 SCHEMA 화이트리스트가 상담 예약·계약을 통과�
   }
 });
 
+// datetime-local 입력칸은 값을 "로컬 시간"으로 읽는다. UTC ISO 를 잘라
+// 넣으면 KST 담당자에게 9시간 이른 시각이 보이고(10:00 예약이 01:00 으로),
+// 그 상태로 저장하면 toISOString() 이 다시 9시간을 빼 예약이 앞당겨진다.
+// 2026-09-03 실제로 이 증상이 나왔다 — 되돌아오면 안 된다.
+test("[가드] 일시 입력칸에 UTC 문자열을 잘라 넣지 않는다", async () => {
+  const src = await readFile(
+    new URL("../../site/admin/estimates.js", import.meta.url),
+    "utf8",
+  );
+  for (const id of ["editConsultAt", "editContactedAt"]) {
+    const line = src
+      .split("\n")
+      .find((l) => l.includes(`id="${id}"`) && l.includes("datetime-local"));
+    assert.ok(line, `${id} 입력칸을 찾지 못했다`);
+    assert.ok(
+      !/\.slice\(0,\s*16\)/.test(line),
+      `${id} 가 UTC 를 그대로 잘라 넣는다 — 화면 시각이 9시간 어긋난다`,
+    );
+    assert.match(
+      line,
+      /toLocalInputValue\(/,
+      `${id} 는 toLocalInputValue 로 로컬 시각을 만들어 넣어야 한다`,
+    );
+  }
+  assert.match(
+    src,
+    /function toLocalInputValue\(/,
+    "toLocalInputValue 헬퍼가 없다",
+  );
+});
+
 test("[가드] PATCH 가 상담 예약·계약 필드를 받는다", async () => {
   const src = await readFile(
     new URL("../src/routes/estimates.js", import.meta.url),
