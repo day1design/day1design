@@ -82,6 +82,10 @@ function normalizeEstimateAttribution(fields) {
   ]
     .filter(Boolean)
     .join(" ")
+    // NFC 로 합쳐야 한글 낱말이 걸린다 — deriveUtm 이 `normalize("NFKD")` 를
+    // 걸어 UtmSource 에는 자모가 분해된 값이 들어온다("메타" → ㅁㅔㅌㅏ).
+    // 조합형 정규식은 분해형에 안 걸려 아래 한글 키워드가 전부 헛돈다.
+    .normalize("NFC")
     .toLowerCase();
   // 한글 키워드도 같이 본다 — 마케팅 슬러그의 UtmSource 는 SourceLabel 을 그대로
   // 슬러그화한 값이라 "네이버-블로그-견적문의"처럼 한글로 들어온다(marketing.js

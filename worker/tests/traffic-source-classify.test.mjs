@@ -9,6 +9,19 @@ const ch = (source, medium = "") =>
 // [가드] 마케팅 슬러그는 UtmSource 에 한글 라벨을 그대로 심는다.
 // 판별 정규식이 영문만 보던 동안 이 유입이 전량 '기타' 로 떨어졌다 —
 // 2026-09-03 실측에서 기타 66.7% 중 94% 가 "메타-트래픽-캠페인" 한 값이었다.
+// [가드] 슬러그를 만드는 deriveUtm 이 normalize("NFKD") 를 걸어서 D1 에는 한글
+// 자모가 분해된 값이 저장된다("메타" U+BA54 U+D0C0 → U+1106 U+1166 U+1110 U+1161).
+// 조합형으로 쓴 정규식은 분해형에 절대 안 걸린다 — 실제로 이것 때문에 분류를
+// 고치고 배포한 뒤에도 기타가 그대로였다. 판별 전에 NFC 로 합치는지 못박는다.
+test("[가드] 자모가 분해된(NFKD) 한글 슬러그도 알아본다", () => {
+  const decomposed = (s) => s.normalize("NFKD");
+  assert.notEqual(decomposed("메타-트래픽-캠페인"), "메타-트래픽-캠페인");
+  assert.equal(ch(decomposed("메타-트래픽-캠페인"), "marketing-slug"), "meta_ad");
+  assert.equal(ch(decomposed("네이버-블로그-견적문의"), "marketing-slug"), "naver");
+  assert.equal(ch(decomposed("인스타그램-마케팅"), "organic"), "instagram_mkt");
+  assert.equal(ch(decomposed("유튜브-쇼츠"), "marketing-slug"), "youtube");
+});
+
 test("[가드] 한글 UTM 슬러그를 채널로 알아본다", () => {
   assert.equal(ch("메타-트래픽-캠페인", "marketing-slug"), "meta_ad");
   assert.equal(ch("네이버-블로그-견적문의", "marketing-slug"), "naver");
