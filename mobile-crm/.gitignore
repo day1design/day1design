@@ -1,0 +1,16 @@
+.tools/
+.gradle/
+**/build/
+local.properties
+.env*
+!.env.example
+*.keystore
+*.jks
+
+**/__pycache__/
+*.otp-key
+release.local.properties
+google-services.json
+*service-account*.json
+
+firebase.local.properties

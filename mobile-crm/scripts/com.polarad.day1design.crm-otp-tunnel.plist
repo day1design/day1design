@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.polarad.day1design.crm-otp-tunnel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/cloudflared</string>
+    <string>tunnel</string><string>--no-autoupdate</string><string>run</string>
+    <string>--token-file</string><string>/Users/pola/day1design-crm-otp/tunnel-token</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/pola/day1design-crm-otp</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/pola/day1design-crm-otp/tunnel.stdout.log</string>
+  <key>StandardErrorPath</key><string>/Users/pola/day1design-crm-otp/tunnel.stderr.log</string>
+</dict>
+</plist>

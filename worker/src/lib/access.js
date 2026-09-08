@@ -53,6 +53,11 @@ export function classifyAccess(request, opts = {}) {
   const path = url.pathname;
   const method = effectiveMethod(request, opts);
 
+  // Native clients have no browser Origin; the mobile handler verifies its own session.
+  if (path === "/api/mobile" || path.startsWith("/api/mobile/")) {
+    return { role: "integration", method, path };
+  }
+
   // 서버-서버(아이맥 폴러) 경로는 Origin 이 없다. 시크릿 헤더로만 검증하므로
   // origin 가드에서 걸리면 안 된다. meta-lead 하위 경로를 새로 추가할 때 여기에
   // 같이 등록하지 않으면 핸들러에 닿기도 전에 403 origin_required 로 막힌다.

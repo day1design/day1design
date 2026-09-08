@@ -1,0 +1,20 @@
+name = "day1design-crm-api"
+main = "src/crm-runtime.js"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "day1design"
+database_id = "60c293bc-5359-4a94-bc18-c3cda0829366"
+
+[vars]
+ALLOWED_ORIGINS = "https://admin.day1design.co.kr"
+
+[[routes]]
+pattern = "api.day1design.co.kr/api/mobile*"
+zone_name = "day1design.co.kr"
+
+[triggers]
+crons = ["* * * * *"]

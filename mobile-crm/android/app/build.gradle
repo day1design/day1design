@@ -1,0 +1,78 @@
+plugins { id 'com.android.application' }
+
+def releaseConfig = new Properties()
+def releaseFile = rootProject.file('release.local.properties')
+if (releaseFile.exists()) releaseFile.withInputStream { releaseConfig.load(it) }
+def releaseApi = releaseConfig.getProperty('apiBaseUrl', '')
+def releaseReady = ['storeFile','storePassword','keyAlias','keyPassword'].every { releaseConfig.getProperty(it) }
+def fcmConfig = new Properties()
+def fcmFile = rootProject.file('firebase.local.properties')
+if (fcmFile.exists()) fcmFile.withInputStream { fcmConfig.load(it) }
+def fcmValue = { String variant, String key -> fcmConfig.getProperty("${variant}.${key}", '') }
+def fcmReady = { String variant ->
+    ['projectId','appId','apiKey','senderId','applicationId'].every { fcmValue(variant, it) } &&
+        fcmValue(variant, 'applicationId') == (variant == 'debug' ? 'kr.polarad.crm.dev' : 'kr.polarad.crm')
+}
+def buildConfigString = { String value -> '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"' }
+
+if (releaseApi && !(releaseApi ==~ /https:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?/)) {
+    throw new GradleException('release apiBaseUrl must be an HTTPS origin')
+}
+
+android {
+    namespace 'kr.polarad.crm'
+    compileSdk 36
+    buildToolsVersion '35.0.0'
+    defaultConfig {
+        applicationId 'kr.polarad.crm'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0'
+    }
+    signingConfigs {
+        if (releaseReady) {
+            product {
+                storeFile file(releaseConfig.getProperty('storeFile'))
+                storePassword releaseConfig.getProperty('storePassword')
+                keyAlias releaseConfig.getProperty('keyAlias')
+                keyPassword releaseConfig.getProperty('keyPassword')
+            }
+        }
+    }
+    buildFeatures { buildConfig true }
+    buildTypes {
+        debug {
+            applicationIdSuffix '.dev'
+            buildConfigField 'String', 'API_BASE_URL', '"http://127.0.0.1:18791"'
+            buildConfigField 'boolean', 'FCM_CONFIGURED', fcmReady('debug').toString()
+            buildConfigField 'String', 'FCM_PROJECT_ID', buildConfigString(fcmValue('debug', 'projectId'))
+            buildConfigField 'String', 'FCM_APP_ID', buildConfigString(fcmValue('debug', 'appId'))
+            buildConfigField 'String', 'FCM_API_KEY', buildConfigString(fcmValue('debug', 'apiKey'))
+            buildConfigField 'String', 'FCM_SENDER_ID', buildConfigString(fcmValue('debug', 'senderId'))
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField 'String', 'API_BASE_URL', '"' + releaseApi + '"'
+            buildConfigField 'boolean', 'FCM_CONFIGURED', fcmReady('release').toString()
+            buildConfigField 'String', 'FCM_PROJECT_ID', buildConfigString(fcmValue('release', 'projectId'))
+            buildConfigField 'String', 'FCM_APP_ID', buildConfigString(fcmValue('release', 'appId'))
+            buildConfigField 'String', 'FCM_API_KEY', buildConfigString(fcmValue('release', 'apiKey'))
+            buildConfigField 'String', 'FCM_SENDER_ID', buildConfigString(fcmValue('release', 'senderId'))
+            if (releaseReady) signingConfig signingConfigs.product
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.google.firebase:firebase-messaging:25.1.2'
+}
+
+tasks.configureEach { task ->
+    if (task.name == 'preReleaseBuild') {
+        task.doFirst {
+            if (!releaseReady || !releaseApi) throw new GradleException('Project-local release signing and API configuration are required')
+        }
+    }
+}

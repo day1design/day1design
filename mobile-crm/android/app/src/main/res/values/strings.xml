@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">데이원디자인 CRM</string>
+    <string name="contract_status">상태: %1$s</string>
+    <string name="template_kind">유형: %1$s</string>
+    <string name="preview_channel">미리보기 채널: %1$s (화면 확인용)</string>
+    <string name="template_enabled">템플릿 사용: %1$s</string>
+    <string name="default_notification_channel_id">crm_default</string>
+    <string name="default_notification_channel_name">CRM 업무 알림</string>
+</resources>

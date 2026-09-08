@@ -1,0 +1,15 @@
+{
+  "date": "2026-09-08 KST",
+  "gradle": "8.13",
+  "agp": "8.13.2",
+  "jdk": "17.0.19",
+  "compile_sdk": 36,
+  "build_tools": "35.0.0",
+  "command_line_tools": "23.0 (latest-2)",
+  "emulator_acceleration": "WHPX usable",
+  "build_result": "BUILD SUCCESSFUL",
+  "apk_sha256": "ef6c320a27a42699a94488b65b908611be76874cd17dd9a82e336124b80d241f",
+  "apk_bytes": 6709,
+  "device_install_performed": false,
+  "production_changes": false
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.polarad.day1design.crm-otp-relay</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/pola/day1design-crm-otp/otp-relay.mjs</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/pola/day1design-crm-otp</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CRM_OTP_RELAY_CONFIG</key>
+    <string>/Users/pola/day1design-crm-otp/relay-config.json</string>
+  </dict>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/pola/day1design-crm-otp/relay.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/pola/day1design-crm-otp/relay.stderr.log</string>
+</dict>
+</plist>

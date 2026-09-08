@@ -1,0 +1,64 @@
+{
+  "verified_at_kst": "2026-09-09T08:56:15.093+09:00",
+  "apk": "F:\\day1design_homepage\\mobile-crm\\android\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+  "sha256": "93836f212e5c9909f928466954e4e560ba3d2ea567f95711c6a5de81f1f964e7",
+  "package": "kr.polarad.crm.dev",
+  "variant": "debug",
+  "api_scope": "loopback-only",
+  "build": "assembleDebug/lintDebug and assembleRelease/lintRelease passed",
+  "worker_tests": {
+    "passed": 274,
+    "failed": 0,
+    "log": ".tools/operational-tests.log"
+  },
+  "device": {
+    "serial": "emulator-5582",
+    "avd": "polarad_crm_dev",
+    "physical_device": false,
+    "cold_relaunch_session": true
+  },
+  "manual_qa": [
+    "owner OTP login from local inbox",
+    "Dayone sidebar source logo",
+    "customer original record mutation and visit edit/cancel",
+    "staff inbox read receipt",
+    "member create and refreshed list",
+    "selected notification exactly qa.staff2@day1.local",
+    "existing template preload, variable preview, draft ON save",
+    "analytics actual local 1 lead and unavailable other sources",
+    "platform create/suspend isolated QA tenant",
+    "SMS and Alimtalk channel-specific substituted preview with tenant name",
+    "period analytics trend and source counts",
+    "analytics refresh replaces old results",
+    "reversed date range removes old results and shows error",
+    "device registration HTTP: token omitted from response, logout removes registration and rejects session",
+    "actual Firebase notification received and tapped on emulator-5582"
+  ],
+  "external_email_sent": false,
+  "production_deployed": false,
+  "fcm_verified": true,
+  "screenshots": [
+    "35-final-dayone-logo.png",
+    "36-final-selected-staff.png",
+    "37-final-template-preload.png",
+    "38-final-template-preview.png",
+    "39-final-analytics.png",
+    "40-final-cold-launch.png",
+    "41-analytics-period.png",
+    "42-analytics-invalid-range.png",
+    "43-message-sms-preview.png",
+    "44-message-alimtalk-preview.png",
+    "45-current-cold-launch.png",
+    "46-fcm-received.png",
+    "47-fcm-tap-inbox.png"
+  ],
+  "build_log": ".tools/final-fcm-debug-build.log",
+  "physical_install_authorization": "Only after all product work is complete; connected SM-S928N identified, not installed",
+  "previous_local_qa_at_kst": "2026-09-09T08:09:47.470907+09:00",
+  "release": {
+    "sha256": "e0bc4f76b586df1fe06cc255a2a7398a026a2480540af183b06465f1aa8571f6",
+    "package": "kr.polarad.crm",
+    "installed": false
+  },
+  "fcm_scope": "Actual Firebase HTTP v1 delivery to isolated emulator-5582; notification tap opened authenticated inbox"
+}

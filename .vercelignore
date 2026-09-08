@@ -18,3 +18,10 @@ _backup
 _fav_tmp
 blog-infographic-gangnam
 workers
+
+# CRM runtime and local credentials are not static-site artifacts.
+mobile-crm
+.omx
+.env
+.env.*
+worker/.dev.vars
