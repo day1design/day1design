@@ -104,14 +104,62 @@ async function listMembers(request, env, auth) {
   return jsonOk({members:(result.results || []).map(row=>({...row,active:row.active===1}))});
 }
 
+const allowedCustomerStatuses = new Set([
+  "접수대기", "고객 부재중", "진행불가 (예산/범위/지역/일정등)", "전화상담 후 미진행",
+  "전화상담 후 미팅예약", "전화상담 후 대기중", "보류", "계약완료",
+  "상담중", "견적완료", "취소", "작성중",
+  "new", "contacted", "scheduled", "quoted", "contracted", "closed",
+]);
+
+function encodeCursor(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function decodeCursor(value) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (value.length % 4)) % 4);
+  const binary = atob(normalized);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 async function listCustomers(request, env, auth) {
-  const url=new URL(request.url), q=(url.searchParams.get('q') || '').toLowerCase(), cursor=url.searchParams.get('cursor') || '';
-  if(q.length>120 || cursor.length>120) return jsonError(400,'invalid query');
-  const result=await env.DB.prepare('SELECT * FROM Estimates WHERE CrmTenantId=? AND id>? ORDER BY id LIMIT 51').bind(auth.tenant_id,cursor).all();
+  const url=new URL(request.url), q=(url.searchParams.get('q') || '').toLowerCase(), cursor=url.searchParams.get('cursor') || '', status=url.searchParams.get('status') || '', source=url.searchParams.get('source') || '';
+  if(q.length>120 || cursor.length>300 || status.length>120 || source.length>120) return jsonError(400,'invalid query');
+  let page = null;
+  if (cursor) {
+    try {
+      page = decodeCursor(cursor);
+      if (!page || typeof page.id !== 'string' || page.id.length > 120 || (page.submitted_at !== null && typeof page.submitted_at !== 'string')) throw new Error('invalid cursor');
+    } catch { return jsonError(400, 'invalid cursor'); }
+  }
+  const predicates = ['CrmTenantId=?'];
+  const binds = [auth.tenant_id];
+  if (page) {
+    predicates.push("((COALESCE(SubmittedAt,'')='' AND ? IS NOT NULL) OR (COALESCE(SubmittedAt,'')<>'' AND ? IS NOT NULL AND SubmittedAt < ?) OR (SubmittedAt = ? AND id < ?) OR (COALESCE(SubmittedAt,'')='' AND ? IS NULL AND id < ?))");
+    binds.push(page.submitted_at, page.submitted_at, page.submitted_at, page.submitted_at, page.id, page.submitted_at, page.id);
+  }
+  const order = "(CASE WHEN COALESCE(SubmittedAt,'')='' THEN 1 ELSE 0 END), SubmittedAt DESC, id DESC";
+  const groups={__pending:['접수대기','new'],__contract:['계약완료','contracted'],__progress:[...allowedCustomerStatuses].filter(value=>!['접수대기','new','계약완료','contracted'].includes(value))};
+  const statuses=groups[status];
+  if (status && !statuses) { predicates.push('Status=?'); binds.push(status); }
+  if (source) { predicates.push('Source=?'); binds.push(source); }
+  let result;
+  if(statuses){
+    const windows=statuses.map(()=>`SELECT * FROM (SELECT * FROM Estimates WHERE ${predicates.join(' AND ')} AND Status=? ORDER BY ${order} LIMIT 51)`);
+    result=await env.DB.prepare(`SELECT * FROM (${windows.join(' UNION ALL ')}) ORDER BY ${order} LIMIT 51`).bind(...statuses.flatMap(value=>[...binds,value])).all();
+  }else result=await env.DB.prepare(`SELECT * FROM Estimates WHERE ${predicates.join(' AND ')} ORDER BY ${order} LIMIT 51`).bind(...binds).all();
   const rows=result.results || [], window=rows.slice(0,50);
   const items=[];
-  for(const row of window) if(!q || [row.Name,row.Phone,row.Email,row.Address].join(' ').toLowerCase().includes(q)) items.push(await customerPayload(env.DB,row,auth.tenant_id));
-  return jsonOk({customers:items,next_cursor:rows.length>50?window[49].id:null});
+  for(const row of window) {
+    if(q && ![row.Name,row.Phone,row.Email,row.Address,row.AddressDetail,row.Source,row.Platform,row.Campaign,row.FirstSource,row.FirstPlatform,row.FirstCampaign,row.Referral,row.Detail,row.Memo].join(' ').toLowerCase().includes(q)) continue;
+    items.push(row);
+  }
+  const last = window[window.length - 1];
+  const next_cursor = rows.length>50 && last ? encodeCursor({ submitted_at: last.SubmittedAt || null, id: last.id }) : null;
+  return jsonOk({customers:await Promise.all(items.map(row=>customerPayload(env.DB,row,auth.tenant_id))),next_cursor});
 }
 
 async function detail(env, auth, customerId) {
