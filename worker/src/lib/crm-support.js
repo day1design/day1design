@@ -61,3 +61,7 @@ export async function endSupportSession(request, env, auth) {
   await audit(env.DB, auth.tenant_id, auth.user_id, 'tenant.support.read_end');
   return ok({ ended: Boolean(changed?.meta?.changes) });
 }
+
+export function supportReadAllowed(method,path) {
+  return method === "GET" && (["/me","/home","/customers","/appointments","/analytics","/members"].includes(path) || /^\/customers\/[A-Za-z0-9_-]+$/.test(path));
+}

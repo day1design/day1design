@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { authenticateSupport, endSupportSession, startSupportSession } from '../src/lib/crm-support.js';
+import { authenticateSupport, endSupportSession, startSupportSession, supportReadAllowed } from '../src/lib/crm-support.js';
 
 function setup() {
   const sqlite = new DatabaseSync(':memory:');
@@ -49,4 +49,13 @@ test('support start denies other actor and unknown tenant, accepts no reason, an
   const expired = await authenticateSupport(env.DB, request('/api/mobile/me', 'GET', undefined, 'expired-token'));
   assert.equal(expired, null);
   env.sqlite.close();
+});
+
+test("support customer card may read its assignees but cannot mutate or export",()=>{
+ assert.equal(supportReadAllowed("GET","/members"),true);
+ assert.equal(supportReadAllowed("GET","/customers/customer-a"),true);
+ for(const method of ["POST","PUT","PATCH","DELETE"])assert.equal(supportReadAllowed(method,"/members"),false);
+
+ assert.equal(supportReadAllowed("GET","/exports"),false);
+ assert.equal(supportReadAllowed("GET","/platform/tenants"),false);
 });

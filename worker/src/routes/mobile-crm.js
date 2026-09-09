@@ -1,6 +1,6 @@
 import { jsonError as baseJsonError, jsonOk as baseJsonOk } from "../lib/response.js";
 import { authenticate, nowIso, revokeSession, requestMobileOtp, verifyMobileOtp } from '../lib/crm-auth.js';
-import { authenticateSupport, endSupportSession, isSupportReadonly } from '../lib/crm-support.js';
+import { authenticateSupport, endSupportSession, isSupportReadonly, supportReadAllowed } from '../lib/crm-support.js';
 import { handleMobileNotifications } from './mobile-notifications.js';
 import { handleMobileDevices } from './mobile-devices.js';
 import { handleMobileManagement } from './mobile-management.js';
@@ -227,8 +227,7 @@ async function routeMobileCrm(request, env, ctx) {
   if (isSupportReadonly(auth)) {
     if(path==='/sync' && request.method==='GET')return jsonOk({readonly:true});
     if(path==='/support/end' && request.method==='POST')return endSupportSession(request,env,auth);
-    const allowed=['/me','/home','/customers','/appointments','/analytics'].includes(path) || /^\/customers\/[A-Za-z0-9_-]+$/.test(path);
-    if(request.method!=='GET'||!allowed)return jsonError(403,'support session is read-only');
+    if(!supportReadAllowed(request.method,path))return jsonError(403,'support session is read-only');
   }
   if(path==='/home' && request.method==='GET')return homeSummary(env,auth);
 
