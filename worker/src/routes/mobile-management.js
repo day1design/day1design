@@ -127,6 +127,56 @@ async function platformTenants(request, env, auth) {
   })), next_cursor: rows.length > 100 ? rows[99].id : null });
 }
 
+async function platformTenantDetail(request, env, auth, tenantId) {
+  if (!platformAllowed(env, auth)) return error(403, "platform access required");
+  const tenant = await env.DB.prepare(
+    "SELECT id,name,brand,logo_url,suspended,created_at FROM CrmTenants WHERE id=? AND id<>'platform'",
+  ).bind(tenantId).first();
+  if (!tenant) return error(404, "tenant not found");
+
+  let owner = null;
+  try {
+    owner = await env.DB.prepare("SELECT id,email,active FROM CrmUsers WHERE tenant_id=? AND role='owner' ORDER BY active DESC,id LIMIT 1").bind(tenantId).first();
+  } catch {}
+  let auditRows = [];
+  let auditAvailable = true;
+  try {
+    auditRows = (await env.DB.prepare("SELECT a.id,a.action,a.created_at,u.email AS actor_email FROM CrmAuditLogs a LEFT JOIN CrmUsers u ON u.id=a.actor_id WHERE a.tenant_id=? ORDER BY a.created_at DESC,a.id DESC LIMIT 21").bind(tenantId).all()).results || [];
+  } catch {
+    auditAvailable = false;
+  }
+  return ok({
+    tenant: {
+      id: tenant.id,
+      name: tenant.name,
+      brand: tenant.brand,
+      logo_url: tenant.logo_url,
+      homepage_url: null,
+      manager: null,
+      manager_email: null,
+      owner: owner ? { id: owner.id, email: owner.email, active: Boolean(owner.active) } : null,
+      suspended: Boolean(tenant.suspended),
+      onboarding_status: "active",
+      onboarding_checklist: {},
+      created_at: tenant.created_at,
+      activated_at: null,
+      activated_by: null,
+      integration_status: {
+        website_intake: { state: "unknown" },
+        website_visits: { state: "unknown" },
+        meta_ads: { state: "unknown" },
+      },
+    },
+    security_audit: {
+      records: auditRows.slice(0, 20).map((row) => ({ id: row.id, action: row.action, actor_email: row.actor_email || null, created_at: row.created_at })),
+      has_more: auditAvailable && auditRows.length > 20,
+      window_size: 21,
+      status: auditAvailable ? "available" : "unknown",
+      reason: auditAvailable ? null : "audit_schema_unavailable",
+    },
+  });
+}
+
 async function optionalFirst(db, sql, ...args) {
   try { return { available: true, row: await db.prepare(sql).bind(...args).first() }; } catch { return { available: false, row: null }; }
 }
@@ -324,6 +374,7 @@ export async function handleMobileManagement(request, env, auth) {
     if (path === "/platform/tenants" && request.method === "GET") return platformTenants(request, env, auth);
     if (path === "/platform/tenants" && request.method === "POST") return registerTenant(request, env, auth);
     const tenant = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})$/);
+    if (tenant && request.method === "GET") return platformTenantDetail(request, env, auth, tenant[1]);
     if (tenant && request.method === "PATCH") return setTenantSuspended(request, env, auth, tenant[1]);
     const delivery = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/delivery-settings$/);
     if (delivery && ['GET', 'PUT'].includes(request.method)) return deliverySettings(request, env, auth, delivery[1]);

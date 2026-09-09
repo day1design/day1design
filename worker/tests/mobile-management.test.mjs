@@ -86,6 +86,24 @@ test('platform list cursor advances instead of repeating first page',async()=>{
  }finally{sqlite.close();}
 });
 
+test('platform tenant detail reads the legacy production tenant schema', async () => {
+  const sqlite = new DatabaseSync(':memory:');
+  try {
+    sqlite.exec("CREATE TABLE CrmTenants(id TEXT PRIMARY KEY,name TEXT NOT NULL,brand TEXT NOT NULL DEFAULT '',logo_url TEXT NOT NULL DEFAULT '',suspended INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT '')");
+    sqlite.prepare("INSERT INTO CrmTenants(id,name,brand,logo_url,suspended,created_at) VALUES(?,?,?,?,?,?)").run('day1design', '데이원디자인', 'day1design', '', 0, '2026-09-09T00:00:00Z');
+    const response = await handleMobileManagement(request('/api/mobile/platform/tenants/day1design'), env(sqlite), auth);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.tenant.id, 'day1design');
+    assert.equal(body.tenant.name, '데이원디자인');
+    assert.equal(body.tenant.onboarding_status, 'active');
+    assert.equal(body.tenant.owner, null);
+    assert.equal(body.security_audit.status, 'unknown');
+  } finally {
+    sqlite.close();
+  }
+});
+
 test('platform delivery settings are tenant isolated, encrypted, and approve explicit templates', async () => {
   const sqlite = db(), e = env(sqlite);
   try {
