@@ -12,6 +12,13 @@
 const SENS_BASE = "https://sens.apigw.ntruss.com";
 const SMS_BYTE_LIMIT = 90; // 이하 SMS, 초과 LMS
 
+async function fetchWithTimeout(url, init, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(url, { ...init, redirect: 'manual', signal: controller.signal }); }
+  finally { clearTimeout(timer); }
+}
+
 function utf8ByteLength(s) {
   return new TextEncoder().encode(String(s || "")).length;
 }
@@ -106,7 +113,7 @@ export async function sendNcpSens(
     payload.subject = String(subject).slice(0, 40);
   }
 
-  const res = await fetch(`${SENS_BASE}${path}`, {
+  const res = await fetchWithTimeout(`${SENS_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json; charset=utf-8",
@@ -115,7 +122,7 @@ export async function sendNcpSens(
       "x-ncp-apigw-signature-v2": signature,
     },
     body: JSON.stringify(payload),
-  });
+  }, 15000);
 
   let bodyText = "";
   try {

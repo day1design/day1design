@@ -1,5 +1,7 @@
 import { readCrmJson } from '../lib/crm-request.js';
 import { jsonError as baseJsonError, jsonOk as baseJsonOk } from "../lib/response.js";
+import { decryptCredentials, deliveryMissingFields, encryptCredentials } from '../lib/crm-delivery.js';
+import { renderCustomerReminder } from '../lib/crm-sens.js';
 
 const TENANT_ID = /^[a-z0-9][a-z0-9_-]{1,79}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -47,6 +49,67 @@ function guard(id, tenantId, actorId) {
 
 function guardDelete(id) {
   return "DELETE FROM CrmMutationGuard WHERE id=?";
+}
+
+const DELIVERY_FIELDS = ['enabled', 'channel', 'access_key', 'secret_key', 'sms_service_id', 'from_number', 'contact_phone', 'alimtalk_service_id', 'channel_id', 'visit_template_code', 'measurement_template_code', 'visit_body', 'measurement_body'];
+const DELIVERY_TEXT_MAX = 2000;
+
+function masked(value) { const s = text(value, 320); return s ? `${s.slice(0, 2)}***${s.slice(-2)}` : ''; }
+
+async function deliverySettings(request, env, auth, tenantId) {
+  if (!platformAllowed(env, auth)) return error(403, 'platform access required');
+  if (tenantId === 'platform' || !(await env.DB.prepare('SELECT id FROM CrmTenants WHERE id=?').bind(tenantId).first())) return error(404, 'tenant not found');
+  const row = await env.DB.prepare('SELECT * FROM CrmTenantDeliverySettings WHERE tenant_id=?').bind(tenantId).first();
+  if (request.method === 'GET') {
+    let credentials = {};
+    try { credentials = await decryptCredentials(env, row?.credentials_ciphertext || '', tenantId); } catch {}
+    const source = row || { enabled: 0, channel: 'sms', sms_service_id: '', from_number: '', contact_phone: '', alimtalk_service_id: '', channel_id: '', visit_template_code: '', measurement_template_code: '', visit_body: '', measurement_body: '' };
+    const missing = deliveryMissingFields(source, credentials);
+    return ok({ settings: {
+      enabled: Boolean(source.enabled), channel: source.channel,
+      has_credentials: Boolean(credentials.accessKey && credentials.secretKey),
+      configured: missing.length === 0,
+      missing_fields: missing,
+      sms_service_id: source.sms_service_id, from_number: source.from_number, contact_phone: source.contact_phone,
+      alimtalk_service_id: source.alimtalk_service_id, channel_id: source.channel_id,
+      visit_template_code: source.visit_template_code, measurement_template_code: source.measurement_template_code,
+      visit_body: source.visit_body, measurement_body: source.measurement_body,
+    }});
+  }
+  if (request.method !== 'PUT') return null;
+  const value = await jsonBody(request);
+  if (!value || typeof value.enabled !== 'boolean' || !['sms', 'alimtalk'].includes(value.channel)) return error(400, 'invalid delivery settings');
+  if (Object.keys(value).some((key) => !DELIVERY_FIELDS.includes(key))) return error(400, 'invalid delivery settings');
+  for (const field of DELIVERY_FIELDS.filter((key) => key !== 'enabled')) if (field in value && typeof value[field] !== 'string') return error(400, 'invalid delivery field');
+  if (Object.entries(value).some(([field, item]) => typeof item === 'string' && item.length > (field === 'access_key' || field === 'secret_key' ? 320 : DELIVERY_TEXT_MAX))) return error(400, 'delivery field too long');
+  const current = row || { enabled: 0, channel: 'sms', activation_at: null, sms_service_id: '', from_number: '', contact_phone: '', alimtalk_service_id: '', channel_id: '', visit_template_code: '', measurement_template_code: '', visit_body: '', measurement_body: '', credentials_ciphertext: '' };
+  let credentials = {};
+  try { credentials = await decryptCredentials(env, current.credentials_ciphertext || '', tenantId); } catch { return error(503, 'delivery configuration unavailable'); }
+  if (text(value.access_key)) credentials.accessKey = text(value.access_key, 320);
+  if (text(value.secret_key)) credentials.secretKey = text(value.secret_key, 320);
+  const next = Object.fromEntries(['sms_service_id','from_number','contact_phone','alimtalk_service_id','channel_id','visit_template_code','measurement_template_code','visit_body','measurement_body'].map((key) => [key, text(value[key] ?? current[key], DELIVERY_TEXT_MAX)]));
+  const nextRow = { ...current, ...next, channel: value.channel };
+  const missing = deliveryMissingFields(nextRow, credentials);
+  if (value.enabled && missing.length) return error(400, 'delivery configuration incomplete', { missing_fields: missing });
+  const sample = { name: '고객', phone: '01000000000', email: 'customer@example.com', contact_phone: next.contact_phone || '01000000000', starts_at: '2026-01-01T00:00:00Z', location: '사무실', address: '서울시', map: 'https://map.naver.com/p/search/%EC%84%9C%EC%9A%B8%EC%8B%9C' };
+  if (next.visit_body && !renderCustomerReminder(next.visit_body, sample).ok) return error(400, 'invalid visit template');
+  if (next.measurement_body && !renderCustomerReminder(next.measurement_body, sample).ok) return error(400, 'invalid measurement template');
+  if (!env.CRM_INTEGRATION_ENCRYPTION_KEY) return error(503, 'delivery encryption unavailable');
+  const ciphertext = await encryptCredentials(env, credentials, tenantId);
+  const at = now(), actor = auth.user_id || auth.id, guardId = id();
+  const activationAt = value.enabled ? (current.enabled ? (current.activation_at || at) : at) : null;
+  const statements = [
+    env.DB.prepare(guard(guardId, 'platform', actor)).bind(guardId, actor, 'platform'),
+    env.DB.prepare(`INSERT INTO CrmTenantDeliverySettings(tenant_id,enabled,activation_at,channel,credentials_ciphertext,sms_service_id,from_number,contact_phone,alimtalk_service_id,channel_id,visit_template_code,measurement_template_code,visit_body,measurement_body,updated_by,updated_at)
+      SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1) ON CONFLICT(tenant_id) DO UPDATE SET enabled=excluded.enabled,activation_at=excluded.activation_at,channel=excluded.channel,credentials_ciphertext=excluded.credentials_ciphertext,sms_service_id=excluded.sms_service_id,from_number=excluded.from_number,contact_phone=excluded.contact_phone,alimtalk_service_id=excluded.alimtalk_service_id,channel_id=excluded.channel_id,visit_template_code=excluded.visit_template_code,measurement_template_code=excluded.measurement_template_code,visit_body=excluded.visit_body,measurement_body=excluded.measurement_body,updated_by=excluded.updated_by,updated_at=excluded.updated_at
+      WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)`).bind(tenantId, value.enabled ? 1 : 0, activationAt, value.channel, ciphertext, next.sms_service_id, next.from_number, next.contact_phone, next.alimtalk_service_id, next.channel_id, next.visit_template_code, next.measurement_template_code, next.visit_body, next.measurement_body, actor, at, guardId, guardId),
+    env.DB.prepare(`INSERT INTO CrmAuditLogs(tenant_id,actor_id,estimate_id,action,created_at) SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)`).bind(tenantId, actor, null, 'tenant.delivery_settings.update', at, guardId),
+    env.DB.prepare(guardDelete(guardId)).bind(guardId),
+  ];
+  if (next.visit_body) statements.splice(2, 0, env.DB.prepare(`INSERT INTO CrmNotificationTemplates(tenant_id,kind,state,body,enabled,updated_by,updated_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1) ON CONFLICT(tenant_id,kind,state) DO UPDATE SET body=excluded.body,enabled=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at`).bind(tenantId, 'visit', 'approved', next.visit_body, 1, actor, at, guardId));
+  if (next.measurement_body) statements.splice(2, 0, env.DB.prepare(`INSERT INTO CrmNotificationTemplates(tenant_id,kind,state,body,enabled,updated_by,updated_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1) ON CONFLICT(tenant_id,kind,state) DO UPDATE SET body=excluded.body,enabled=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at`).bind(tenantId, 'measurement', 'approved', next.measurement_body, 1, actor, at, guardId));
+  try { const results = await env.DB.batch(statements); if (!results[0]?.meta?.changes || !results[1]?.meta?.changes) return error(403, 'platform access required'); } catch { return error(409, 'delivery settings update failed'); }
+  return deliverySettings(new Request(new URL(request.url), { method: 'GET' }), env, auth, tenantId);
 }
 
 async function platformTenants(request, env, auth) {
@@ -204,6 +267,8 @@ export async function handleMobileManagement(request, env, auth) {
     if (path === "/platform/tenants" && request.method === "POST") return registerTenant(request, env, auth);
     const tenant = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})$/);
     if (tenant && request.method === "PATCH") return setTenantSuspended(request, env, auth, tenant[1]);
+    const delivery = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/delivery-settings$/);
+    if (delivery && ['GET', 'PUT'].includes(request.method)) return deliverySettings(request, env, auth, delivery[1]);
     const member = path.match(/^\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/members$/);
     if (member && request.method === "POST") return addMember(request, env, auth, member[1]);
     const memberUpdate = path.match(/^\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/members\/([A-Za-z0-9_-]+)$/);

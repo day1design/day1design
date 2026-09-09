@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { openLocalD1 } from '../../mobile-crm/server/d1-local.mjs';
 import { runCrmScheduled } from '../src/lib/crm-scheduler.js';
+import { encryptCredentials } from '../src/lib/crm-delivery.js';
 function setup(){
  const DB=openLocalD1(':memory:');
- for(const file of ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0047_crm_auth.sql','0048_crm_automation.sql','0049_crm_calendar.sql','0050_crm_scheduler.sql','0051_crm_assignment.sql','0052_crm_devices.sql','0053_crm_push.sql','0054_crm_persistent_sessions.sql'])DB.sqlite.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
+ for(const file of ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0047_crm_auth.sql','0048_crm_automation.sql','0049_crm_calendar.sql','0050_crm_scheduler.sql','0051_crm_assignment.sql','0052_crm_devices.sql','0053_crm_push.sql','0054_crm_persistent_sessions.sql','0055_crm_delivery_settings.sql'])DB.sqlite.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
  return DB;
 }
 test('scheduler is off by default and creates one daily owner briefing after 10 KST',async()=>{
@@ -71,4 +72,17 @@ test('push allowlist remains fail closed at scheduler boundary',async()=>{
   assert.equal(result.tenants[0].push.configured,false);
   assert.equal(DB.sqlite.prepare('SELECT COUNT(*) n FROM CrmPushCursors').get().n,0);
  }finally{DB.sqlite.close();}
+});
+
+test('configured tenant delivery runs when global automation switch is off', async () => {
+ const DB=setup(); try {
+  const key='AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
+  const ciphertext=await encryptCredentials({CRM_INTEGRATION_ENCRYPTION_KEY:key},{accessKey:'a',secretKey:'s'},'day1design');
+  const s=DB.sqlite, at='2026-09-09T00:00:00Z';
+  s.prepare("INSERT INTO CrmTenantDeliverySettings(tenant_id,enabled,activation_at,channel,credentials_ciphertext,sms_service_id,from_number,contact_phone,visit_body,measurement_body,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run('day1design',1,at,'sms',ciphertext,'service','01012345678','01099998888','{{name}} {{date}} {{time}} {{address}} {{map}}','{{name}} {{date}} {{time}} {{address}} {{map}}','platform-owner',at);
+  s.prepare("INSERT INTO CrmNotificationTemplates(tenant_id,kind,state,body,enabled,updated_by,updated_at) VALUES(?,?,?,?,?,?,?)").run('day1design','visit','approved','{{name}} {{date}} {{time}} {{address}} {{map}}',1,'platform-owner',at);
+  const result=await runCrmScheduled({DB,CRM_ENABLED:'true',CRM_AUTOMATION_ENABLED:'false',CRM_PUSH_ENABLED:'false',CRM_INTEGRATION_ENCRYPTION_KEY:key},{now:new Date(at)});
+  assert.equal(result.enabled,true);
+  assert.equal(result.tenants[0].tenant_id,'day1design');
+ } finally { DB.sqlite.close(); }
 });

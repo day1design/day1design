@@ -7,7 +7,7 @@ import { handleMobileManagement } from "../src/routes/mobile-management.js";
 function db() {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(readFileSync(new URL("../migrations/0001_init.sql", import.meta.url), "utf8"));
-  for (const file of ["0041_consult_booking.sql", "0042_contract_fields.sql", "0043_consult_cancel.sql", "0045_mobile_crm.sql"]) sqlite.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  for (const file of ["0041_consult_booking.sql", "0042_contract_fields.sql", "0043_consult_cancel.sql", "0045_mobile_crm.sql", "0046_crm_notifications.sql", "0055_crm_delivery_settings.sql"]) sqlite.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   const created = new Date().toISOString();
   sqlite.prepare("INSERT INTO Estimates(id,Name,Phone,Status,SubmittedAt,CrmTenantId) VALUES(?,?,?,?,?,?)").run("e1", "고객 A", "010", "new", created, "day1design");
   sqlite.prepare("INSERT INTO Estimates(id,Name,Phone,Status,SubmittedAt,CrmTenantId) VALUES(?,?,?,?,?,?)").run("e2", "고객 B", "011", "new", created, "day1design");
@@ -22,7 +22,7 @@ function d1(sqlite) {
 const auth = { user_id: "platform-owner", id: "platform-owner", email: "mkt@polarad.co.kr", role: "owner", tenant_id: "platform" };
 const owner = { user_id: "day1-owner", id: "day1-owner", email: "owner@day1.local", role: "owner", tenant_id: "day1design" };
 function request(path, method = "GET", value) { return new Request(`https://test.local${path}`, { method, headers: { "content-type": "application/json" }, body: value === undefined ? undefined : JSON.stringify(value) }); }
-function env(sqlite) { return { DB: d1(sqlite), CRM_PLATFORM_EMAILS: "mkt@polarad.co.kr" }; }
+function env(sqlite) { return { DB: d1(sqlite), CRM_PLATFORM_EMAILS: "mkt@polarad.co.kr", CRM_INTEGRATION_ENCRYPTION_KEY: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8" }; }
 
 test("platform allowlist and tenant registration are scoped and atomic", async () => {
   const sqlite = db(); const e = env(sqlite);
@@ -84,4 +84,30 @@ test('platform list cursor advances instead of repeating first page',async()=>{
  const second=await(await handleMobileManagement(request('/api/mobile/platform/tenants?cursor='+first.next_cursor),e,auth)).json();
  assert.equal(first.tenants.length,100);assert.equal(second.tenants.length,2);assert.ok(second.tenants.every(x=>x.id>first.next_cursor));
  }finally{sqlite.close();}
+});
+
+test('platform delivery settings are tenant isolated, encrypted, and approve explicit templates', async () => {
+  const sqlite = db(), e = env(sqlite);
+  try {
+    const body = { enabled: true, channel: 'sms', access_key: 'access-secret', secret_key: 'super-secret', sms_service_id: 'service-1', from_number: '01012345678', contact_phone: '01099998888', visit_body: '{{name}} {{date}} {{time}} {{address}} {{map}}', measurement_body: '{{name}} {{date}} {{time}} {{address}} {{map}}' };
+    const saved = await handleMobileManagement(request('/api/mobile/platform/tenants/day1design/delivery-settings', 'PUT', body), e, auth);
+    assert.equal(saved.status, 200);
+    const settings = (await saved.json()).settings;
+    assert.equal(settings.configured, true);
+    assert.equal(settings.has_credentials, true);
+    const raw = sqlite.prepare('SELECT credentials_ciphertext FROM CrmTenantDeliverySettings WHERE tenant_id=?').get('day1design').credentials_ciphertext;
+    assert.equal(raw.includes('super-secret'), false);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM CrmNotificationTemplates WHERE tenant_id='day1design' AND state='approved'").get().n, 2);
+    const denied = await handleMobileManagement(request('/api/mobile/platform/tenants/tenant-two/delivery-settings'), e, { ...auth, email: 'other@polarad.co.kr' });
+    assert.equal(denied.status, 403);
+    const second = await handleMobileManagement(request('/api/mobile/platform/tenants/day1design/delivery-settings', 'PUT', { enabled: false, channel: 'sms' }), e, auth);
+    assert.equal((await second.json()).settings.enabled, false);
+    const before = sqlite.prepare("SELECT activation_at FROM CrmTenantDeliverySettings WHERE tenant_id='day1design'").get().activation_at;
+    const reenabled = await handleMobileManagement(request('/api/mobile/platform/tenants/day1design/delivery-settings', 'PUT', { enabled: true, channel: 'sms' }), e, auth);
+    assert.equal((await reenabled.json()).settings.enabled, true);
+    assert.equal(sqlite.prepare("SELECT activation_at FROM CrmTenantDeliverySettings WHERE tenant_id='day1design'").get().activation_at !== before, true);
+    const deniedWrite = await handleMobileManagement(request('/api/mobile/platform/tenants/day1design/delivery-settings', 'PUT', { enabled: false, channel: 'sms' }), e, { ...auth, user_id: 'missing-platform-user', id: 'missing-platform-user' });
+    assert.equal(deniedWrite.status, 403);
+    assert.equal((await handleMobileManagement(request('/api/mobile/platform/tenants/day1design/delivery-settings'), e, auth)).status, 200);
+  } finally { sqlite.close(); }
 });

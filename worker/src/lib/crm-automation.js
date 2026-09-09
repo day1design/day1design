@@ -59,11 +59,12 @@ async function block(db, row, reason) {
   await db.prepare(`UPDATE CrmNotificationOutbox SET delivery_status='blocked',blocked_reason=? WHERE id=? AND tenant_id=? AND status='queued' AND delivery_status<>'sent'`).bind(reason, row.id, row.tenant_id).run();
   return { id: row.id, status: 'blocked', reason };
 }
-export async function runAppointmentAutomation(db, { now = new Date(), deliveryAdapter = null, limit = AUTOMATION_PAGE_SIZE, tenantId = null, cursor = null } = {}) {
+export async function runAppointmentAutomation(db, { now = new Date(), deliveryAdapter = null, limit = AUTOMATION_PAGE_SIZE, tenantId = null, cursor = null, minimumDueAt = null } = {}) {
   requireDb(db); const at = iso(now); const size = Math.max(1, Math.min(AUTOMATION_PAGE_SIZE, Number(limit) || AUTOMATION_PAGE_SIZE)); const args = [at];
   if (!tenantId) throw new TypeError('automation_tenant_required');
   let where = `o.status='queued' AND o.due_at<=? AND (o.delivery_status='pending' OR (o.delivery_status='blocked' AND o.blocked_reason='delivery_adapter_missing')) AND o.tenant_id=?`;
   args.push(tenantId);
+  if (minimumDueAt) { where += ' AND o.due_at>=?'; args.push(iso(minimumDueAt)); }
   if (cursor) { const [cursorDue, cursorId] = String(cursor).split('|'); if (!cursorDue || !cursorId) throw new TypeError('automation_cursor_required'); where += ' AND (o.due_at>? OR (o.due_at=? AND o.id>?))'; args.push(cursorDue, cursorDue, cursorId); }
   const rows = (await db.prepare(`SELECT o.* FROM CrmNotificationOutbox o WHERE ${where} ORDER BY o.due_at,o.id LIMIT ?`).bind(...args, size + 1).all()).results || [];
   const results = [];

@@ -12,7 +12,9 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
@@ -437,9 +439,248 @@ public class MainActivity extends Activity {
                 Button toggle = secondary(suspended ? "업체 재개" : "업체 정지");
                 card.addView(toggle);
                 toggle.setOnClickListener(v -> setTenantSuspended(id, !suspended, toggle));
+                Button delivery = secondary("발송 연결");
+                card.addView(delivery);
+                delivery.setOnClickListener(v -> showTenantDeliverySettings(id, tenant.optString("name", id)));
                 root.addView(card, blockParams());
             }
         }));
+    }
+
+    private void showTenantDeliverySettings(String tenantId, String tenantName) {
+        Dialog dialog = sheet();
+        LinearLayout box = sheetBox();
+        box.addView(text("발송 연결 · " + tenantName, 22, true));
+        box.addView(body("관리자가 이 업체의 발송 자격과 메시지 내용을 등록합니다. 저장만 해도 고객에게 즉시 발송되지 않으며, 활성화된 향후 알림만 선택한 채널로 연결됩니다."));
+
+        TextView status = body("설정 정보를 불러오는 중입니다.");
+        box.addView(status);
+        TextView channelLabel = body("채널: 선택 전");
+        box.addView(channelLabel);
+        final String[] channel = {"sms"};
+        Button channelButton = secondary("채널 선택");
+        box.addView(channelButton);
+
+        LinearLayout sharedFields = new LinearLayout(this);
+        sharedFields.setOrientation(LinearLayout.VERTICAL);
+        EditText accessKey = input("SENS Access Key", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD, false);
+        EditText secretKey = input("SENS Secret Key", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD, false);
+        EditText contactPhone = input("운영 담당 연락처", InputType.TYPE_CLASS_PHONE, false);
+        sharedFields.addView(label("공통 발송 자격"));
+        sharedFields.addView(accessKey);
+        sharedFields.addView(secretKey);
+        sharedFields.addView(contactPhone);
+        box.addView(sharedFields);
+
+        LinearLayout smsFields = new LinearLayout(this);
+        smsFields.setOrientation(LinearLayout.VERTICAL);
+        EditText serviceId = input("SENS 서비스 ID", InputType.TYPE_CLASS_TEXT, false);
+        EditText fromNumber = input("발신번호", InputType.TYPE_CLASS_PHONE, false);
+        smsFields.addView(label("SMS / LMS 연결"));
+        smsFields.addView(serviceId);
+        smsFields.addView(fromNumber);
+        box.addView(smsFields);
+
+        LinearLayout alimtalkFields = new LinearLayout(this);
+        alimtalkFields.setOrientation(LinearLayout.VERTICAL);
+        EditText alimtalkServiceId = input("알림톡 서비스 ID", InputType.TYPE_CLASS_TEXT, false);
+        EditText channelId = input("알림톡 채널 ID", InputType.TYPE_CLASS_TEXT, false);
+        EditText visitTemplate = input("방문 템플릿 코드", InputType.TYPE_CLASS_TEXT, false);
+        EditText measurementTemplate = input("실측 템플릿 코드", InputType.TYPE_CLASS_TEXT, false);
+        alimtalkFields.addView(label("알림톡 연결"));
+        alimtalkFields.addView(alimtalkServiceId);
+        alimtalkFields.addView(channelId);
+        alimtalkFields.addView(visitTemplate);
+        alimtalkFields.addView(measurementTemplate);
+        box.addView(alimtalkFields);
+
+        box.addView(label("승인된 고객 발송 문구"));
+        EditText visitBody = input("방문 메시지 본문", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE, true);
+        EditText measurementBody = input("실측 메시지 본문", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE, true);
+        visitBody.setText("{{name}}님, {{date}} {{time}} {{location}} 방문 일정 안내.\n주소: {{address}}\n지도: {{map}}\n문의: {{contact_phone}}");
+        measurementBody.setText("{{name}}님, {{date}} {{time}} {{location}} 실측 일정 안내.\n주소: {{address}}\n지도: {{map}}\n문의: {{contact_phone}}");
+        box.addView(visitBody);
+        box.addView(measurementBody);
+
+        TextView enabledLabel = body("사용 안 함");
+        box.addView(enabledLabel);
+        Button enabledButton = secondary("발송 연결 활성화");
+        enabledButton.setEnabled(false);
+        box.addView(enabledButton);
+        Button save = primary("승인 문구와 발송 연결 저장");
+        save.setEnabled(false);
+        box.addView(save);
+
+        final boolean[] hasCredentials = {false};
+        final boolean[] configured = {false};
+        final boolean[] enabled = {false};
+        final JSONArray[] missingFields = {new JSONArray()};
+        final Runnable[] updateReadiness = {null};
+
+        Runnable updateChannel = () -> {
+            boolean sms = "sms".equals(channel[0]);
+            channelLabel.setText("채널: " + (sms ? "SMS / LMS" : "알림톡"));
+            smsFields.setVisibility(sms ? View.VISIBLE : View.GONE);
+            alimtalkFields.setVisibility(sms ? View.GONE : View.VISIBLE);
+            if (updateReadiness[0] != null) updateReadiness[0].run();
+        };
+        channelButton.setOnClickListener(v -> choose("발송 채널", new String[]{"SMS / LMS", "알림톡"}, value -> {
+            channel[0] = "알림톡".equals(value) ? "alimtalk" : "sms";
+            updateChannel.run();
+        }));
+        updateChannel.run();
+
+        updateReadiness[0] = () -> {
+            JSONArray localMissing = new JSONArray();
+            if (!hasCredentials[0] && (blank(accessKey) || blank(secretKey))) addMissing(localMissing, "access_key");
+            if (blank(contactPhone)) addMissing(localMissing, "contact_phone");
+            if ("sms".equals(channel[0])) {
+                if (blank(serviceId)) addMissing(localMissing, "sms_service_id");
+                if (blank(fromNumber)) addMissing(localMissing, "from_number");
+            } else {
+                if (blank(alimtalkServiceId)) addMissing(localMissing, "alimtalk_service_id");
+                if (blank(channelId)) addMissing(localMissing, "channel_id");
+                if (blank(visitTemplate)) addMissing(localMissing, "visit_template_code");
+                if (blank(measurementTemplate)) addMissing(localMissing, "measurement_template_code");
+            }
+            if (blank(visitBody)) addMissing(localMissing, "visit_body");
+            if (blank(measurementBody)) addMissing(localMissing, "measurement_body");
+            missingFields[0] = localMissing;
+            configured[0] = localMissing.length() == 0;
+            String missing = localMissing.length() == 0 ? "없음" : joinMissingFields(localMissing);
+            status.setText(configured[0] ? "필수 설정 완료 · 누락 항목: 없음" : "등록 상태 · 누락 항목: " + missing);
+            enabledButton.setEnabled(configured[0] || enabled[0]);
+        };
+        watchFields(updateReadiness[0], accessKey, secretKey, contactPhone, serviceId, fromNumber,
+            alimtalkServiceId, channelId, visitTemplate, measurementTemplate, visitBody, measurementBody);
+
+        enabledButton.setOnClickListener(v -> {
+            if (!configured[0] && !enabled[0]) {
+                toast("필수 발송 설정을 먼저 등록하세요.");
+                return;
+            }
+            enabled[0] = !enabled[0];
+            enabledLabel.setText(enabled[0] ? "사용 중 · 향후 알림부터 선택한 채널로 연결" : "사용 안 함");
+            enabledButton.setText(enabled[0] ? "발송 연결 비활성화" : "발송 연결 활성화");
+        });
+        save.setOnClickListener(v -> {
+            JSONObject payload = new JSONObject();
+            tryPut(payload, "enabled", enabled[0]);
+            tryPut(payload, "channel", channel[0]);
+            putIfNotBlank(payload, "access_key", accessKey);
+            putIfNotBlank(payload, "secret_key", secretKey);
+            putField(payload, "sms_service_id", serviceId);
+            putField(payload, "from_number", fromNumber);
+            putField(payload, "contact_phone", contactPhone);
+            putField(payload, "alimtalk_service_id", alimtalkServiceId);
+            putField(payload, "channel_id", channelId);
+            putField(payload, "visit_template_code", visitTemplate);
+            putField(payload, "measurement_template_code", measurementTemplate);
+            putField(payload, "visit_body", visitBody);
+            putField(payload, "measurement_body", measurementBody);
+            submit(save, "PUT", "/api/mobile/platform/tenants/" + Uri.encode(tenantId) + "/delivery-settings", payload, "발송 연결을 저장했습니다.", false, dialog);
+        });
+
+        final int generation = requestGeneration;
+        api.call("GET", "/api/mobile/platform/tenants/" + Uri.encode(tenantId) + "/delivery-settings", null, (body, responseStatus, error) -> runOnUiThread(() -> {
+            if (!sameGeneration(generation)) return;
+            if (handleAuthFailure(responseStatus)) return;
+            if (responseStatus < 200 || responseStatus >= 300) {
+                status.setText(message(body, error, "발송 연결 정보를 불러오지 못했습니다."));
+                return;
+            }
+            JSONObject settings = body.optJSONObject("delivery_settings");
+            if (settings == null) settings = body.optJSONObject("settings");
+            if (settings == null) settings = body;
+            channel[0] = "alimtalk".equals(settings.optString("channel", "sms")) ? "alimtalk" : "sms";
+            enabled[0] = settings.optBoolean("enabled", false);
+            configured[0] = settings.optBoolean("configured", false);
+            hasCredentials[0] = settings.optBoolean("has_credentials", false);
+            missingFields[0] = settings.optJSONArray("missing_fields");
+            if (missingFields[0] == null) missingFields[0] = new JSONArray();
+            setTextIfPresent(serviceId, settings, "sms_service_id");
+            setTextIfPresent(fromNumber, settings, "from_number");
+            setTextIfPresent(contactPhone, settings, "contact_phone");
+            setTextIfPresent(alimtalkServiceId, settings, "alimtalk_service_id");
+            setTextIfPresent(channelId, settings, "channel_id");
+            setTextIfPresent(visitTemplate, settings, "visit_template_code");
+            setTextIfPresent(measurementTemplate, settings, "measurement_template_code");
+            setTextIfPresent(visitBody, settings, "visit_body");
+            setTextIfPresent(measurementBody, settings, "measurement_body");
+            accessKey.setHint(hasCredentials[0] ? "등록됨 · 비워두면 기존 값 유지" : "SENS Access Key");
+            secretKey.setHint(hasCredentials[0] ? "등록됨 · 비워두면 기존 값 유지" : "SENS Secret Key");
+            String missing = missingFields[0].length() == 0 ? "없음" : joinMissingFields(missingFields[0]);
+            status.setText(configured[0] ? "필수 설정 완료 · 누락 항목: " + missing : "등록 상태 · 누락 항목: " + missing);
+            enabledLabel.setText(enabled[0] ? "사용 중 · 향후 알림부터 선택한 채널로 연결" : "사용 안 함");
+            enabledButton.setText(enabled[0] ? "발송 연결 비활성화" : "발송 연결 활성화");
+            enabledButton.setEnabled(configured[0]);
+            save.setEnabled(true);
+            updateChannel.run();
+            updateReadiness[0].run();
+        }));
+
+        setSheetContent(dialog, box);
+        dialog.show();
+        sizeSheet(dialog);
+    }
+
+    private void putIfNotBlank(JSONObject payload, String key, EditText field) {
+        if (field == null) return;
+        String value = field.getText().toString().trim();
+        if (!value.isEmpty()) tryPut(payload, key, value);
+    }
+
+    private boolean blank(EditText field) {
+        return field == null || field.getText().toString().trim().isEmpty();
+    }
+
+    private void addMissing(JSONArray fields, String key) {
+        try { fields.put(key); } catch (Exception ignored) { }
+    }
+
+    private void watchFields(Runnable callback, EditText... fields) {
+        TextWatcher watcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence value, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence value, int start, int before, int count) { callback.run(); }
+            @Override public void afterTextChanged(Editable value) { }
+        };
+        for (EditText field : fields) field.addTextChangedListener(watcher);
+    }
+
+    private void putField(JSONObject payload, String key, EditText field) {
+        if (field != null) tryPut(payload, key, field.getText().toString().trim());
+    }
+
+    private void setTextIfPresent(EditText field, JSONObject source, String key) {
+        if (source.has(key) && !source.isNull(key)) {
+            String value = source.optString(key, "");
+            if (!value.trim().isEmpty()) field.setText(value);
+        }
+    }
+
+    private String joinJson(JSONArray values) {
+        ArrayList<String> parts = new ArrayList<>();
+        for (int i = 0; i < values.length(); i++) parts.add(values.optString(i, ""));
+        return join(parts, ", ");
+    }
+
+    private String joinMissingFields(JSONArray values) {
+        ArrayList<String> parts = new ArrayList<>();
+        for (int i = 0; i < values.length(); i++) {
+            String key = values.optString(i, "");
+            if ("access_key".equals(key) || "secret_key".equals(key)) parts.add("SENS 자격");
+            else if ("sms_service_id".equals(key)) parts.add("SENS 서비스 ID");
+            else if ("from_number".equals(key)) parts.add("발신번호");
+            else if ("contact_phone".equals(key)) parts.add("운영 담당 연락처");
+            else if ("alimtalk_service_id".equals(key)) parts.add("알림톡 서비스 ID");
+            else if ("channel_id".equals(key)) parts.add("알림톡 채널 ID");
+            else if ("visit_template_code".equals(key)) parts.add("방문 템플릿 코드");
+            else if ("measurement_template_code".equals(key)) parts.add("실측 템플릿 코드");
+            else if ("visit_body".equals(key)) parts.add("방문 문구");
+            else if ("measurement_body".equals(key)) parts.add("실측 문구");
+            else if (!key.isEmpty()) parts.add(key);
+        }
+        return join(parts, ", ");
     }
 
     private void setTenantSuspended(String id, boolean suspended, Button button) {

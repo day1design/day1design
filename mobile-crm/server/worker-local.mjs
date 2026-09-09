@@ -11,7 +11,7 @@ const runtime = resolve(root, '.tools', 'worker-runtime');
 mkdirSync(runtime, { recursive: true });
 const DB = openLocalD1(resolve(runtime, 'local.sqlite3'));
 DB.sqlite.exec('CREATE TABLE IF NOT EXISTS LocalMigrations(name TEXT PRIMARY KEY)');
-const migrations = ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0047_crm_auth.sql','0048_crm_automation.sql','0049_crm_calendar.sql','0050_crm_scheduler.sql','0051_crm_assignment.sql','0052_crm_devices.sql','0053_crm_push.sql','0054_crm_persistent_sessions.sql'];
+const migrations = ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0047_crm_auth.sql','0048_crm_automation.sql','0049_crm_calendar.sql','0050_crm_scheduler.sql','0051_crm_assignment.sql','0052_crm_devices.sql','0053_crm_push.sql','0054_crm_persistent_sessions.sql','0055_crm_delivery_settings.sql'];
 for (const name of migrations) {
   const path = resolve(root, '..', 'worker', 'migrations', name);
   if (!existsSync(path)) throw new Error('Local migration not ready: ' + name);
@@ -29,8 +29,10 @@ DB.sqlite.prepare("INSERT OR IGNORE INTO Estimates(id,Name,Phone,Address,Branch,
 DB.sqlite.prepare("UPDATE CrmUsers SET email='platform@polarad.local' WHERE id='platform-owner' AND email='mkt@polarad.co.kr'").run();
 const keyPath=resolve(runtime,'session-key');
 if(!existsSync(keyPath)) writeFileSync(keyPath,randomBytes(32).toString('hex'),{flag:'wx'});
+const integrationKeyPath=resolve(runtime,'integration-key');
+if(!existsSync(integrationKeyPath)) writeFileSync(integrationKeyPath,randomBytes(32).toString('base64url'),{flag:'wx'});
 const inbox=resolve(runtime,'inbox'); mkdirSync(inbox,{recursive:true});
-const env={ DB, CRM_ENABLED:'true', CRM_PLATFORM_EMAILS:'platform@polarad.local', CRM_OTP_SECRET:readFileSync(keyPath,'utf8'), CRM_OTP_DELIVER:async payload=>{
+const env={ DB, CRM_ENABLED:'true', CRM_PLATFORM_EMAILS:'platform@polarad.local', CRM_INTEGRATION_ENCRYPTION_KEY:readFileSync(integrationKeyPath,'utf8'), CRM_OTP_SECRET:readFileSync(keyPath,'utf8'), CRM_OTP_DELIVER:async payload=>{
   writeFileSync(resolve(inbox,randomUUID()+'.json'),JSON.stringify(payload),{flag:'wx'});
 }};
 const server=http.createServer(async(req,res)=>{
