@@ -619,6 +619,75 @@ function synthesizePrompt(question, data, stats, draft, audit) {
   ].join("\n");
 }
 
+// 10시 이미지 브리핑과 같은 원본을 사용한 전문가 분석.
+// 정상 운영에서는 기존 Claude/Codex 파이프라인을 그대로 재사용하고,
+// dry-run에서는 호출자가 주입한 fixture runner만 사용한다.
+export async function runDailyExpertAnalysis({
+  date,
+  day,
+  week,
+  dryRun = false,
+  persist = true,
+  imageKey = "",
+  imageBase64 = "",
+  agentRunner,
+} = {}) {
+  if (!day || typeof day !== "object") throw new TypeError("daily_analysis_day_required");
+  const reportDate = String(date || day.range?.endDate || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) throw new TypeError("daily_analysis_date_required");
+
+  const data = { ...day, dailyContext: { reportDate, week: week || null } };
+  const stats = analyze(day);
+  const question = `${reportDate} 전날 광고 효율을 분석하고 최근 7일 흐름과 함께 다음 조치를 제안하세요.`;
+  const runner = agentRunner || {
+    interpret: (prompt) => askClaude(prompt),
+    audit: (prompt) => askCodex(prompt),
+    synthesize: (prompt) => askCodex(prompt),
+  };
+
+  const fixture = {
+    interpret: { ok: true, out: "드라이런 분석 fixture: 실제 수치만 사용하고 원인 추정은 보류합니다.", error: "" },
+    audit: { ok: true, out: "드라이런 감사 fixture: 원본 범위와 USD 단위를 확인했습니다.", error: "" },
+    synthesize: { ok: true, out: "드라이런 전문가 분석: 기존 10시 이미지와 동일한 전날 facts를 앱에 연결할 준비가 되었습니다.", error: "" },
+  };
+  const invoke = async (kind, prompt) => {
+    if (dryRun) return fixture[kind];
+    const result = await runner[kind](prompt);
+    return result?.ok ? result : { ok: false, out: "", error: result?.error || `${kind}_failed` };
+  };
+
+  const draft = await invoke("interpret", interpretPrompt(question, data, stats));
+  const audit = await invoke("audit", auditPrompt(question, data, stats, draft.ok ? draft.out : ""));
+  const synthesis = await invoke(
+    "synthesize",
+    synthesizePrompt(question, data, stats, draft.ok ? draft.out : "", audit.ok ? audit.out : ""),
+  );
+  const report = synthesis.ok ? synthesis.out : draft.ok ? draft.out : audit.ok ? audit.out : "";
+  const payload = {
+    question,
+    periodLabel: `전날 ${reportDate} · 최근 7일 비교`,
+    startDate: reportDate,
+    endDate: reportDate,
+    spend: stats?.rates?.spend ?? day.ads?.summary?.spend ?? 0,
+    leads: stats?.leads?.total ?? day.leads?.total ?? 0,
+    metaLeads: stats?.leads?.metaLeads ?? 0,
+    metaCostPerLead: stats?.leads?.metaCostPerLead ?? 0,
+    bottleneck: stats?.funnel?.bottleneck ? `${stats.funnel.bottleneck.from}→${stats.funnel.bottleneck.at}` : "",
+    verdict: stats?.funnel?.verdict || "",
+    durationSec: 0,
+    stages: `해석=${draft.ok} 감사=${audit.ok} 종합=${synthesis.ok}`,
+    status: report ? "success" : "failed",
+    report,
+    reportKind: "daily",
+    imageKey: String(imageKey || ""),
+    imageBase64: String(imageBase64 || ""),
+    snapshot: { reportDate, day, week: week || null, stats, dryRun },
+  };
+  let saved = null;
+  if (persist && !dryRun) saved = await saveRun(payload);
+  return { reportDate, stats, draft, audit, synthesis, report, payload, saved, persisted: Boolean(saved) };
+}
+
 // ── 주제 게이트 ─────────────────────────────────────────
 //
 // 이 방은 데이원디자인 마케팅만 다룬다. 아무 질문에나 답하기 시작하면 봇은 만능 비서가 되고,
@@ -1129,5 +1198,7 @@ function selftest() {
   process.exit(bad === 0 ? 0 : 1);
 }
 
-if (process.argv.includes("--selftest")) selftest();
-else main();
+if (import.meta.url === `file://${process.argv[1].replace(/\\/g, "/")}`) {
+  if (process.argv.includes("--selftest")) selftest();
+  else main();
+}

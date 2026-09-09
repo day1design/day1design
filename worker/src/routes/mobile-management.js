@@ -1,4 +1,4 @@
-import { startSupportSession } from '../lib/crm-support.js';
+import { isSupportAdmin, startSupportSession } from '../lib/crm-support.js';
 import { readCrmJson } from '../lib/crm-request.js';
 import { jsonError as baseJsonError, jsonOk as baseJsonOk } from "../lib/response.js";
 import { decryptCredentials, deliveryMissingFields, encryptCredentials } from '../lib/crm-delivery.js';
@@ -41,7 +41,11 @@ async function audit(db, tenantId, actorId, action) {
     .bind(tenantId, actorId, null, action, now()).run();
 }
 
-function guard(id, tenantId, actorId) {
+function guard(id, tenantId, actorId, supportAdmin = false) {
+  if (supportAdmin) return `INSERT INTO CrmMutationGuard(id,allowed) SELECT ?,1 WHERE EXISTS (
+    SELECT 1 FROM CrmSupportSessions ss JOIN CrmUsers u ON u.id=ss.actor_id JOIN CrmTenants t ON t.id=ss.tenant_id
+    WHERE ss.id=? AND ss.tenant_id=? AND ss.revoked_at IS NULL AND ss.expires_at>? AND u.id=? AND u.tenant_id='platform' AND u.role='owner' AND u.active=1 AND t.suspended=0
+  )`;
   return `INSERT INTO CrmMutationGuard(id,allowed) SELECT ?,1 WHERE EXISTS (
     SELECT 1 FROM CrmUsers u JOIN CrmTenants t ON t.id=u.tenant_id
     WHERE u.id=? AND u.tenant_id=? AND u.role='owner' AND u.active=1 AND t.suspended=0
@@ -60,7 +64,8 @@ const platformOverviewCaches = new WeakMap();
 function masked(value) { const s = text(value, 320); return s ? `${s.slice(0, 2)}***${s.slice(-2)}` : ''; }
 
 async function deliverySettings(request, env, auth, tenantId) {
-  if (!platformAllowed(env, auth)) return error(403, 'platform access required');
+  const supportAdmin = isSupportAdmin(auth) && auth.tenant_id === tenantId;
+  if (!platformAllowed(env, auth) && !supportAdmin) return error(403, 'platform access required');
   if (tenantId === 'platform' || !(await env.DB.prepare('SELECT id FROM CrmTenants WHERE id=?').bind(tenantId).first())) return error(404, 'tenant not found');
   const row = await env.DB.prepare('SELECT * FROM CrmTenantDeliverySettings WHERE tenant_id=?').bind(tenantId).first();
   if (request.method === 'GET') {
@@ -102,7 +107,7 @@ async function deliverySettings(request, env, auth, tenantId) {
   const at = now(), actor = auth.user_id || auth.id, guardId = id();
   const activationAt = value.enabled ? (current.enabled ? (current.activation_at || at) : at) : null;
   const statements = [
-    env.DB.prepare(guard(guardId, 'platform', actor)).bind(guardId, actor, 'platform'),
+    env.DB.prepare(guard(guardId, supportAdmin ? tenantId : 'platform', actor, supportAdmin)).bind(...(supportAdmin ? [guardId, auth.support_session_id, tenantId, now(), actor] : [guardId, actor, 'platform'])),
     env.DB.prepare(`INSERT INTO CrmTenantDeliverySettings(tenant_id,enabled,activation_at,channel,credentials_ciphertext,sms_service_id,from_number,contact_phone,alimtalk_service_id,channel_id,visit_template_code,measurement_template_code,visit_body,measurement_body,updated_by,updated_at)
       SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1) ON CONFLICT(tenant_id) DO UPDATE SET enabled=excluded.enabled,activation_at=excluded.activation_at,channel=excluded.channel,credentials_ciphertext=excluded.credentials_ciphertext,sms_service_id=excluded.sms_service_id,from_number=excluded.from_number,contact_phone=excluded.contact_phone,alimtalk_service_id=excluded.alimtalk_service_id,channel_id=excluded.channel_id,visit_template_code=excluded.visit_template_code,measurement_template_code=excluded.measurement_template_code,visit_body=excluded.visit_body,measurement_body=excluded.measurement_body,updated_by=excluded.updated_by,updated_at=excluded.updated_at
       WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)`).bind(tenantId, value.enabled ? 1 : 0, activationAt, value.channel, ciphertext, next.sms_service_id, next.from_number, next.contact_phone, next.alimtalk_service_id, next.channel_id, next.visit_template_code, next.measurement_template_code, next.visit_body, next.measurement_body, actor, at, guardId, guardId),
@@ -294,8 +299,10 @@ async function addMember(request, env, auth, tenantId) {
     if (typeof env.DB.batch !== "function") return error(503, "transaction unavailable");
     const created = now();
     const guardId = id();
+    const supportAdmin = isSupportAdmin(auth);
+    const actorId = auth.user_id || auth.id;
     const results = await env.DB.batch([
-      env.DB.prepare(guard(guardId, tenantId, auth.user_id || auth.id)).bind(guardId, auth.user_id || auth.id, tenantId),
+      env.DB.prepare(guard(guardId, tenantId, actorId, supportAdmin)).bind(...(supportAdmin ? [guardId, auth.support_session_id, tenantId, now(), actorId] : [guardId, actorId, tenantId])),
       env.DB.prepare("INSERT INTO CrmUsers(id,tenant_id,email,role,active,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)").bind(memberId, tenantId, email, "staff", 1, created, guardId),
       env.DB.prepare("INSERT INTO CrmAuditLogs(tenant_id,actor_id,estimate_id,action,created_at) SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)").bind(tenantId, auth.user_id || auth.id, null, "member.create", created, guardId),
       env.DB.prepare(guardDelete(guardId)).bind(guardId),
@@ -315,8 +322,10 @@ async function setMemberActive(request, env, auth, tenantId, memberId) {
   if (typeof env.DB.batch !== "function") return error(503, "transaction unavailable");
   const action = `member.${value.active ? "activate" : "deactivate"}`;
   const guardId = id();
+  const supportAdmin = isSupportAdmin(auth);
+  const actorId = auth.user_id || auth.id;
   const statements = [
-    env.DB.prepare(guard(guardId, tenantId, auth.user_id || auth.id)).bind(guardId, auth.user_id || auth.id, tenantId),
+    env.DB.prepare(guard(guardId, tenantId, actorId, supportAdmin)).bind(...(supportAdmin ? [guardId, auth.support_session_id, tenantId, now(), actorId] : [guardId, actorId, tenantId])),
     env.DB.prepare("UPDATE CrmUsers SET active=? WHERE id=? AND tenant_id=? AND role='staff' AND EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)").bind(value.active ? 1 : 0, memberId, tenantId, guardId),
     env.DB.prepare("INSERT INTO CrmAuditLogs(tenant_id,actor_id,estimate_id,action,created_at) SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)").bind(tenantId, auth.user_id || auth.id, null, action, now(), guardId),
   ];

@@ -14,7 +14,8 @@ import { buildAnalyticsRollupStatements } from "../lib/analytics-rollups.js";
 const HEATMAP_RATE_LIMIT_PER_HOUR = 1000;
 const MAX_EVENTS_PER_REQUEST = 50;
 const MAX_D1_BOUND_PARAMETERS = 100;
-const HEATMAP_INSERT_COLUMN_COUNT = 24;
+const HEATMAP_INSERT_COLUMN_COUNT = 25;
+const SOURCE_TENANT_ID = "day1design";
 
 function buildHeatmapInsertStatements(env, rows) {
   const chunkSize = Math.floor(
@@ -24,12 +25,12 @@ function buildHeatmapInsertStatements(env, rows) {
   for (let index = 0; index < rows.length; index += chunkSize) {
     const chunk = rows.slice(index, index + chunkSize);
     const values = chunk
-      .map(() => "(?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?)")
+      .map(() => `(${Array.from({ length: HEATMAP_INSERT_COLUMN_COUNT }, () => "?").join(",")})`)
       .join(", ");
     statements.push(
       env.DB.prepare(
         `INSERT INTO HeatmapEvents
-          (id, Page, EventType, Device, XPct, YPct, ScrollDepthPct,
+          (id, CrmTenantId, Page, EventType, Device, XPct, YPct, ScrollDepthPct,
            PageW, PageH, ViewportW, ViewportH,
            SessionId, IP, Country, Region, City,
            Referrer, RefPath, UtmSource, UtmMedium, UtmCampaign, CreatedAt, IsBot,
@@ -311,6 +312,7 @@ async function trackEvents(request, env, ctx) {
     }
     rawRows.push([
       id,
+      SOURCE_TENANT_ID,
       page,
       type,
       device,

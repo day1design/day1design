@@ -26,6 +26,7 @@ const ALLOWED = new Set([
 ]);
 
 const s = (v, n) => String(v || "").slice(0, n);
+const SOURCE_TENANT_ID = "day1design";
 
 export async function handlePixelEvents(request, env, ctx) {
   if (request.method !== "POST") return jsonError(405, "Method Not Allowed");
@@ -40,12 +41,13 @@ export async function handlePixelEvents(request, env, ctx) {
   try {
     await env.DB.prepare(
       `INSERT INTO pixel_events
-         (id, created_at, event_name, ga4_name, channel, event_id, page_path, source, session_id,
+         (id, CrmTenantId, created_at, event_name, ga4_name, channel, event_id, page_path, source, session_id,
           campaign, adset, ad, ad_id, fbclid, event_detail, estimate_id, ip, ua)
-       VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, 'pixel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, 'pixel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         generateId(),
+        SOURCE_TENANT_ID,
         eventName,
         s(body.ga4_name, 60),
         s(body.event_id, 100),
@@ -74,12 +76,13 @@ export async function logPixelEvent(env, row = {}) {
   try {
     await env.DB.prepare(
       `INSERT INTO pixel_events
-         (id, created_at, event_name, ga4_name, channel, event_id, page_path, source, session_id,
+         (id, CrmTenantId, created_at, event_name, ga4_name, channel, event_id, page_path, source, session_id,
           campaign, adset, ad, ad_id, fbclid, event_detail, estimate_id, capi_status, matched_fields, ip, ua)
-       VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         generateId(),
+        SOURCE_TENANT_ID,
         s(row.event_name || "Lead", 40),
         s(row.ga4_name, 60),
         s(row.channel || "capi", 10),

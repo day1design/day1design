@@ -48,6 +48,29 @@ test("OTP creates scoped session and reads mapped customer", async () => {
   sqlite.close();
 });
 
+test('customer list batches assignee lookups and keeps them tenant scoped', async () => {
+  const { sqlite, delivered, env } = await setup();
+  try {
+    sqlite.exec("INSERT INTO CrmTenants(id,name) VALUES('other','Other'); INSERT INTO CrmUsers(id,tenant_id,email,role,active) VALUES('assignee-id','day1design','assignee@example.com','staff',1),('other-assignee','other','shared@example.com','staff',1)");
+    sqlite.exec("INSERT INTO Estimates(id,Name,Assignee,Status,SubmittedAt) VALUES('estimate-assignee-id','ID match','assignee-id','new','2026-09-10T00:00:03Z'),('estimate-assignee-email','Email match','ASSIGNEE@EXAMPLE.COM','new','2026-09-10T00:00:02Z'),('estimate-assignee-other','Other tenant','shared@example.com','new','2026-09-10T00:00:01Z')");
+    await handleMobileCrm(req('/api/mobile/auth/request-otp', 'POST', { email: 'gahyun.co@gmail.com' }), env);
+    const token = (await (await handleMobileCrm(req('/api/mobile/auth/verify-otp', 'POST', { email: 'gahyun.co@gmail.com', code: delivered[0].code }), env)).json()).token;
+    let assigneeQueries = 0;
+    const db = env.DB;
+    env.DB = { ...db, prepare(sql) { if (String(sql).includes('SELECT id,email FROM CrmUsers')) assigneeQueries += 1; return db.prepare(sql); } };
+    const response = await handleMobileCrm(req('/api/mobile/customers', 'GET', undefined, token), env);
+    assert.equal(response.status, 200);
+    const customers = (await response.json()).customers;
+    assert.equal(assigneeQueries, 1);
+    assert.equal(customers.find((row) => row.id === 'estimate-assignee-id').assignee_id, 'assignee-id');
+    assert.equal(customers.find((row) => row.id === 'estimate-assignee-email').assignee_id, 'assignee-id');
+    assert.equal(customers.find((row) => row.id === 'estimate-assignee-other').assignee_id, null);
+    assert.equal(customers.find((row) => row.id === 'estimate-assignee-other').assignee_email, 'shared@example.com');
+  } finally {
+    sqlite.close();
+  }
+});
+
 test("customer update uses tenant scoped CAS", async () => {
   const { sqlite, delivered, env } = await setup();
   await handleMobileCrm(req("/api/mobile/auth/request-otp", "POST", { email: "gahyun.co@gmail.com" }), env);

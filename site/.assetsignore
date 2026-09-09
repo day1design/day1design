@@ -1,0 +1,9 @@
+.env
+.env.*
+*.local
+.vercel
+.vercel/**
+vercel.json
+admin/vercel.json
+.gitignore
+.assetsignore

@@ -338,21 +338,46 @@ async function saveRun(request, env, ctx) {
   const prefix = r2Prefix(at);
   const snapshotKey = `${prefix}/${ts}-${id}.json`;
   const reportKey = body.report ? `${prefix}/${ts}-${id}-report.md` : "";
+  const imageKey = body.imageKey && body.imageBase64
+    ? String(body.imageKey).slice(0, 240)
+    : "";
+  const artifactBucket = body.reportKind === "daily" ? env.CRM_CACHE : env.IMAGES;
+  if (!artifactBucket) return jsonError(503, "report storage unavailable");
+  if (imageKey && !/^briefs\/[A-Za-z0-9/_-]+\.png$/.test(imageKey)) {
+    return jsonError(400, "invalid image key");
+  }
 
   // R2 쓰기가 늦어도 응답을 붙잡지 않는다. 이력이 늦게 쌓이는 것보다
   // 분석이 늦게 끝나는 쪽이 사람에게 더 나쁘다
   const writes = [];
   if (body.snapshot) {
     writes.push(
-      env.IMAGES.put(snapshotKey, JSON.stringify(body.snapshot), {
+      artifactBucket.put(snapshotKey, JSON.stringify(body.snapshot), {
         httpMetadata: { contentType: "application/json; charset=utf-8" },
       }),
     );
   }
   if (body.report) {
     writes.push(
-      env.IMAGES.put(reportKey, String(body.report), {
+      artifactBucket.put(reportKey, String(body.report), {
         httpMetadata: { contentType: "text/markdown; charset=utf-8" },
+      }),
+    );
+  }
+  if (imageKey) {
+    const encoded = String(body.imageBase64);
+    if (encoded.length > 7 * 1024 * 1024) return jsonError(413, "image too large");
+    let imageBytes;
+    try {
+      const raw = atob(encoded);
+      if (raw.length > 5 * 1024 * 1024) return jsonError(413, "image too large");
+      imageBytes = Uint8Array.from(raw, (char) => char.charCodeAt(0));
+    } catch {
+      return jsonError(400, "invalid image data");
+    }
+    writes.push(
+      artifactBucket.put(imageKey, imageBytes, {
+        httpMetadata: { contentType: String(body.imageContentType || "image/png") },
       }),
     );
   }
@@ -364,16 +389,17 @@ async function saveRun(request, env, ctx) {
   try {
     await env.DB.prepare(
       `INSERT INTO BriefRuns
-        (id, RequestedAt, Question, PeriodLabel, StartDate, EndDate,
+        (id, RequestedAt, Question, PeriodLabel, ReportKind, StartDate, EndDate,
          Spend, Leads, MetaLeads, MetaCostPerLead, HookRateAvg, Bottleneck,
-         Verdict, SnapshotKey, ReportKey, DurationSec, Stages, Status, CreatedAt)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         Verdict, SnapshotKey, ReportKey, ImageKey, DurationSec, Stages, Status, CreatedAt)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
       .bind(
         id,
         now,
         String(body.question || "").slice(0, 500),
         String(body.periodLabel || "").slice(0, 80),
+        String(body.reportKind || "").slice(0, 30),
         String(body.startDate || ""),
         String(body.endDate || ""),
         Number(body.spend) || 0,
@@ -385,6 +411,7 @@ async function saveRun(request, env, ctx) {
         String(body.verdict || "").slice(0, 500),
         body.snapshot ? snapshotKey : "",
         reportKey,
+        imageKey,
         Number(body.durationSec) || 0,
         String(body.stages || "").slice(0, 120),
         String(body.status || "success").slice(0, 20),
@@ -395,7 +422,7 @@ async function saveRun(request, env, ctx) {
     return jsonError(500, "run save failed");
   }
 
-  return jsonOk({ ok: true, id, snapshotKey, reportKey });
+  return jsonOk({ ok: true, id, snapshotKey, reportKey, imageKey, reportKind: String(body.reportKind || "") });
 }
 
 // 목록은 최신순 페이지네이션. 본문(R2)은 따로 받아 간다 — 목록에 원문을 실으면
@@ -413,7 +440,7 @@ async function listRuns(request, env) {
       env.DB.prepare(
         `SELECT id, RequestedAt, Question, PeriodLabel, StartDate, EndDate,
                 Spend, Leads, MetaLeads, MetaCostPerLead, HookRateAvg,
-                Bottleneck, Verdict, SnapshotKey, ReportKey, DurationSec,
+                Bottleneck, Verdict, SnapshotKey, ReportKey, ImageKey, ReportKind, DurationSec,
                 Stages, Status
            FROM BriefRuns
           ORDER BY RequestedAt DESC
@@ -443,24 +470,26 @@ async function listRuns(request, env) {
 // 저장해 둔 원문을 되돌려 준다. 스냅샷은 크므로 기본은 보고만 준다
 async function readRun(request, env, id) {
   const url = new URL(request.url);
-  const want = url.searchParams.get("part") === "snapshot" ? "snapshot" : "report";
+    const wantParam = url.searchParams.get("part");
+    const want = wantParam === "snapshot" ? "snapshot" : wantParam === "image" ? "image" : "report";
   try {
     const row = await env.DB.prepare(
-      `SELECT SnapshotKey, ReportKey FROM BriefRuns WHERE id = ?`,
+      `SELECT SnapshotKey, ReportKey, ImageKey, ReportKind FROM BriefRuns WHERE id = ?`,
     )
       .bind(id)
       .first();
     if (!row) return jsonError(404, "not found");
-    const key = want === "snapshot" ? row.SnapshotKey : row.ReportKey;
+    const key = want === "snapshot" ? row.SnapshotKey : want === "image" ? row.ImageKey : row.ReportKey;
     if (!key) return jsonError(404, "no stored part");
-    const obj = await env.IMAGES.get(key);
+    const artifactBucket = row.ReportKind === "daily" ? env.CRM_CACHE : env.IMAGES;
+    if (!artifactBucket) return jsonError(503, "report storage unavailable");
+    const obj = await artifactBucket.get(key);
     if (!obj) return jsonError(404, "object missing");
     return new Response(obj.body, {
       headers: {
-        "content-type":
-          want === "snapshot"
-            ? "application/json; charset=utf-8"
-            : "text/markdown; charset=utf-8",
+        "content-type": want === "snapshot"
+          ? "application/json; charset=utf-8"
+          : want === "image" ? "image/png" : "text/markdown; charset=utf-8",
         "cache-control": "private, max-age=300",
       },
     });

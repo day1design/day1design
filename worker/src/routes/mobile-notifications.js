@@ -3,9 +3,30 @@ import {
   createInternalNotification, listMyNotifications, markNotificationRead,
   listNotificationTemplates, upsertNotificationTemplate, previewNotificationTemplate,
 } from '../lib/crm-notification-store.js';
+import { buildCustomerSms } from '../lib/sens.js';
 import { json, jsonError } from '../lib/response.js';
 
 async function readBody(request) { return readCrmJson(request, 16384); }
+
+async function listMobileMessageTemplates(db, actor) {
+  const templates = await listNotificationTemplates(db, { actor });
+  const intake = {
+    tenant_id: actor.tenant_id,
+    kind: 'intake',
+    state: 'configured',
+    body: buildCustomerSms('homepage'),
+    enabled: true,
+    draft_enabled: false,
+    operational_enabled: null,
+    source: 'homepage',
+    message_type: 'LMS',
+    editable: false,
+  };
+  const found = templates.some((item) => item.kind === 'intake');
+  return found
+    ? templates.map((item) => item.kind === 'intake' ? { ...item, ...intake } : item)
+    : [intake, ...templates];
+}
 
 export async function handleMobileNotifications(request, env, auth) {
   const url = new URL(request.url);
@@ -20,7 +41,10 @@ export async function handleMobileNotifications(request, env, auth) {
       return json(await listMyNotifications(env.DB,{actor,cursor}));
     }
     if (readMatch && request.method === 'POST') return json(await markNotificationRead(env.DB,{actor,notificationId:readMatch[1]}));
-    if (path === '/message-templates' && request.method === 'GET') return json({templates:await listNotificationTemplates(env.DB,{actor})});
+    if (path === '/message-templates' && request.method === 'GET') {
+      if (actor.role !== 'owner') return jsonError(403,'owner_required');
+      return json({templates:await listMobileMessageTemplates(env.DB, actor)});
+    }
     if (actor.role !== 'owner') return jsonError(403,'owner_required');
     if (request.method !== 'POST') return jsonError(405,'Method Not Allowed');
     const data=await readBody(request);

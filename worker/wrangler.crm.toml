@@ -18,3 +18,7 @@ zone_name = "day1design.co.kr"
 
 [triggers]
 crons = ["* * * * *"]
+
+[[r2_buckets]]
+binding = "CRM_CACHE"
+bucket_name = "day1design-crm-cache"

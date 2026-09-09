@@ -88,6 +88,8 @@ test("page_view tracking stores raw events before durable analytics rollups", as
   assert.equal(body.accepted, 1);
   assert.equal(statements.length, 5);
   assert.match(sql, /INSERT INTO HeatmapEvents/);
+  assert.match(sql, /id, CrmTenantId, Page/);
+  assert.ok(statements[0].args.includes("day1design"));
   assert.match(sql, /INSERT OR IGNORE INTO AnalyticsEvents/);
   assert.match(sql, /INSERT INTO AnalyticsSessionDays/);
   assert.match(sql, /INSERT OR IGNORE INTO AnalyticsPageViews/);

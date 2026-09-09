@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { cq, curlTelegram as requestTelegram } from "./telegram-transport.mjs";
+import { runDailyExpertAnalysis } from "./bot.mjs";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -25,7 +26,8 @@ const optOf = (name) => {
   return i >= 0 ? args[i + 1] : "";
 };
 
-const NO_SEND = flag("--no-send");
+const NO_SEND = flag("--no-send") || flag("--dry-run");
+const FIXTURE_AGENT = flag("--dry-run");
 const FROM_DIR = optOf("--from-dir");
 const OUT_DIR = optOf("--out") || path.join(HERE, "report");
 
@@ -426,6 +428,24 @@ async function main() {
   fs.writeFileSync(htmlPath, buildHtml({ yday, day, week }), "utf8");
   await renderPng(htmlPath, pngPath);
 
+  const imageKey = `briefs/daily/${yday}.png`;
+  const imageBase64 = NO_SEND || FIXTURE_AGENT ? "" : fs.readFileSync(pngPath).toString("base64");
+  const expert = await runDailyExpertAnalysis({
+    date: yday,
+    day,
+    week,
+    dryRun: FIXTURE_AGENT,
+    persist: !NO_SEND && !FIXTURE_AGENT,
+    imageKey,
+    imageBase64,
+  });
+  const expertPath = path.join(OUT_DIR, `expert-daily-${stamp}.md`);
+  fs.writeFileSync(
+    expertPath,
+    `${expert.report}\n\n<!-- report_date=${yday}; mode=${FIXTURE_AGENT ? "fixture" : "agent"}; persisted=${expert.persisted} -->\n`,
+    "utf8",
+  );
+
   const s = day.ads?.summary || {};
   const caption =
     `${yday}(${dowLabel(yday)}) 광고 효율 — ` +
@@ -453,6 +473,15 @@ async function main() {
       leads: s.leads,
       sent: !NO_SEND,
       messageId,
+      dryRun: FIXTURE_AGENT,
+      noSend: NO_SEND,
+      expertPath,
+      expert: {
+        status: expert.payload.status,
+        persisted: expert.persisted,
+        reportKind: expert.payload.reportKind,
+        imageKey,
+      },
     }),
   );
 }

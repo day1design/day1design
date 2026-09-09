@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { authenticateSupport, endSupportSession, startSupportSession, supportReadAllowed } from '../src/lib/crm-support.js';
+import { authenticateSupport, endSupportSession, isSupportAdmin, supportBlocksExternalSend, startSupportSession } from '../src/lib/crm-support.js';
 
 function setup() {
   const sqlite = new DatabaseSync(':memory:');
-  for (const file of ['0001_init.sql', '0045_mobile_crm.sql', '0070_crm_support_sessions.sql']) {
+  for (const file of ['0001_init.sql', '0045_mobile_crm.sql', '0054_crm_persistent_sessions.sql', '0070_crm_support_sessions.sql']) {
     sqlite.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
   }
   sqlite.exec("INSERT INTO CrmTenants(id,name) VALUES('tenant-b','B'); UPDATE CrmUsers SET id='platform-owner' WHERE email='mkt@polarad.co.kr';");
@@ -25,16 +25,30 @@ test('support session requires allowlisted platform actor without a reason, expi
   const started = await startSupportSession(request('/api/mobile/platform/tenants/tenant-b/support-sessions', 'POST', {}), runtime, platform, 'tenant-b');
   assert.equal(started.status, 200);
   const payload = await started.json();
-  assert.equal(payload.support_session.mode, 'readonly');
+  assert.equal(payload.support_session.mode, 'admin');
   assert.equal(env.sqlite.prepare('SELECT reason FROM CrmSupportSessions').get().reason, '');
   const support = await authenticateSupport(env.DB, request('/api/mobile/me', 'GET', undefined, payload.token));
   assert.equal(support.tenant_id, 'tenant-b');
+  assert.equal(isSupportAdmin(support), true);
+  assert.equal(support.support_readonly, true);
+  assert.equal(supportBlocksExternalSend(support), true);
   const ended = await endSupportSession(request('/api/mobile/support/end', 'POST', undefined, payload.token), runtime, support);
   assert.equal(ended.status, 200);
   assert.equal((await authenticateSupport(env.DB, request('/api/mobile/me', 'GET', undefined, payload.token))), null);
   assert.deepEqual(env.sqlite.prepare("SELECT action,tenant_id FROM CrmAuditLogs WHERE tenant_id='tenant-b' ORDER BY id").all().map((row) => ({ action: row.action, tenant_id: row.tenant_id })), [
     { action: 'tenant.support.read_start', tenant_id: 'tenant-b' }, { action: 'tenant.support.read_end', tenant_id: 'tenant-b' },
   ]);
+  env.sqlite.close();
+});
+
+test('support authentication revalidates the current active platform owner', async () => {
+  const env = setup();
+  const platform = { user_id: 'platform-owner', id: 'platform-owner', email: 'mkt@polarad.co.kr', role: 'owner', tenant_id: 'platform' };
+  const runtime = { DB: env.DB, CRM_PLATFORM_EMAILS: 'mkt@polarad.co.kr' };
+  const started = await startSupportSession(request('/api/mobile/platform/tenants/tenant-b/support-sessions', 'POST', {}), runtime, platform, 'tenant-b');
+  const token = (await started.json()).token;
+  env.sqlite.prepare("UPDATE CrmUsers SET active=0 WHERE id='platform-owner'").run();
+  assert.equal(await authenticateSupport(env.DB, request('/api/mobile/me', 'GET', undefined, token)), null);
   env.sqlite.close();
 });
 
@@ -49,13 +63,4 @@ test('support start denies other actor and unknown tenant, accepts no reason, an
   const expired = await authenticateSupport(env.DB, request('/api/mobile/me', 'GET', undefined, 'expired-token'));
   assert.equal(expired, null);
   env.sqlite.close();
-});
-
-test("support customer card may read its assignees but cannot mutate or export",()=>{
- assert.equal(supportReadAllowed("GET","/members"),true);
- assert.equal(supportReadAllowed("GET","/customers/customer-a"),true);
- for(const method of ["POST","PUT","PATCH","DELETE"])assert.equal(supportReadAllowed(method,"/members"),false);
-
- assert.equal(supportReadAllowed("GET","/exports"),false);
- assert.equal(supportReadAllowed("GET","/platform/tenants"),false);
 });

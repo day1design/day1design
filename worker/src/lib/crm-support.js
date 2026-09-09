@@ -17,14 +17,17 @@ function audit(db, tenantId, actorId, action) {
     .bind(tenantId, actorId, null, action, nowIso()).run();
 }
 
+export function isSupportSession(auth) { return Boolean(auth?.support_session_id && auth?.support_mode === 'admin'); }
+export function isSupportAdmin(auth) { return isSupportSession(auth); }
 export function isSupportReadonly(auth) { return auth?.support_readonly === true; }
+export function supportBlocksExternalSend(auth) { return isSupportSession(auth); }
 
 export async function startSupportSession(request, env, auth, tenantId) {
   if (!platformAllowed(env, auth)) return error(403, 'platform access required');
   const actor = await env.DB.prepare("SELECT id FROM CrmUsers WHERE id=? AND active=1 AND tenant_id='platform' AND role='owner' AND email=? COLLATE NOCASE")
     .bind(auth.user_id || auth.id, auth.email).first();
   if (!actor) return error(403, 'platform access required');
-  const reason = ''; // Direct administrator view; access is audited automatically.
+  const reason = '';
   const tenant = await env.DB.prepare("SELECT id FROM CrmTenants WHERE id=? AND id<>'platform'").bind(tenantId).first();
   if (!tenant) return error(404, 'tenant not found');
   const token = 'crm_support_' + `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll('-', '');
@@ -36,7 +39,7 @@ export async function startSupportSession(request, env, auth, tenantId) {
     env.DB.prepare('INSERT INTO CrmAuditLogs(tenant_id,actor_id,estimate_id,action,created_at) VALUES(?,?,?,?,?)')
       .bind(tenantId, actor.id, null, 'tenant.support.read_start', nowIso()),
   ]);
-  return ok({ support_session: { id: sessionId, tenant_id: tenantId, mode: 'readonly', expires_at: expires }, token });
+  return ok({ support_session: { id: sessionId, tenant_id: tenantId, mode: 'admin', expires_at: expires }, token });
 }
 
 export async function authenticateSupport(db, request) {
@@ -51,7 +54,7 @@ export async function authenticateSupport(db, request) {
   if (!row || row.suspended || Date.parse(row.expires_at) <= Date.now()) return null;
   return { id: row.actor_id, user_id: row.actor_id, email: row.actor_email, role: 'owner', tenant_id: row.tenant_id,
     tenant_name: row.tenant_name, brand: row.brand, logo_url: row.logo_url, onboarding_status: 'active',
-    support_readonly: true, support_session_id: row.session_id, support_reason: row.reason, token };
+    support_readonly: true, support_mode: 'admin', support_session_id: row.session_id, support_reason: row.reason, token };
 }
 
 export async function endSupportSession(request, env, auth) {

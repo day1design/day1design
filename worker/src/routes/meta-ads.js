@@ -15,6 +15,7 @@ import { notifyTelegram } from "../lib/telegram.js";
 import { generateId, d1Create, d1Update } from "../lib/d1.js";
 
 const META_API_VERSION = "v18.0";
+const SOURCE_TENANT_ID = "day1design";
 const CAMPAIGN_FIELDS = "campaign_id,campaign_name";
 const AD_FIELDS = "ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name";
 const INSIGHT_METRICS = [
@@ -1732,11 +1733,12 @@ const DAILY_COLS = [
   "CostPerLinkClick",
   "FetchedAt",
 ];
-function buildDailyStmt(env, fields) {
+export function buildDailyStmt(env, fields) {
   const id = generateId();
   const now = new Date().toISOString();
-  const setClause = DAILY_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
+  const setClause = ["CrmTenantId=excluded.CrmTenantId", ...DAILY_COLS.map((c) => `${c}=excluded.${c}`)].join(", ");
   const placeholders = [
+    "?",
     "?",
     "?",
     "?",
@@ -1745,10 +1747,11 @@ function buildDailyStmt(env, fields) {
     "?",
   ].join(",");
   const sql = `INSERT INTO MetaAdsDaily
-      (id, Date, Level, EntityId, ${DAILY_COLS.join(",")}, CreatedAt)
+      (id, CrmTenantId, Date, Level, EntityId, ${DAILY_COLS.join(",")}, CreatedAt)
      VALUES (${placeholders})
-     ON CONFLICT(Date, Level, EntityId) DO UPDATE SET ${setClause}`;
-  const values = [id, fields.Date, fields.Level, fields.EntityId];
+     ON CONFLICT(Date, Level, EntityId) DO UPDATE SET ${setClause}
+       WHERE MetaAdsDaily.CrmTenantId IS NULL OR MetaAdsDaily.CrmTenantId=excluded.CrmTenantId`;
+  const values = [id, SOURCE_TENANT_ID, fields.Date, fields.Level, fields.EntityId];
   for (const c of DAILY_COLS)
     values.push(fields[c] ?? (typeof fields[c] === "number" ? 0 : ""));
   values.push(now);
@@ -1784,18 +1787,19 @@ const AD_COLS = [
   "VideoP100Watched",
   "FetchedAt",
 ];
-function buildAdStmt(env, fields) {
+export function buildAdStmt(env, fields) {
   const id = generateId();
   const now = new Date().toISOString();
-  const setClause = AD_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
-  const placeholders = ["?", "?", "?", ...AD_COLS.map(() => "?"), "?"].join(
+  const setClause = ["CrmTenantId=excluded.CrmTenantId", ...AD_COLS.map((c) => `${c}=excluded.${c}`)].join(", ");
+  const placeholders = ["?", "?", "?", "?", ...AD_COLS.map(() => "?"), "?"].join(
     ",",
   );
   const sql = `INSERT INTO MetaAdsAd
-      (id, Date, AdId, ${AD_COLS.join(",")}, CreatedAt)
+      (id, CrmTenantId, Date, AdId, ${AD_COLS.join(",")}, CreatedAt)
      VALUES (${placeholders})
-     ON CONFLICT(Date, AdId) DO UPDATE SET ${setClause}`;
-  const values = [id, fields.Date, fields.AdId];
+     ON CONFLICT(Date, AdId) DO UPDATE SET ${setClause}
+       WHERE MetaAdsAd.CrmTenantId IS NULL OR MetaAdsAd.CrmTenantId=excluded.CrmTenantId`;
+  const values = [id, SOURCE_TENANT_ID, fields.Date, fields.AdId];
   for (const c of AD_COLS) values.push(fields[c] ?? "");
   values.push(now);
   return env.DB.prepare(sql).bind(...values);
@@ -1812,11 +1816,12 @@ const BRK_COLS = [
   "Leads",
   "FetchedAt",
 ];
-function buildBreakdownStmt(env, fields) {
+export function buildBreakdownStmt(env, fields) {
   const id = generateId();
   const now = new Date().toISOString();
-  const setClause = BRK_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
+  const setClause = ["CrmTenantId=excluded.CrmTenantId", ...BRK_COLS.map((c) => `${c}=excluded.${c}`)].join(", ");
   const placeholders = [
+    "?",
     "?",
     "?",
     "?",
@@ -1826,11 +1831,13 @@ function buildBreakdownStmt(env, fields) {
     "?",
   ].join(",");
   const sql = `INSERT INTO MetaAdsBreakdown
-      (id, Date, Dimension, DimensionValue, DimensionSub, ${BRK_COLS.join(",")}, CreatedAt)
+      (id, CrmTenantId, Date, Dimension, DimensionValue, DimensionSub, ${BRK_COLS.join(",")}, CreatedAt)
      VALUES (${placeholders})
-     ON CONFLICT(Date, Dimension, DimensionValue, DimensionSub) DO UPDATE SET ${setClause}`;
+     ON CONFLICT(Date, Dimension, DimensionValue, DimensionSub) DO UPDATE SET ${setClause}
+       WHERE MetaAdsBreakdown.CrmTenantId IS NULL OR MetaAdsBreakdown.CrmTenantId=excluded.CrmTenantId`;
   const values = [
     id,
+    SOURCE_TENANT_ID,
     fields.Date,
     fields.Dimension,
     fields.DimensionValue,

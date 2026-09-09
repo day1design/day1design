@@ -1,0 +1,7 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readMobileBriefing} from '../src/lib/crm-briefing-reader.js';
+const req=new Request('https://test/api/mobile/briefings/latest');
+const owner={role:'owner',tenant_id:'day1design'};
+function env(row){return {DB:{prepare:()=>({bind(){return this},first:async()=>row})},IMAGES:{get:async key=>key==='report'?{size:8,text:async()=>'analysis'}:{size:3,arrayBuffer:async()=>new Uint8Array([1,2,3]).buffer}}};}
+test('staff and other tenant cannot read Day1 report',async()=>{assert.equal((await readMobileBriefing(req,env({}),{...owner,role:'staff'},'/briefings/latest')).status,403);assert.equal((await (await readMobileBriefing(req,{}, {...owner,tenant_id:'other'},'/briefings/latest')).json()).available,false)});
+test('latest combines stored analysis and protected image path',async()=>{const r=await (await readMobileBriefing(req,env({id:'daily-1',EndDate:'2026-09-08',ReportKey:'report',ImageKey:'image',Status:'success'}),owner,'/briefings/latest')).json();assert.equal(r.analysis,'analysis');assert.equal(r.image_path,'/api/mobile/briefings/daily-1/image');});
+test('image reads bounded private object and rejects missing report',async()=>{let r=await(await readMobileBriefing(req,env({ImageKey:'image'}),owner,'/briefings/daily-1/image')).json();assert.equal(r.base64,'AQID');assert.equal((await readMobileBriefing(req,env(null),owner,'/briefings/daily-1/image')).status,404)});

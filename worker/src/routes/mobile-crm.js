@@ -1,10 +1,17 @@
+import { readThroughCrmHome } from '../lib/crm-home-cache.js';
+import { readCrmTrafficSummary } from '../lib/crm-traffic-summary.js';
+import { buildCrmHomeMetrics, homeMetricPeriods } from '../lib/crm-home-metrics.js';
+import { readMobileBriefing } from '../lib/crm-briefing-reader.js';
+import { readCrmFlowAnalysis } from '../lib/crm-flow-analysis.js';
+import { readCrmAnalyticsDimensions } from '../lib/crm-analytics-dimensions.js';
+import { readThroughCrmAnalytics } from '../lib/crm-read-cache.js';
 import { jsonError as baseJsonError, jsonOk as baseJsonOk } from "../lib/response.js";
 import { authenticate, nowIso, revokeSession, requestMobileOtp, verifyMobileOtp } from '../lib/crm-auth.js';
-import { authenticateSupport, endSupportSession, isSupportReadonly, supportReadAllowed } from '../lib/crm-support.js';
+import { authenticateSupport, endSupportSession, isSupportAdmin, isSupportReadonly, supportReadAllowed } from '../lib/crm-support.js';
 import { handleMobileNotifications } from './mobile-notifications.js';
 import { handleMobileDevices } from './mobile-devices.js';
 import { handleMobileManagement } from './mobile-management.js';
-import { readCrmAnalytics } from '../lib/crm-analytics.js';
+import { readCrmAnalytics, dateRange } from '../lib/crm-analytics.js';
 import { readCrmJson } from '../lib/crm-request.js';
 
 const logo = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-192.png";
@@ -41,7 +48,23 @@ export function homeKstBounds(nowMs = Date.now()) {
   const start = Date.parse(date+'T00:00:00+09:00');
   return {date,startUtc:new Date(start).toISOString(),endExclusiveUtc:new Date(start+86400000).toISOString()};
 }
+async function cachedAnalytics(env, query) {
+  dateRange(query.startDate, query.endDate);
+  return readThroughCrmAnalytics(env.DB, { ...query, cacheBucket: env.CRM_CACHE, load: async () => {
+    const [analytics, dimensions, flowAnalysis, trafficSummary] = await Promise.all([
+      readCrmAnalytics(env.DB, query), readCrmAnalyticsDimensions(env.DB, query),
+      readCrmFlowAnalysis(env.DB, query), readCrmTrafficSummary(env.DB, query),
+    ]);
+    return { ...analytics, dimensions, flowAnalysis, trafficSummary };
+  }});
+}
 async function homeSummary(env,auth) {
+  const revision = await env.DB.prepare('SELECT version FROM CrmDataRevisions WHERE tenant_id=?').bind(auth.tenant_id).first();
+  const payload = await readThroughCrmHome(env.DB, { tenantId:auth.tenant_id, role:auth.role,
+    userId:auth.user_id, revision:revision?.version || 0, load:()=>buildHomePayload(env,auth) });
+  return jsonOk(payload);
+}
+async function buildHomePayload(env,auth) {
   const bounds=homeKstBounds();
   const pending=await env.DB.prepare("SELECT COUNT(*) count FROM Estimates WHERE CrmTenantId=? AND Status IN ('접수대기','new')").bind(auth.tenant_id).first();
   const today={};
@@ -50,7 +73,17 @@ async function homeSummary(env,auth) {
     const rows=await env.DB.prepare("SELECT a.*,e.Name customer_name FROM CrmAppointments a LEFT JOIN Estimates e ON e.id=a.estimate_id AND e.CrmTenantId=a.tenant_id WHERE a.tenant_id=? AND a.kind=? AND a.starts_at>=? AND a.starts_at<? AND a.status<>'cancelled' ORDER BY a.starts_at,a.id LIMIT 5").bind(auth.tenant_id,kind,bounds.startUtc,bounds.endExclusiveUtc).all();
     today[kind==='visit'?'consultation':kind]={count:Number(count.count),items:rows.results||[]};
   }
-  return jsonOk({date:bounds.date,timezone:'Asia/Seoul',intake:{pending_count:Number(pending.count)},today});
+  let home_metrics = null;
+  if (auth.role === 'owner') {
+    const periods = homeMetricPeriods(bounds.date);
+    const [todayAnalytics, recent30Analytics] = await Promise.all([
+      cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: bounds.date, endDate: bounds.date }),
+      cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: periods.recent30.start, endDate: bounds.date }),
+    ]);
+    home_metrics = buildCrmHomeMetrics({ tenantId: auth.tenant_id, todayAnalytics, recent30Analytics,
+      trafficSummary: todayAnalytics.trafficSummary, todayDate: bounds.date });
+  }
+  return {date:bounds.date,timezone:'Asia/Seoul',intake:{pending_count:Number(pending.count)},today,home_metrics};
 }
 
 function id() {
@@ -81,6 +114,21 @@ async function assignee(db, tenantId, value) {
   if (!value) return null;
   return (await db.prepare("SELECT id,email FROM CrmUsers WHERE tenant_id=? AND id=? AND active=1").bind(tenantId, value).first())
     || (await db.prepare("SELECT id,email FROM CrmUsers WHERE tenant_id=? AND email=? COLLATE NOCASE AND active=1").bind(tenantId, value).first());
+}
+
+async function assigneeBatch(db, tenantId, values) {
+  const unique = [...new Set(values.filter((value) => typeof value === 'string' && value))].slice(0, 50);
+  if (!unique.length) return new Map();
+  const placeholders = unique.map(() => '?').join(',');
+  const result = await db.prepare(`SELECT id,email FROM CrmUsers WHERE tenant_id=? AND active=1 AND (id IN (${placeholders}) OR email COLLATE NOCASE IN (${placeholders}))`)
+    .bind(tenantId, ...unique, ...unique).all();
+  const byId = new Map();
+  const byEmail = new Map();
+  for (const row of result.results || []) {
+    byId.set(row.id, row);
+    byEmail.set(String(row.email || '').toLowerCase(), row);
+  }
+  return new Map(unique.map((value) => [value, byId.get(value) || byEmail.get(value.toLowerCase()) || null]));
 }
 
 async function customerPayload(db, row, tenantId) {
@@ -159,7 +207,8 @@ async function listCustomers(request, env, auth) {
   }
   const last = window[window.length - 1];
   const next_cursor = rows.length>50 && last ? encodeCursor({ submitted_at: last.SubmittedAt || null, id: last.id }) : null;
-  return jsonOk({customers:await Promise.all(items.map(row=>customerPayload(env.DB,row,auth.tenant_id))),next_cursor});
+  const assignees = await assigneeBatch(env.DB, auth.tenant_id, items.map((row) => row.Assignee));
+  return jsonOk({customers:items.map((row) => customer(row, assignees.get(row.Assignee) || null)),next_cursor});
 }
 
 async function detail(env, auth, customerId) {
@@ -184,7 +233,19 @@ async function detail(env, auth, customerId) {
 
 async function mutateCustomer(env, auth, customerId, version, columns, values, records, action) {
   const guard=id(), created=nowIso();
-  const statements=[env.DB.prepare('INSERT INTO CrmMutationGuard(id,allowed) VALUES(?,CASE WHEN EXISTS(SELECT 1 FROM Estimates e JOIN CrmUsers u ON u.id=? JOIN CrmTenants t ON t.id=u.tenant_id WHERE e.id=? AND e.CrmTenantId=? AND e.CrmVersion=? AND u.tenant_id=e.CrmTenantId AND u.active=1 AND u.role=\'owner\' AND t.suspended=0) THEN 1 ELSE 0 END)').bind(guard,auth.id,customerId,auth.tenant_id,version),
+  const supportAdmin = isSupportAdmin(auth);
+  const guardSql = supportAdmin ? `INSERT INTO CrmMutationGuard(id,allowed) VALUES(?,CASE WHEN EXISTS(
+    SELECT 1 FROM Estimates e JOIN CrmTenants t ON t.id=e.CrmTenantId
+    WHERE e.id=? AND e.CrmTenantId=? AND e.CrmVersion=? AND t.suspended=0 AND EXISTS(
+      SELECT 1 FROM CrmSupportSessions ss JOIN CrmUsers pu ON pu.id=ss.actor_id
+      WHERE ss.id=? AND ss.tenant_id=e.CrmTenantId AND ss.revoked_at IS NULL AND ss.expires_at>? AND pu.id=? AND pu.tenant_id='platform' AND pu.active=1 AND pu.role='owner'
+    )
+  ) THEN 1 ELSE 0 END)` : `INSERT INTO CrmMutationGuard(id,allowed) VALUES(?,CASE WHEN EXISTS(
+    SELECT 1 FROM Estimates e JOIN CrmUsers u ON u.id=? JOIN CrmTenants t ON t.id=u.tenant_id
+    WHERE e.id=? AND e.CrmTenantId=? AND e.CrmVersion=? AND u.tenant_id=e.CrmTenantId AND u.active=1 AND u.role='owner' AND t.suspended=0
+  ) THEN 1 ELSE 0 END)`;
+  const guardBinds = supportAdmin ? [guard,customerId,auth.tenant_id,version,auth.support_session_id,created,auth.id] : [guard,auth.id,customerId,auth.tenant_id,version];
+  const statements=[env.DB.prepare(guardSql).bind(...guardBinds),
     env.DB.prepare(`UPDATE Estimates SET ${columns.length?columns.join(',')+',':''} CrmVersion=CrmVersion+1 WHERE id=? AND CrmTenantId=? AND CrmVersion=?`).bind(...values,customerId,auth.tenant_id,version),...records,
     env.DB.prepare('INSERT INTO CrmAuditLogs(tenant_id,actor_id,estimate_id,action,created_at) VALUES(?,?,?,?,?)').bind(auth.tenant_id,auth.id,customerId,action,created),
     env.DB.prepare('DELETE FROM CrmMutationGuard WHERE id=?').bind(guard)];
@@ -272,16 +333,24 @@ async function routeMobileCrm(request, env, ctx) {
   if (path === "/auth/logout" && request.method === "POST") { await revokeSession(env.DB, request); return jsonOk({ loggedIn: false }); }
   const auth = await authenticateSupport(env.DB, request) || await authenticate(env.DB, request);
   if (!auth) return jsonError(401, "authentication required");
-  if (isSupportReadonly(auth)) {
+  if (path === '/support/end' && request.method === 'POST') return endSupportSession(request, env, auth);
+  if (isSupportReadonly(auth) && !isSupportAdmin(auth)) {
     if(path==='/sync' && request.method==='GET')return jsonOk({readonly:true});
-    if(path==='/support/end' && request.method==='POST')return endSupportSession(request,env,auth);
     if(!supportReadAllowed(request.method,path))return jsonError(403,'support session is read-only');
+  }
+  if (isSupportAdmin(auth) && path === '/notifications' && request.method === 'POST') return jsonError(403, 'support external send blocked');
+  if (auth.role === 'staff' && request.method === 'GET' && (path === '/members' || path === '/message-templates' || path === '/message-preferences')) return jsonError(403, 'owner required');
+  if (path === '/sync' && request.method === 'GET') {
+    const revision = await env.DB.prepare('SELECT version,updated_at FROM CrmDataRevisions WHERE tenant_id=?').bind(auth.tenant_id).first();
+    return jsonOk({ version: Number(revision?.version || 0), updated_at: revision?.updated_at || '' });
   }
   if(path==='/home' && request.method==='GET')return homeSummary(env,auth);
 
   if (request.method === 'PATCH' && new URL(request.url).pathname.startsWith('/api/mobile/appointments/')) {
     return updateAppointment(request, env, auth, new URL(request.url).pathname.slice('/api/mobile/appointments/'.length));
   }
+  const briefing=await readMobileBriefing(request,env,auth,path);
+  if(briefing)return noStore(briefing);
   const devices = await handleMobileDevices(request, env, auth);
   if (devices) return noStore(devices);
   const management = await handleMobileManagement(request, env, auth);
@@ -292,7 +361,10 @@ async function routeMobileCrm(request, env, ctx) {
     if (auth.role !== 'owner') return jsonError(403, 'owner required');
     const url = new URL(request.url);
     const today = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-    return jsonOk(await readCrmAnalytics(env.DB,{tenantId:auth.tenant_id,startDate:url.searchParams.get('start') || today,endDate:url.searchParams.get('end') || today}));
+    const query={tenantId:auth.tenant_id,startDate:url.searchParams.get('start') || today,endDate:url.searchParams.get('end') || today};
+    dateRange(query.startDate, query.endDate);
+    const payload = await cachedAnalytics(env, query);
+    return jsonOk(payload);
   }
   if (path === "/me" && request.method === "GET") return me(auth);
   if (path === "/members" && request.method === "GET") return listMembers(request, env, auth);

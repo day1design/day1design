@@ -58,6 +58,8 @@ test("form funnel events retain diagnostic and inquiry linkage", async () => {
   assert.equal(response.status, 200);
   assert.equal(stub.calls.length, 1);
   assert.match(stub.calls[0].sql, /event_detail, estimate_id/);
+  assert.match(stub.calls[0].sql, /id, CrmTenantId, created_at/);
+  assert.ok(stub.calls[0].values.includes("day1design"));
   assert.ok(stub.calls[0].values.includes("ValidationError"));
   assert.ok(stub.calls[0].values.includes("email_format"));
   assert.ok(stub.calls[0].values.includes("rec123"));
