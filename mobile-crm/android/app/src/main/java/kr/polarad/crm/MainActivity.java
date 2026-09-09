@@ -16,6 +16,7 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.inputmethod.EditorInfo;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -200,15 +201,20 @@ public class MainActivity extends Activity {
 
     private void showLogin() {
         base();
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        addLogo(R.drawable.polarad_logo, 72);
-        root.addView(text("폴라애드 인테리어 CRM", 18, true));
-        root.addView(text("이메일 인증 로그인", 28, true));
-        root.addView(body("등록된 이메일로 일회용 인증번호를 받습니다."));
-        EditText email = input("이메일", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, false);
+        addLogo(R.drawable.polarad_logo, 56);
+        root.addView(text("폴라애드", 18, true));
+        root.addView(text("이메일로 로그인", 28, true));
+        root.addView(body("업무 이메일로 인증번호를 받아 안전하게 로그인합니다."));
+        root.addView(label("업무 이메일"));
+        EditText email = input("name@company.com", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, false);
         email.setSingleLine(true);
+        email.setMinimumHeight(dp(60));
+        email.setPadding(dp(14), dp(12), dp(14), dp(12));
+        email.setImeOptions(EditorInfo.IME_ACTION_NEXT);
         root.addView(email);
+        root.addView(body("한 번 인증하면 이 기기에서 로그인이 유지됩니다."));
         Button request = primary("인증번호 받기");
+        request.setMinimumHeight(dp(56));
         root.addView(request);
         request.setOnClickListener(v -> {
             String value = email.getText().toString().trim();
@@ -234,15 +240,20 @@ public class MainActivity extends Activity {
 
     private void showVerify(String email) {
         base();
-        addLogo(R.drawable.polarad_logo, 64);
-        root.addView(text("인증번호 입력", 26, true));
+        addLogo(R.drawable.polarad_logo, 56);
+        root.addView(text("인증번호 확인", 28, true));
         root.addView(body(email + "\n메일로 받은 6자리 번호를 입력하세요."));
-        EditText code = input("인증번호 6자리", InputType.TYPE_CLASS_NUMBER, false);
+        root.addView(label("인증번호"));
+        EditText code = input("6자리 숫자", InputType.TYPE_CLASS_NUMBER, false);
         code.setSingleLine(true);
+        code.setMinimumHeight(dp(60));
+        code.setPadding(dp(14), dp(12), dp(14), dp(12));
+        code.setImeOptions(EditorInfo.IME_ACTION_DONE);
         root.addView(code);
         Button verify = primary("로그인");
+        verify.setMinimumHeight(dp(56));
         root.addView(verify);
-        Button back = secondary("이메일 다시 입력");
+        Button back = textButton("이메일 다시 입력");
         root.addView(back);
         back.setOnClickListener(v -> showLogin());
         verify.setOnClickListener(v -> {
@@ -1933,8 +1944,9 @@ public class MainActivity extends Activity {
         edit.setHintTextColor(MUTED);
         edit.setTextSize(16);
         edit.setInputType(type);
-        edit.setMinHeight(dp(multiline ? 96 : 48));
-        edit.setPadding(dp(12), 0, dp(12), 0);
+        edit.setMinHeight(dp(multiline ? 112 : 56));
+        edit.setMinimumHeight(dp(multiline ? 112 : 56));
+        edit.setPadding(dp(12), dp(multiline ? 14 : 12), dp(12), dp(multiline ? 14 : 12));
         edit.setBackground(round(Color.WHITE, 8, LINE));
         if (multiline) {
             edit.setGravity(Gravity.TOP | Gravity.START);
@@ -1950,6 +1962,19 @@ public class MainActivity extends Activity {
 
     private Button secondary(String value) {
         return button(value, BLUE, Color.WHITE);
+    }
+
+    private Button textButton(String value) {
+        Button b = new Button(this);
+        b.setText(value);
+        b.setTextColor(BLUE);
+        b.setTextSize(14);
+        b.setAllCaps(false);
+        b.setMinHeight(dp(44));
+        b.setPadding(dp(8), dp(4), dp(8), dp(4));
+        b.setBackgroundColor(Color.TRANSPARENT);
+        b.setLayoutParams(blockParams());
+        return b;
     }
 
     private Button button(String value, int bg, int fg) {
