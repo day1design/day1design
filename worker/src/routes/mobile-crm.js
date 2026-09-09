@@ -225,6 +225,7 @@ async function routeMobileCrm(request, env, ctx) {
   const auth = await authenticateSupport(env.DB, request) || await authenticate(env.DB, request);
   if (!auth) return jsonError(401, "authentication required");
   if (isSupportReadonly(auth)) {
+    if(path==='/sync' && request.method==='GET')return jsonOk({readonly:true});
     if(path==='/support/end' && request.method==='POST')return endSupportSession(request,env,auth);
     const allowed=['/me','/home','/customers','/appointments','/analytics'].includes(path) || /^\/customers\/[A-Za-z0-9_-]+$/.test(path);
     if(request.method!=='GET'||!allowed)return jsonError(403,'support session is read-only');
