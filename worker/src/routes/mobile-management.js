@@ -53,6 +53,8 @@ function guardDelete(id) {
 
 const DELIVERY_FIELDS = ['enabled', 'channel', 'access_key', 'secret_key', 'sms_service_id', 'from_number', 'contact_phone', 'alimtalk_service_id', 'channel_id', 'visit_template_code', 'measurement_template_code', 'visit_body', 'measurement_body'];
 const DELIVERY_TEXT_MAX = 2000;
+const PLATFORM_OVERVIEW_TTL_MS = 30_000;
+const platformOverviewCaches = new WeakMap();
 
 function masked(value) { const s = text(value, 320); return s ? `${s.slice(0, 2)}***${s.slice(-2)}` : ''; }
 
@@ -123,6 +125,61 @@ async function platformTenants(request, env, auth) {
     id: row.id, name: row.name, brand: row.brand, logo_url: row.logo_url,
     suspended: Boolean(row.suspended), created_at: row.created_at,
   })), next_cursor: rows.length > 100 ? rows[99].id : null });
+}
+
+async function optionalFirst(db, sql, ...args) {
+  try { return { available: true, row: await db.prepare(sql).bind(...args).first() }; } catch { return { available: false, row: null }; }
+}
+
+async function optionalAll(db, sql, ...args) {
+  try { return { available: true, rows: (await db.prepare(sql).bind(...args).all()).results || [] }; } catch { return { available: false, rows: [] }; }
+}
+
+function platformOverviewCacheFor(db) {
+  let cache = platformOverviewCaches.get(db);
+  if (!cache) {
+    cache = { entries: new Map(), pending: new Map() };
+    platformOverviewCaches.set(db, cache);
+  }
+  return cache;
+}
+
+async function readPlatformOverview(env) {
+  const [countsResult, outboxResult, auditsResult] = await Promise.all([
+    optionalFirst(env.DB, "SELECT COUNT(*) AS registered, SUM(CASE WHEN suspended=1 THEN 1 ELSE 0 END) AS suspended, SUM(CASE WHEN suspended=0 THEN 1 ELSE 0 END) AS active FROM CrmTenants WHERE id <> 'platform'"),
+    optionalFirst(env.DB, "SELECT COUNT(*) AS pending, SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) AS queued, SUM(CASE WHEN status='reserved' THEN 1 ELSE 0 END) AS reserved FROM CrmNotificationOutbox WHERE status IN ('queued','reserved')"),
+    optionalAll(env.DB, "SELECT a.id,a.tenant_id,a.action,a.created_at,u.email AS actor_email FROM (SELECT id,tenant_id,actor_id,action,created_at FROM CrmAuditLogs ORDER BY id DESC LIMIT 100) a LEFT JOIN CrmUsers u ON u.id=a.actor_id WHERE a.tenant_id='platform' OR a.actor_id IN (SELECT id FROM CrmUsers WHERE tenant_id='platform') ORDER BY a.id DESC LIMIT 21"),
+  ]);
+  const counts = countsResult.row;
+  const outbox = outboxResult.row;
+  const auditRows = auditsResult.rows.slice(0, 20).map((row) => ({ id: row.id, tenant_id: row.tenant_id, action: row.action, actor_email: row.actor_email || null, created_at: row.created_at }));
+  return {
+    tenants: countsResult.available ? { status: "observed", registered: Number(counts?.registered || 0), active: Number(counts?.active || 0), suspended: Number(counts?.suspended || 0) } : { status: "unknown", registered: null, active: null, suspended: null, reason: "tenant_schema_unavailable" },
+    integration: { status: "unknown", reason: "tenant_integration_source_not_available" },
+    dispatch: outboxResult.available ? { status: "schema_observed", pending: Number(outbox?.pending || 0), queued: Number(outbox?.queued || 0), reserved: Number(outbox?.reserved || 0), retry: { status: "unknown", count: null, reason: "retry_state_not_in_schema" } } : { status: "unknown", pending: null, queued: null, reserved: null, retry: { status: "unknown", count: null, reason: "outbox_schema_unavailable" } },
+    security_audit: { status: auditsResult.available ? "available" : "unknown", records: auditRows, has_more: auditsResult.available && auditsResult.rows.length > 20, window_size: 100, reason: auditsResult.available ? null : "audit_schema_unavailable" },
+  };
+}
+
+async function platformOverview(request, env, auth) {
+  if (!platformAllowed(env, auth)) return error(403, "platform access required");
+  const cache = platformOverviewCacheFor(env.DB);
+  const key = String(auth.user_id || auth.id || auth.email || "platform");
+  const cached = cache.entries.get(key);
+  if (cached && cached.expiresAt > Date.now()) return ok(cached.data);
+  if (cached) cache.entries.delete(key);
+  let pending = cache.pending.get(key);
+  if (!pending) {
+    pending = readPlatformOverview(env);
+    cache.pending.set(key, pending);
+    pending.then((data) => {
+      cache.pending.delete(key);
+      cache.entries.delete(key);
+      cache.entries.set(key, { data, expiresAt: Date.now() + PLATFORM_OVERVIEW_TTL_MS });
+      while (cache.entries.size > 100) cache.entries.delete(cache.entries.keys().next().value);
+    }, () => cache.pending.delete(key));
+  }
+  return ok(await pending);
 }
 
 async function registerTenant(request, env, auth) {
@@ -263,6 +320,7 @@ async function appointments(request, env, auth) {
 export async function handleMobileManagement(request, env, auth) {
   try {
     const path = new URL(request.url).pathname.replace(/^\/api\/mobile/, "") || "/";
+    if (path === "/platform/overview" && request.method === "GET") return platformOverview(request, env, auth);
     if (path === "/platform/tenants" && request.method === "GET") return platformTenants(request, env, auth);
     if (path === "/platform/tenants" && request.method === "POST") return registerTenant(request, env, auth);
     const tenant = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})$/);

@@ -111,3 +111,29 @@ test('platform delivery settings are tenant isolated, encrypted, and approve exp
     assert.equal((await handleMobileManagement(request('/api/mobile/platform/tenants/day1design/delivery-settings'), e, auth)).status, 200);
   } finally { sqlite.close(); }
 });
+
+test('overview coalesces reads and checks permission before cache', async () => {
+  const sqlite=db(), e=env(sqlite); let queries=0;
+  const prepare=e.DB.prepare;
+  e.DB.prepare=(sql)=>{queries++;return prepare(sql);};
+  try {
+    const path='/api/mobile/platform/overview';
+    const responses=await Promise.all(Array.from({length:8},()=>handleMobileManagement(request(path),e,auth)));
+    for(const response of responses){assert.equal(response.status,200);assert.equal((await response.json()).tenants.registered,1);}
+    assert.equal(queries,3);
+    await handleMobileManagement(request(path),e,auth);assert.equal(queries,3);
+    assert.equal((await handleMobileManagement(request(path),e,owner)).status,403);
+    assert.equal((await handleMobileManagement(request(path),{...e,CRM_PLATFORM_EMAILS:''},auth)).status,403);
+    assert.equal(queries,3);
+  } finally {sqlite.close();}
+});
+
+test('overview distinguishes unavailable schema from zero counts',async()=>{
+  const sqlite=new DatabaseSync(':memory:');
+  try {
+    const response=await handleMobileManagement(request('/api/mobile/platform/overview'),env(sqlite),auth);
+    assert.equal(response.status,200);const body=await response.json();
+    assert.equal(body.tenants.status,'unknown');assert.equal(body.tenants.registered,null);
+    assert.equal(body.dispatch.pending,null);assert.equal(body.security_audit.status,'unknown');
+  } finally {sqlite.close();}
+});
