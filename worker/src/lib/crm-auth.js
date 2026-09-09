@@ -146,7 +146,8 @@ export async function requestMobileOtp(request, env, ctx) {
     await deliverOtp(env, { email, code: otp.code, expires_at: otp.expiresAt, user_id: user.id, otp_id: otp.id }, ctx);
   } catch (deliveryError) {
     const message = String(deliveryError?.message || '');
-    const safeReason = /^CRM OTP relay HTTP \d{3}$/.test(message) ? message : 'relay_transport_failed';
+    const safeReason = /^CRM OTP (?:relay HTTP \d{3}|relay receipt invalid|relay did not accept message|payload invalid|relay configuration unavailable)$/.test(message)
+      ? message : `relay_transport_failed:${deliveryError?.name || 'Error'}`;
     console.warn('crm_otp_delivery_failed', safeReason);
     await env.DB.prepare("UPDATE CrmOtpRequests SET used_at=? WHERE id=? AND used_at IS NULL").bind(nowIso(), otp.id).run();
     return error(503, "OTP delivery unavailable");
