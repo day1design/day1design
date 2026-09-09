@@ -68,12 +68,21 @@ async function sourceMeta(db, table, required, dateCandidates) {
   const date = dateCandidates.find((name) => columns.has(name));
   if (!date) return { available: false, reason: "date_column_missing" };
   if (!(await hasTenantDateIndex(db, table, tenant, date))) return { available: false, reason: "tenant_date_index_missing" };
-  return { available: true, tenant, date };
+  return { available: true, tenant, date, columns };
 }
 
 function channel(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return normalized ? normalized.slice(0, 80) : "unknown";
+  const normalized = String(value ?? "").trim().normalize("NFC").toLowerCase();
+  if (["homepage", "meta", "instagram_mkt", "instagram_official", "naver", "google", "youtube", "kakao", "referral", "other", "unknown"].includes(normalized)) return normalized;
+  if (["(none)", "(not set)", "(direct)", "direct"].includes(normalized)) return "homepage";
+  if (/instagram[-_ ]*marketing|인스타그램[-_ ]*마케팅/.test(normalized)) return "instagram_mkt";
+  if (/instagram[-_ ]*official|인스타그램[-_ ]*오피셜/.test(normalized)) return "instagram_official";
+  if (/메타|facebook|instagram|fbclid|^fb$|^ig$|meta[-_ ]*ad|meta[-_ ]*traffic/.test(normalized)) return "meta";
+  if (/naver|네이버/.test(normalized)) return "naver";
+  if (/google|gclid|구글/.test(normalized)) return "google";
+  if (/youtube|youtu\.be|유튜브/.test(normalized)) return "youtube";
+  if (/kakao|daum|카카오|카톡/.test(normalized)) return "kakao";
+  return normalized.slice(0, 80);
 }
 
 function rate(numerator, denominator, method) {
@@ -96,6 +105,17 @@ function periodMetrics(row = {}) {
       visitToSaved: rate(savedLeads, visits, "saved Estimates rows / distinct non-bot page-view sessions"),
     },
   };
+}
+
+function mergePeriodMetrics(left, right) {
+  const applicationStarts = left.applicationStarts === null && right.applicationStarts === null
+    ? null
+    : (left.applicationStarts || 0) + (right.applicationStarts || 0);
+  return periodMetrics({
+    visits: left.visits + right.visits,
+    application_starts: applicationStarts,
+    saved_leads: left.savedLeads + right.savedLeads,
+  });
 }
 
 function change(current, previous) {
@@ -134,8 +154,12 @@ async function readPeriod(db, tables, period, tenantId) {
   const estimates = safeIdentifier(tables.estimates.table);
   const estimateTenant = safeIdentifier(tables.estimates.tenant);
   const estimateDate = safeIdentifier(tables.estimates.date);
+  const internalMetaLeadFilter = tables.estimates.columns?.has("MetaLeadId")
+    ? "AND NOT (LOWER(COALESCE(Source, ''))='meta' AND TRIM(COALESCE(MetaLeadId, ''))<>'')"
+    : "";
   const heatmapChannel = `LOWER(SUBSTR(COALESCE(NULLIF(TRIM(UtmSource), ''), NULLIF(TRIM(UtmMedium), ''), 'unknown'), 1, 80))`;
-  const estimateChannel = `LOWER(SUBSTR(COALESCE(NULLIF(TRIM(Source), ''), NULLIF(TRIM(Platform), ''), 'unknown'), 1, 80))`;
+  const estimateSourceColumns = ["FirstSource", "Source", "FirstInflowApp", "Platform"].filter((name) => tables.estimates.columns?.has(name));
+  const estimateChannel = `LOWER(SUBSTR(COALESCE(${estimateSourceColumns.map((name) => `NULLIF(TRIM(${safeIdentifier(name)}), '')`).join(",")}, 'unknown'), 1, 80))`;
   const eventsSql = `WITH events AS (
       SELECT SessionId, id, CreatedAt, ${heatmapChannel} AS channel
       FROM ${heatmap}
@@ -154,7 +178,7 @@ async function readPeriod(db, tables, period, tenantId) {
     ), saved_by_channel AS (
       SELECT ${estimateChannel} AS channel, 0 AS visits, 0 AS application_starts, COUNT(*) AS saved_leads
       FROM ${estimates}
-      WHERE ${estimateTenant}=? AND ${estimateDate}>=? AND ${estimateDate}<?
+      WHERE ${estimateTenant}=? AND ${estimateDate}>=? AND ${estimateDate}<? ${internalMetaLeadFilter}
       GROUP BY ${estimateChannel}
     )
     SELECT channel, SUM(visits) AS visits, SUM(application_starts) AS application_starts, SUM(saved_leads) AS saved_leads
@@ -169,7 +193,7 @@ async function readPeriod(db, tables, period, tenantId) {
         AND EventType='page_view' AND IsBot=0 AND TRIM(SessionId)<>''
     )
     SELECT COUNT(DISTINCT SessionId) AS visits, NULL AS application_starts,
-      (SELECT COUNT(*) FROM ${estimates} WHERE ${estimateTenant}=? AND ${estimateDate}>=? AND ${estimateDate}<?) AS saved_leads
+      (SELECT COUNT(*) FROM ${estimates} WHERE ${estimateTenant}=? AND ${estimateDate}>=? AND ${estimateDate}<? ${internalMetaLeadFilter}) AS saved_leads
     FROM events`;
   const binds = [tenantId, period.startUtc, period.endExclusiveUtc, tenantId, period.startUtc, period.endExclusiveUtc];
   const formSql = tables.pixel ? `SELECT LOWER(SUBSTR(COALESCE(NULLIF(TRIM(source), ''), 'unknown'), 1, 80)) AS channel, COUNT(DISTINCT session_id) AS application_starts
@@ -240,8 +264,8 @@ export async function readCrmFlowAnalysis(db, { tenantId, startDate, endDate } =
   for (const [periodKey, result] of [["current", current], ["previous", previous]]) {
     for (const row of result.rows) {
       const key = channel(row.channel);
-      if (!merged.has(key)) merged.set(key, { channel: key, basis: "HeatmapEvents first-touch UtmSource/UtmMedium; Estimates Source/Platform", current: periodMetrics(), previous: periodMetrics() });
-      merged.get(key)[periodKey] = periodMetrics(row);
+      if (!merged.has(key)) merged.set(key, { channel: key, basis: "HeatmapEvents first-touch UtmSource/UtmMedium; Estimates FirstSource/Source/Platform", current: periodMetrics(), previous: periodMetrics() });
+      merged.get(key)[periodKey] = mergePeriodMetrics(merged.get(key)[periodKey], periodMetrics(row));
     }
   }
   const sources = [...merged.values()].sort((a, b) => (b.current.visits + b.current.applicationStarts + b.current.savedLeads) - (a.current.visits + a.current.applicationStarts + a.current.savedLeads) || a.channel.localeCompare(b.channel));

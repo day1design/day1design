@@ -71,3 +71,58 @@ test("tenant-bound FormStart events provide the application-start stage", async 
   assert.equal(result.totals.current.rates.applicationStartToSaved.value, 1);
   fixture.sqlite.close();
 });
+
+test("flow joins normalized campaign and direct-source labels across visits and estimates", async () => {
+  const fixture = dbWithSchema();
+  fixture.add("HeatmapEvents", ["h1", "day1", "s1", "/", "page_view", 0, "메타-트래픽-캠페인", "", "2026-09-01T00:00:00Z"]);
+  fixture.add("HeatmapEvents", ["h2", "day1", "s2", "/", "page_view", 0, "unknown", "", "2026-09-01T00:01:00Z"]);
+  fixture.add("HeatmapEvents", ["h3", "day1", "s3", "/", "page_view", 0, "instagram-marketing", "", "2026-09-01T00:01:30Z"]);
+  fixture.add("Estimates", ["e1", "day1", "meta", "", "2026-09-01T00:02:00Z"]);
+  fixture.add("Estimates", ["e2", "day1", "unknown", "", "2026-09-01T00:03:00Z"]);
+  fixture.add("Estimates", ["e3", "day1", "instagram_mkt", "", "2026-09-01T00:04:00Z"]);
+  const result = await readCrmFlowAnalysis(fixture.db, { tenantId: "day1", startDate: "2026-09-01", endDate: "2026-09-01" });
+  const byChannel = new Map(result.sources.map((source) => [source.channel, source.current]));
+  assert.equal(byChannel.get("meta").visits, 1);
+  assert.equal(byChannel.get("meta").savedLeads, 1);
+  assert.equal(byChannel.get("unknown").visits, 1);
+  assert.equal(byChannel.get("unknown").savedLeads, 1);
+  assert.equal(byChannel.get("instagram_mkt").visits, 1);
+  assert.equal(byChannel.get("instagram_mkt").savedLeads, 1);
+  fixture.sqlite.close();
+});
+
+test("Meta internal-form leads stay out of website flow receipts", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`
+    CREATE TABLE HeatmapEvents (id TEXT PRIMARY KEY, CrmTenantId TEXT, SessionId TEXT, Page TEXT, EventType TEXT, IsBot INTEGER, UtmSource TEXT, UtmMedium TEXT, CreatedAt TEXT);
+    CREATE TABLE Estimates (id TEXT PRIMARY KEY, CrmTenantId TEXT, Source TEXT, Platform TEXT, MetaLeadId TEXT, SubmittedAt TEXT);
+    CREATE INDEX heatmap_tenant_date ON HeatmapEvents(CrmTenantId, CreatedAt);
+    CREATE INDEX estimates_tenant_date ON Estimates(CrmTenantId, SubmittedAt);
+    INSERT INTO HeatmapEvents VALUES ('h1','day1','s1','/','page_view',0,'meta','paid','2026-09-01T00:00:00Z');
+    INSERT INTO Estimates VALUES ('e1','day1','meta','instagram','lead-1','2026-09-01T00:01:00Z');
+  `);
+  const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
+  const result = await readCrmFlowAnalysis(db, { tenantId: "day1", startDate: "2026-09-01", endDate: "2026-09-01" });
+  assert.equal(result.totals.current.savedLeads, 0);
+  assert.equal(result.sources.find((source) => source.channel === "meta").current.savedLeads, 0);
+  sqlite.close();
+});
+
+test("flow prefers the stored first-touch source over intake channel", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`
+    CREATE TABLE HeatmapEvents (id TEXT PRIMARY KEY, CrmTenantId TEXT, SessionId TEXT, Page TEXT, EventType TEXT, IsBot INTEGER, UtmSource TEXT, UtmMedium TEXT, CreatedAt TEXT);
+    CREATE TABLE Estimates (id TEXT PRIMARY KEY, CrmTenantId TEXT, Source TEXT, FirstSource TEXT, Platform TEXT, SubmittedAt TEXT);
+    CREATE INDEX heatmap_tenant_date ON HeatmapEvents(CrmTenantId, CreatedAt);
+    CREATE INDEX estimates_tenant_date ON Estimates(CrmTenantId, SubmittedAt);
+    INSERT INTO HeatmapEvents VALUES ('h1','day1','s1','/','page_view',0,'naver','organic','2026-09-01T00:00:00Z');
+    INSERT INTO Estimates VALUES ('e1','day1','homepage','naver','Homepage','2026-09-01T00:01:00Z');
+  `);
+  const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
+  const result = await readCrmFlowAnalysis(db, { tenantId: "day1", startDate: "2026-09-01", endDate: "2026-09-01" });
+  const naver = result.sources.find((source) => source.channel === "naver");
+  assert.equal(naver.current.visits, 1);
+  assert.equal(naver.current.savedLeads, 1);
+  assert.equal(result.sources.find((source) => source.channel === "homepage"), undefined);
+  sqlite.close();
+});

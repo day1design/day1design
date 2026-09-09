@@ -109,10 +109,13 @@ async function readTraffic(db, tenantId, range) {
     return result;
   }
   const pageColumn = heatmapColumns.has("Page") ? "Page" : heatmapColumns.has("Path") ? "Path" : null;
-  const sourceColumn = heatmapColumns.has("UtmSource") ? "UtmSource" : heatmapColumns.has("Source") ? "Source" : heatmapColumns.has("Referrer") ? "Referrer" : null;
+  const sourceColumns = ["UtmSource", "InflowApp", "Source", "Referrer"].filter((name) => heatmapColumns.has(name));
+  const sourceExpression = sourceColumns.length
+    ? `COALESCE(${sourceColumns.map((name) => `NULLIF(TRIM(h.${identifier(name)}),'')`).join(",")},'미확인')`
+    : null;
   const campaignColumn = heatmapColumns.has("UtmCampaign") ? "UtmCampaign" : heatmapColumns.has("Campaign") ? "Campaign" : null;
   result.dimensions.page = pageColumn ? await visitorGrouped(db, heatmap, tenantId, range, `COALESCE(NULLIF(TRIM(h.${identifier(pageColumn)}),''),'미확인')`) : unavailable("column_missing");
-  result.dimensions.source = sourceColumn ? await visitorGrouped(db, heatmap, tenantId, range, `COALESCE(NULLIF(TRIM(h.${identifier(sourceColumn)}),''),'미확인')`) : unavailable("column_missing");
+  result.dimensions.source = sourceExpression ? await visitorGrouped(db, heatmap, tenantId, range, sourceExpression) : unavailable("column_missing");
   result.dimensions.device = heatmapColumns.has("Device") ? await visitorGrouped(db, heatmap, tenantId, range, `COALESCE(NULLIF(TRIM(h.${identifier("Device")}),''),'미확인')`) : unavailable("column_missing");
   result.dimensions.campaign = campaignColumn ? await visitorGrouped(db, heatmap, tenantId, range, `COALESCE(NULLIF(TRIM(h.${identifier(campaignColumn)}),''),'미확인')`) : unavailable("column_missing");
   const formRows = await all(db, `SELECT h.${identifier("EventType")} AS value, COUNT(DISTINCT h.${identifier("SessionId")}) AS count FROM ${identifier("HeatmapEvents")} h WHERE h.${identifier(heatmap.tenant)}=? AND h.${identifier(heatmap.date)}>=? AND h.${identifier(heatmap.date)}<? AND h.${identifier("IsBot")} = 0 AND h.${identifier("EventType")} IN ('form_start','form_success') GROUP BY h.${identifier("EventType")} ORDER BY count DESC, value ASC`, [tenantId, range.startUtc, range.endExclusiveUtc]);

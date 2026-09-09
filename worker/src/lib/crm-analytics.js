@@ -9,7 +9,7 @@ const SOURCE_DEFINITIONS = {
     date: ["SubmittedAt"],
     refreshed: ["SubmittedAt"],
     required: ["Source", "Platform"],
-    optional: ["EstimateAmount", "MetaLeadId", "Address", "Status", "Assignee", "Branch", "ConsultAt", "ContractAt", "ContractAmount"],
+    optional: ["EstimateAmount", "Detail", "MetaLeadId", "Address", "Status", "Assignee", "Branch", "ConsultAt", "ContractAt", "ContractAmount"],
   },
   meta_ads: {
     label: "Meta 광고 집계",
@@ -231,6 +231,52 @@ function analyticsRegion(value) {
   return first.replace(/[시군구]$/, "") || analyticsDimension(parts[0]);
 }
 
+function budgetAmount(value) {
+  let text = String(value ?? "").trim().replace(/,/g, "").replace(/\s/g, "");
+  if (!text || /평당|1평|한평/.test(text) || (/미정|상의|협의|결정|모르|문의|추후|생각중|고민/.test(text) && !/\d/.test(text))) return null;
+  const range = text.split(/[~\-–—]/);
+  if (range.length > 1) {
+    const rightUnit = range[1].match(/억|천만?|만원?/);
+    text = range[0] + (range[0].match(/억|천만?|만원?/) ? "" : rightUnit?.[0] || "");
+  }
+  text = text.replace(/일억/g, "1억").replace(/이억/g, "2억").replace(/삼억/g, "3억")
+    .replace(/일천/g, "1천").replace(/이천/g, "2천").replace(/삼천/g, "3천")
+    .replace(/사천/g, "4천").replace(/오천/g, "5천").replace(/육천/g, "6천")
+    .replace(/칠천/g, "7천").replace(/팔천/g, "8천").replace(/구천/g, "9천");
+  let match = text.match(/(\d+(?:\.\d+)?)억(?:([0-9]+)(천|백)?)?/);
+  if (match) return Math.round(Number(match[1]) * 10000 + (match[2] ? Number(match[2]) * (match[3] === "천" ? 1000 : 100) : 0));
+  match = text.match(/(\d+(?:\.\d+)?)천/);
+  if (match) return Math.round(Number(match[1]) * 1000);
+  match = text.match(/(\d+)만/);
+  if (match) return Number(match[1]);
+  match = text.match(/(\d{3,})원$/);
+  if (match) return Number(match[1]) / 10000;
+  match = text.match(/(\d{3,})/);
+  if (match) {
+    const number = Number(match[1]);
+    return number >= 100 && number <= 200000 ? number : null;
+  }
+  return null;
+}
+
+function budgetCounts(rows) {
+  const counts = { below_30m: 0, from_30m_to_50m: 0, from_50m_to_70m: 0, from_70m: 0, unknown: 0 };
+  for (const row of rows) {
+    const stored = finite(row.EstimateAmount);
+    const detailText = String(row.budget_text ?? "").trim();
+    const hasBudgetLabel = Number(row.budget_has_label) > 0;
+    const amount = hasBudgetLabel ? budgetAmount(detailText) : (stored !== null && stored > 0 ? stored / 10000 : null);
+    const count = Math.max(0, Math.floor(Number(row.count) || 0));
+    if (!count) continue;
+    if (amount === null || amount <= 0) { counts.unknown += count; continue; }
+    if (amount < 3000) counts.below_30m += count;
+    else if (amount < 5000) counts.from_30m_to_50m += count;
+    else if (amount < 7000) counts.from_50m_to_70m += count;
+    else counts.from_70m += count;
+  }
+  return counts;
+}
+
 async function cohortEstimateDimension(db, table, tenant, date, range, tenantId, column, transform = analyticsDimension) {
   const rows = await queryMany(db, `SELECT ${safeIdentifier(column)} AS value, COUNT(*) AS count FROM ${table} WHERE ${tenant} = ? AND ${date} >= ? AND ${date} < ? GROUP BY ${safeIdentifier(column)}`, [tenantId, range.startUtc, range.endExclusiveUtc]);
   const grouped = new Map();
@@ -261,29 +307,28 @@ async function readIntakeDetails(db, availability, range, tenantId, saved) {
   await dimension("statuses", "Status");
   await dimension("assignees", "Assignee");
   await dimension("branches", "Branch");
-  if (optional.has("EstimateAmount")) {
-    const budgetCounts = await queryOne(db, `SELECT
-      SUM(CASE WHEN ${safeIdentifier("EstimateAmount")} > 0 AND ${safeIdentifier("EstimateAmount")} < 30000000 THEN 1 ELSE 0 END) AS below_30m,
-      SUM(CASE WHEN ${safeIdentifier("EstimateAmount")} >= 30000000 AND ${safeIdentifier("EstimateAmount")} < 50000000 THEN 1 ELSE 0 END) AS from_30m_to_50m,
-      SUM(CASE WHEN ${safeIdentifier("EstimateAmount")} >= 50000000 AND ${safeIdentifier("EstimateAmount")} < 70000000 THEN 1 ELSE 0 END) AS from_50m_to_70m,
-      SUM(CASE WHEN ${safeIdentifier("EstimateAmount")} >= 70000000 THEN 1 ELSE 0 END) AS from_70m,
-      SUM(CASE WHEN ${safeIdentifier("EstimateAmount")} IS NULL OR ${safeIdentifier("EstimateAmount")} <= 0 THEN 1 ELSE 0 END) AS unknown,
-      SUM(CASE WHEN ${safeIdentifier("EstimateAmount")} > 0 THEN 1 ELSE 0 END) AS known
-      FROM ${table} WHERE ${tenant} = ? AND ${date} >= ? AND ${date} < ?`, [tenantId, range.startUtc, range.endExclusiveUtc]);
-    const known = integer(budgetCounts.known) || 0;
-    detail.dimensions.budget = {
-      available: true,
-      known,
-      unknown: integer(budgetCounts.unknown) || 0,
-      values: [
-        { label: "3천만 미만", count: integer(budgetCounts.below_30m) || 0 },
-        { label: "3~5천만", count: integer(budgetCounts.from_30m_to_50m) || 0 },
-        { label: "5~7천만", count: integer(budgetCounts.from_50m_to_70m) || 0 },
-        { label: "7천만 이상", count: integer(budgetCounts.from_70m) || 0 },
-        { label: "미확인", count: integer(budgetCounts.unknown) || 0 },
-      ],
-      hasMore: false,
-    };
+  if (optional.has("EstimateAmount") || optional.has("Detail")) {
+    const amountColumn = optional.has("EstimateAmount") ? safeIdentifier("EstimateAmount") : "NULL";
+    const detailColumn = safeIdentifier("Detail");
+    const normalizedDetail = `replace(replace(replace(${detailColumn}, '가용 예산', '가용예산'), '가용예산 :', '가용예산:'), '가용예산：', '가용예산:')`;
+    const afterLabel = `substr(${normalizedDetail}, instr(${normalizedDetail}, '가용예산:') + length('가용예산:'))`;
+    const budgetText = optional.has("Detail")
+      ? `trim(CASE WHEN instr(${normalizedDetail}, '가용예산:') > 0 THEN CASE WHEN instr(${afterLabel}, char(10)) > 0 THEN substr(${afterLabel}, 1, instr(${afterLabel}, char(10)) - 1) ELSE ${afterLabel} END ELSE '' END)`
+      : "''";
+    const budgetLabel = optional.has("Detail") ? `CASE WHEN instr(${normalizedDetail}, '가용예산:') > 0 THEN 1 ELSE 0 END` : "0";
+    const budgetRows = await queryMany(db, `SELECT ${amountColumn} AS EstimateAmount, ${budgetText} AS budget_text, ${budgetLabel} AS budget_has_label, COUNT(*) AS count FROM ${table} WHERE ${tenant} = ? AND ${date} >= ? AND ${date} < ? GROUP BY ${amountColumn}, ${budgetText} LIMIT 501`, [tenantId, range.startUtc, range.endExclusiveUtc]);
+    if (budgetRows.length > 500) detail.dimensions.budget = { available: false, reason: "budget_group_limit_exceeded", max_groups: 500 };
+    else {
+      const counts = budgetCounts(budgetRows);
+      const known = counts.below_30m + counts.from_30m_to_50m + counts.from_50m_to_70m + counts.from_70m;
+      detail.dimensions.budget = { available: true, known, unknown: counts.unknown, values: [
+        { label: "3천만 미만", count: counts.below_30m },
+        { label: "3~5천만", count: counts.from_30m_to_50m },
+        { label: "5~7천만", count: counts.from_50m_to_70m },
+        { label: "7천만 이상", count: counts.from_70m },
+        { label: "미확인", count: counts.unknown },
+      ], hasMore: false };
+    }
   } else {
     detail.dimensions.budget = { available: false, reason: "column_missing" };
   }

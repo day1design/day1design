@@ -8,7 +8,8 @@ import { handleMobileCrm } from "../src/routes/mobile-crm.js";
 function makeDb() {
   const sqlite = new DatabaseSync(":memory:");
   for (const file of ["../migrations/0001_init.sql", "../migrations/0041_consult_booking.sql", "../migrations/0042_contract_fields.sql", "../migrations/0043_consult_cancel.sql", "../migrations/0044_consult_reminders.sql", "../migrations/0045_mobile_crm.sql", "../migrations/0046_crm_notifications.sql", "../migrations/0047_crm_auth.sql", "../migrations/0054_crm_persistent_sessions.sql"]) sqlite.exec(readFileSync(new URL(file, import.meta.url), "utf8"));
-  sqlite.prepare("INSERT INTO Estimates(id,Name,Phone,Email,Branch,Status,SubmittedAt) VALUES(?,?,?,?,?,?,?)").run("estimate-1", "고객 A", "010", "a@example.com", "강남", "new", new Date().toISOString());
+  sqlite.exec("ALTER TABLE Estimates ADD COLUMN FirstSource TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstReferrer TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstInflowApp TEXT NOT NULL DEFAULT '';");
+  sqlite.prepare("INSERT INTO Estimates(id,Name,Phone,Email,Branch,Status,SubmittedAt,Source,Platform,FirstSource,FirstReferrer,FirstInflowApp,Detail,EstimateAmount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run("estimate-1", "고객 A", "010", "a@example.com", "강남", "new", new Date().toISOString(), "homepage", "Web", "google", "https://google.test/", "google-app", "가용예산: 5천만원\n원하는 공간", 0);
   return sqlite;
 }
 
@@ -44,7 +45,11 @@ test("OTP creates scoped session and reads mapped customer", async () => {
   const token = (await verified.json()).token; assert.equal(verified.status, 200); assert.ok(token);
   const me = await handleMobileCrm(req("/api/mobile/me", "GET", undefined, token), env); const meBody = await me.json();
   assert.equal(meBody.tenant.id, "day1design"); assert.match(meBody.branding.logo, /favicon\/favicon-192/);
-  const customers = await handleMobileCrm(req("/api/mobile/customers", "GET", undefined, token), env); assert.equal((await customers.json()).customers[0].id, "estimate-1");
+  const customers = await handleMobileCrm(req("/api/mobile/customers", "GET", undefined, token), env); const listCustomer = (await customers.json()).customers[0];
+  assert.equal(listCustomer.id, "estimate-1");
+  assert.deepEqual({ source: listCustomer.source, platform: listCustomer.platform, first_source: listCustomer.first_source, first_referrer: listCustomer.first_referrer, first_inflow_app: listCustomer.first_inflow_app, branch: listCustomer.branch, budget: listCustomer.budget, budget_text: listCustomer.budget_text }, { source: "homepage", platform: "Web", first_source: "google", first_referrer: "https://google.test/", first_inflow_app: "google-app", branch: "강남", budget: 0, budget_text: "5천만원" });
+  const detail = await handleMobileCrm(req("/api/mobile/customers/estimate-1", "GET", undefined, token), env); const detailCustomer = await detail.json();
+  assert.equal(detail.status, 200); assert.equal(detailCustomer.branch, "강남"); assert.equal(detailCustomer.source, "homepage"); assert.equal(detailCustomer.budget_text, "5천만원");
   sqlite.close();
 });
 

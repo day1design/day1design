@@ -222,6 +222,31 @@ test("D02 budget buckets and intake channels apply boundaries, tenant, and date 
   sqlite.close();
 });
 
+test("budget dimension uses stored Detail answers and keeps blank labels unknown", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`
+    CREATE TABLE Estimates (id TEXT PRIMARY KEY, CrmTenantId TEXT, SubmittedAt TEXT, Source TEXT, Platform TEXT, Detail TEXT, EstimateAmount INTEGER);
+    CREATE INDEX estimates_tenant_date ON Estimates(CrmTenantId, SubmittedAt);
+  `);
+  const add = (id, detail, amount) => sqlite.prepare("INSERT INTO Estimates VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, "day1", "2026-09-05T01:00:00.000Z", "homepage", "web", detail, amount);
+  add("detail-known", "가용예산: 5천만원\n문의내용: 주방", 0);
+  add("detail-spaced", "가용 예산 : 3천만원", 0);
+  add("detail-blank", "가용예산: \n문의내용: 8천만원", 80000000);
+  const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
+  const result = await readCrmAnalytics(db, { tenantId: "day1", startDate: "2026-09-05", endDate: "2026-09-05" });
+  const budget = result.sources.find((source) => source.key === "saved_estimates").metrics.intake.dimensions.budget;
+  assert.deepEqual(budget.values, [
+    { label: "3천만 미만", count: 0 },
+    { label: "3~5천만", count: 1 },
+    { label: "5~7천만", count: 1 },
+    { label: "7천만 이상", count: 0 },
+    { label: "미확인", count: 1 },
+  ]);
+  assert.equal(budget.known, 2);
+  assert.equal(budget.unknown, 1);
+  sqlite.close();
+});
+
 test("traffic trends pair KST sessions with homepage receipts and zero-fill available dates", async () => {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`

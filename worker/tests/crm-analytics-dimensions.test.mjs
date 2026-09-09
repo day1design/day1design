@@ -50,6 +50,19 @@ test("tenant-scoped HeatmapEvents provide visitor dimensions without converted-s
   sqlite.close();
 });
 
+test("visitor source falls back to InflowApp when UTM source is empty", async () => {
+  const { sqlite, db } = dbWith(`
+    CREATE TABLE HeatmapEvents (id TEXT, tenant_id TEXT, Page TEXT, EventType TEXT, Device TEXT, SessionId TEXT, UtmSource TEXT, InflowApp TEXT, UtmCampaign TEXT, IsBot INTEGER, CreatedAt TEXT);
+    CREATE INDEX heatmap_tenant_date ON HeatmapEvents(tenant_id, CreatedAt);
+    INSERT INTO HeatmapEvents VALUES ('h1','t1','/','page_view','mobile','s1','','홈페이지', '',0,'2026-09-01T01:00:00Z');
+    INSERT INTO HeatmapEvents VALUES ('h2','t1','/','page_view','mobile','s2','google','카카오', 'spring',0,'2026-09-01T01:01:00Z');
+    INSERT INTO HeatmapEvents VALUES ('h3','t2','/','page_view','mobile','other','','다른업체', '',0,'2026-09-01T01:00:00Z');
+  `);
+  const result = await readCrmAnalyticsDimensions(db, { tenantId: "t1", startDate: "2026-09-01", endDate: "2026-09-01" });
+  assert.deepEqual(result.traffic.dimensions.source.values, [{ value: "google", count: 1 }, { value: "홈페이지", count: 1 }]);
+  sqlite.close();
+});
+
 test("Meta dimensions aggregate real tenant rows and calculate rates", async () => {
   const { sqlite, db } = dbWith(`
     CREATE TABLE Estimates (id TEXT PRIMARY KEY, CrmTenantId TEXT, SubmittedAt TEXT, Source TEXT, Platform TEXT, Campaign TEXT);

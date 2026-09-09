@@ -104,6 +104,20 @@ test('platform tenant detail reads the legacy production tenant schema', async (
   }
 });
 
+test('platform profile updates owner email and revokes the old session', async () => {
+  const sqlite = db(), e = env(sqlite);
+  try {
+    sqlite.prepare("INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?,?)").run("owner-session", "hash", "day1-owner", "2099-01-01T00:00:00Z", new Date().toISOString());
+    const response = await handleMobileManagement(request('/api/mobile/platform/tenants/day1design/profile', 'PATCH', { name: 'Day1', brand: 'New brand', logo_url: '', owner_email: 'new-owner@example.com' }), e, auth);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.tenant.owner_email, 'new-owner@example.com');
+    assert.equal(sqlite.prepare("SELECT email FROM CrmUsers WHERE id='day1-owner'").get().email, 'new-owner@example.com');
+    assert.ok(sqlite.prepare("SELECT revoked_at FROM CrmSessions WHERE id='owner-session'").get().revoked_at);
+    assert.equal(sqlite.prepare("SELECT action FROM CrmAuditLogs WHERE tenant_id='day1design' ORDER BY id DESC LIMIT 1").get().action, 'tenant.owner_email.update');
+  } finally { sqlite.close(); }
+});
+
 test('platform delivery settings are tenant isolated, encrypted, and approve explicit templates', async () => {
   const sqlite = db(), e = env(sqlite);
   try {

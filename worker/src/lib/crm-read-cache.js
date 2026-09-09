@@ -6,6 +6,7 @@ const PERSIST_TTL_MS = 300_000;
 const MAX_PERSIST_BYTES = 512 * 1024;
 const R2_INLINE_THRESHOLD = 128 * 1024;
 const LEASE_MS = 15_000;
+const CACHE_SCHEMA_VERSION = "flow-source-v2";
 
 const states = new WeakMap();
 const encoder = typeof TextEncoder === "function" ? new TextEncoder() : null;
@@ -121,7 +122,7 @@ function stateFor(db) {
 }
 
 function cacheKey(tenantId, startDate, endDate, revision = "0") {
-  return `${String(tenantId)}\u0000${String(startDate)}\u0000${String(endDate)}\u0000${String(revision)}`;
+  return `${CACHE_SCHEMA_VERSION}\u0000${String(tenantId)}\u0000${String(startDate)}\u0000${String(endDate)}\u0000${String(revision)}`;
 }
 
 function touch(state, key, entry) {

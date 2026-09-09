@@ -64,6 +64,49 @@ const platformOverviewCaches = new WeakMap();
 
 function masked(value) { const s = text(value, 320); return s ? `${s.slice(0, 2)}***${s.slice(-2)}` : ''; }
 
+function profileUrl(value) {
+  if (!value) return true;
+  try { const parsed = new URL(value); return parsed.protocol === 'https:' || parsed.protocol === 'http:'; } catch { return false; }
+}
+
+async function updateTenantProfile(request, env, auth, tenantId) {
+  if (!platformAllowed(env, auth)) return error(403, "platform access required");
+  if (tenantId === "platform") return error(400, "invalid tenant");
+  const value = await jsonBody(request);
+  if (typeof value?.name !== 'string' || typeof value?.brand !== 'string' || typeof value?.logo_url !== 'string'
+    || value.name.length > 160 || value.brand.length > 160 || value.logo_url.length > LOGO_MAX) return error(400, "invalid tenant profile");
+  if ("owner_email" in (value || {}) && (typeof value.owner_email !== 'string' || value.owner_email.length > 320)) return error(400, "invalid owner email");
+  const name = text(value.name, 160), brand = text(value.brand, 160), logoUrl = text(value.logo_url, LOGO_MAX);
+  const ownerEmail = "owner_email" in value ? text(value.owner_email, 320).toLowerCase() : null;
+  if (!name || !profileUrl(logoUrl)) return error(400, "invalid tenant profile");
+  const tenant = await env.DB.prepare("SELECT id FROM CrmTenants WHERE id=? AND id<>'platform'").bind(tenantId).first();
+  if (!tenant) return error(404, "tenant not found");
+  const owner = await env.DB.prepare("SELECT id,email FROM CrmUsers WHERE tenant_id=? AND role='owner' ORDER BY active DESC,id LIMIT 1").bind(tenantId).first();
+  if (!owner) return error(409, "tenant owner not found");
+  if (ownerEmail !== null && !EMAIL.test(ownerEmail)) return error(400, "invalid owner email");
+  const ownerEmailChanged = ownerEmail !== null && ownerEmail !== String(owner.email || '').toLowerCase();
+  if (ownerEmailChanged && await env.DB.prepare("SELECT id FROM CrmUsers WHERE email=? COLLATE NOCASE AND id<>? LIMIT 1").bind(ownerEmail, owner.id).first()) return error(409, "owner email already in use");
+  if (typeof env.DB.batch !== 'function') return error(503, "transaction unavailable");
+  const guardId = id(), actorId = auth.user_id || auth.id, at = now();
+  try {
+    const statements = [
+      env.DB.prepare(guard(guardId, 'platform', actorId)).bind(guardId, actorId, 'platform'),
+      env.DB.prepare("UPDATE CrmTenants SET name=?,brand=?,logo_url=? WHERE id=? AND EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)").bind(name, brand, logoUrl, tenantId, guardId),
+      ...(ownerEmailChanged ? [
+        env.DB.prepare("UPDATE CrmUsers SET email=? WHERE id=? AND tenant_id=? AND role='owner' AND email=? COLLATE NOCASE AND EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)").bind(ownerEmail, owner.id, tenantId, owner.email, guardId),
+        env.DB.prepare("UPDATE CrmSessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL AND EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)").bind(at, owner.id, guardId),
+      ] : []),
+      env.DB.prepare("INSERT INTO CrmAuditLogs(tenant_id,actor_id,estimate_id,action,created_at) SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)").bind(tenantId, actorId, null, 'tenant.profile.update', at, guardId),
+      ...(ownerEmailChanged ? [env.DB.prepare("INSERT INTO CrmAuditLogs(tenant_id,actor_id,estimate_id,action,created_at) SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmMutationGuard WHERE id=? AND allowed=1)").bind(tenantId, actorId, null, 'tenant.owner_email.update', at, guardId)] : []),
+      env.DB.prepare(guardDelete(guardId)).bind(guardId),
+    ];
+    const results = await env.DB.batch(statements);
+    if (!results[0]?.meta?.changes || !results[1]?.meta?.changes) return error(403, 'platform access required');
+    if (ownerEmailChanged && !results[2]?.meta?.changes) return error(409, 'owner email update failed');
+  } catch { return error(409, 'tenant profile update failed'); }
+  return ok({ tenant: { id: tenantId, name, brand, logo_url: logoUrl, owner_email: ownerEmail || owner.email } });
+}
+
 async function deliverySettings(request, env, auth, tenantId) {
   const supportAdmin = isSupportAdmin(auth) && auth.tenant_id === tenantId;
   if (!platformAllowed(env, auth) && !supportAdmin) return error(403, 'platform access required');
@@ -404,6 +447,8 @@ export async function handleMobileManagement(request, env, auth) {
     const tenant = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})$/);
     if (tenant && request.method === "GET") return platformTenantDetail(request, env, auth, tenant[1]);
     if (tenant && request.method === "PATCH") return setTenantSuspended(request, env, auth, tenant[1]);
+    const tenantProfile = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/profile$/);
+    if (tenantProfile && request.method === "PATCH") return updateTenantProfile(request, env, auth, tenantProfile[1]);
     const delivery = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/delivery-settings$/);
     if (delivery && ['GET', 'PUT'].includes(request.method)) return deliverySettings(request, env, auth, delivery[1]);
     const member = path.match(/^\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/members$/);
