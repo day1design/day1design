@@ -85,3 +85,30 @@ test("GET home and analytics never expose another tenant or staff analytics", as
     assert.equal((await staffHome.json()).home_metrics, null);
   } finally { sqlite.close(); }
 });
+
+test('busy analytics lease keeps KST today counts correct and never substitutes old pending totals', async () => {
+  const sqlite=makeDb();
+  try {
+    const bounds=homeKstBounds();
+    sqlite.prepare('INSERT INTO Estimates(id,Name,CrmTenantId,Status,SubmittedAt) VALUES(?,?,?,?,?)').run('old-pending','Fixture','day1design','new',new Date(Date.parse(bounds.startUtc)-3600000).toISOString());
+    sqlite.prepare('INSERT INTO Estimates(id,Name,CrmTenantId,Status,SubmittedAt) VALUES(?,?,?,?,?)').run('kst-early','Fixture','day1design','new',new Date(Date.parse(bounds.startUtc)+3600000).toISOString());
+    const revision=sqlite.prepare("SELECT version FROM CrmDataRevisions WHERE tenant_id='day1design'").get()?.version||0;
+    const start30=new Date(Date.parse(bounds.date+'T00:00:00Z')-29*86400000).toISOString().slice(0,10);
+    for(const start of [bounds.date,start30]){
+      const raw=['day1design',start,bounds.date,String(revision)].join('\u0000');
+      const key=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw))),b=>b.toString(16).padStart(2,'0')).join('');
+      sqlite.prepare('INSERT INTO CrmAnalyticsCache(cache_key,tenant_id,start_date,end_date,expires_at,lease_until,lease_token,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(key,'day1design',start,bounds.date,0,Date.now()+60000,'held-fixture',new Date().toISOString());
+    }
+    const env={DB:openLocalD1(sqlite),CRM_ENABLED:'true'};
+    const token=await createSession(env.DB,'day1-owner');
+    const response=await handleMobileCrm(req('/api/mobile/home',token),env);
+    assert.equal(response.status,200);
+    const home=await response.json();
+    assert.equal(home.intake.pending_count,2);
+    assert.equal(home.home_metrics.submissions.today.value,1);
+    assert.equal(home.home_metrics.submissions.recent30.value,2);
+    assert.equal(home.today.consultation.count,0);
+    assert.equal(home.today.measurement.count,0);
+    assert.equal(home.marketing_flow,null);
+  } finally {sqlite.close();}
+});

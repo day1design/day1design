@@ -1,3 +1,4 @@
+import { startTenantPreview } from '../lib/crm-tenant-preview.js';
 import { isSupportAdmin, startSupportSession } from '../lib/crm-support.js';
 import { readCrmJson } from '../lib/crm-request.js';
 import { jsonError as baseJsonError, jsonOk as baseJsonOk } from "../lib/response.js";
@@ -201,17 +202,30 @@ function platformOverviewCacheFor(db) {
 }
 
 async function readPlatformOverview(env) {
-  const [countsResult, outboxResult, auditsResult] = await Promise.all([
+  const [countsResult, integrationResult, outboxResult, auditsResult] = await Promise.all([
     optionalFirst(env.DB, "SELECT COUNT(*) AS registered, SUM(CASE WHEN suspended=1 THEN 1 ELSE 0 END) AS suspended, SUM(CASE WHEN suspended=0 THEN 1 ELSE 0 END) AS active FROM CrmTenants WHERE id <> 'platform'"),
+    optionalFirst(env.DB, "SELECT COUNT(*) AS count FROM CrmTenants t WHERE t.id <> 'platform' AND t.suspended=0 AND EXISTS (SELECT 1 FROM Estimates e WHERE e.CrmTenantId=t.id LIMIT 1) AND EXISTS (SELECT 1 FROM MetaAdsDaily m WHERE m.CrmTenantId=t.id LIMIT 1)"),
     optionalFirst(env.DB, "SELECT COUNT(*) AS pending, SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) AS queued, SUM(CASE WHEN status='reserved' THEN 1 ELSE 0 END) AS reserved FROM CrmNotificationOutbox WHERE status IN ('queued','reserved')"),
     optionalAll(env.DB, "SELECT a.id,a.tenant_id,a.action,a.created_at,u.email AS actor_email FROM (SELECT id,tenant_id,actor_id,action,created_at FROM CrmAuditLogs ORDER BY id DESC LIMIT 100) a LEFT JOIN CrmUsers u ON u.id=a.actor_id WHERE a.tenant_id='platform' OR a.actor_id IN (SELECT id FROM CrmUsers WHERE tenant_id='platform') ORDER BY a.id DESC LIMIT 21"),
   ]);
   const counts = countsResult.row;
+
   const outbox = outboxResult.row;
   const auditRows = auditsResult.rows.slice(0, 20).map((row) => ({ id: row.id, tenant_id: row.tenant_id, action: row.action, actor_email: row.actor_email || null, created_at: row.created_at }));
+  let integration;
+  if (!integrationResult.available) {
+    integration = {
+      status: "unknown",
+      count: null,
+      registered: countsResult.available ? Number(counts?.registered || 0) : null,
+      reason: "tenant_integration_source_unavailable",
+    };
+  } else {
+    integration = { status: "observed", count: Number(integrationResult.row?.count || 0), registered: countsResult.available ? Number(counts?.registered || 0) : null, reason: null };
+  }
   return {
     tenants: countsResult.available ? { status: "observed", registered: Number(counts?.registered || 0), active: Number(counts?.active || 0), suspended: Number(counts?.suspended || 0) } : { status: "unknown", registered: null, active: null, suspended: null, reason: "tenant_schema_unavailable" },
-    integration: { status: "unknown", reason: "tenant_integration_source_not_available" },
+    integration,
     dispatch: outboxResult.available ? { status: "schema_observed", pending: Number(outbox?.pending || 0), queued: Number(outbox?.queued || 0), reserved: Number(outbox?.reserved || 0), retry: { status: "unknown", count: null, reason: "retry_state_not_in_schema" } } : { status: "unknown", pending: null, queued: null, reserved: null, retry: { status: "unknown", count: null, reason: "outbox_schema_unavailable" } },
     security_audit: { status: auditsResult.available ? "available" : "unknown", records: auditRows, has_more: auditsResult.available && auditsResult.rows.length > 20, window_size: 100, reason: auditsResult.available ? null : "audit_schema_unavailable" },
   };
@@ -383,6 +397,8 @@ export async function handleMobileManagement(request, env, auth) {
     if (path === "/platform/overview" && request.method === "GET") return platformOverview(request, env, auth);
     if (path === "/platform/tenants" && request.method === "GET") return platformTenants(request, env, auth);
     if (path === "/platform/tenants" && request.method === "POST") return registerTenant(request, env, auth);
+    const preview=path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/preview-session$/);
+    if(preview && request.method==='POST')return startTenantPreview(request,env,auth,preview[1]);
     const support=path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/support-sessions$/);
     if(support && request.method==='POST')return startSupportSession(request,env,auth,support[1]);
     const tenant = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})$/);

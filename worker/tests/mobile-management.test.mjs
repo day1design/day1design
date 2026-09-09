@@ -138,12 +138,28 @@ test('overview coalesces reads and checks permission before cache', async () => 
     const path='/api/mobile/platform/overview';
     const responses=await Promise.all(Array.from({length:8},()=>handleMobileManagement(request(path),e,auth)));
     for(const response of responses){assert.equal(response.status,200);assert.equal((await response.json()).tenants.registered,1);}
-    assert.equal(queries,3);
-    await handleMobileManagement(request(path),e,auth);assert.equal(queries,3);
+    assert.equal(queries,4);
+    const overview = await handleMobileManagement(request(path),e,auth);
+    const overviewBody = await overview.json();
+    assert.deepEqual(overviewBody.integration, { status: 'unknown', count: null, registered: 1, reason: 'tenant_integration_source_unavailable' });
+    await handleMobileManagement(request(path),e,auth);assert.equal(queries,4);
     assert.equal((await handleMobileManagement(request(path),e,owner)).status,403);
     assert.equal((await handleMobileManagement(request(path),{...e,CRM_PLATFORM_EMAILS:''},auth)).status,403);
-    assert.equal(queries,3);
+    assert.equal(queries,4);
   } finally {sqlite.close();}
+});
+
+test('overview counts connected integrations from persisted intake and Meta evidence', async () => {
+  const sqlite = new DatabaseSync(':memory:');
+  try {
+    sqlite.exec("CREATE TABLE CrmTenants(id TEXT PRIMARY KEY, suspended INTEGER NOT NULL DEFAULT 0); CREATE TABLE Estimates(id TEXT PRIMARY KEY, CrmTenantId TEXT NOT NULL); CREATE TABLE MetaAdsDaily(id TEXT PRIMARY KEY, CrmTenantId TEXT NOT NULL); INSERT INTO CrmTenants(id,suspended) VALUES('day1design',0); INSERT INTO Estimates(id,CrmTenantId) VALUES('estimate-1','day1design'); INSERT INTO MetaAdsDaily(id,CrmTenantId) VALUES('meta-1','day1design');");
+    const response = await handleMobileManagement(request('/api/mobile/platform/overview'), env(sqlite), auth);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.integration, { status: 'observed', count: 1, registered: 1, reason: null });
+  } finally {
+    sqlite.close();
+  }
 });
 
 test('overview distinguishes unavailable schema from zero counts',async()=>{

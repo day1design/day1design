@@ -1,3 +1,4 @@
+import { authenticateTenantPreview, endTenantPreview, isTenantPreview, previewReadAllowed } from '../lib/crm-tenant-preview.js';
 import { readThroughCrmHome } from '../lib/crm-home-cache.js';
 import { readCrmTrafficSummary } from '../lib/crm-traffic-summary.js';
 import { buildCrmHomeMetrics, homeMetricPeriods } from '../lib/crm-home-metrics.js';
@@ -78,27 +79,44 @@ async function buildHomePayload(env,auth) {
   let marketing_flow = null;
   if (auth.role === 'owner') {
     const periods = homeMetricPeriods(bounds.date);
-    const [todayAnalytics, recent30Analytics] = await Promise.all([
-      cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: bounds.date, endDate: bounds.date }),
-      cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: periods.recent30.start, endDate: bounds.date }),
+    const [todaySubmissions, recent30Submissions] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) count FROM Estimates WHERE CrmTenantId=? AND SubmittedAt>=? AND SubmittedAt<?")
+        .bind(auth.tenant_id, bounds.startUtc, bounds.endExclusiveUtc).first(),
+      env.DB.prepare("SELECT COUNT(*) count FROM Estimates WHERE CrmTenantId=? AND SubmittedAt>=? AND SubmittedAt<?")
+        .bind(auth.tenant_id, dateRange(periods.recent30.start, bounds.date).startUtc, bounds.endExclusiveUtc).first(),
     ]);
-    home_metrics = buildCrmHomeMetrics({ tenantId: auth.tenant_id, todayAnalytics, recent30Analytics,
-      trafficSummary: todayAnalytics.trafficSummary, todayDate: bounds.date });
-    const flowAnalysis=todayAnalytics?.flowAnalysis;
-    if (flowAnalysis?.available) marketing_flow={
-      date: bounds.date,
-      period: flowAnalysis.periods,
-      channels: (flowAnalysis.sources || []).slice(0,20).map((source) => ({
-        channel: source.channel,
-        count: Number(source.current?.savedLeads || 0),
-        visits: Number(source.current?.visits || 0),
-        conversion_rate: source.current?.rates?.visitToSaved?.value ?? null,
-        status: source.judgment?.status || flowAnalysis.judgment?.status || 'unavailable',
-        visits_change_pct: source.previous?.visits > 0 ? ((Number(source.current?.visits || 0) - Number(source.previous.visits || 0)) / Number(source.previous.visits)) * 100 : null,
-        receipts_change_pct: source.previous?.savedLeads > 0 ? ((Number(source.current?.savedLeads || 0) - Number(source.previous.savedLeads || 0)) / Number(source.previous.savedLeads)) * 100 : null,
-      })),
-      has_more: Boolean(flowAnalysis.sourcesHasMore),
+    const submissions = {
+      today: { value: Number(todaySubmissions?.count || 0), reason: null },
+      recent30: { value: Number(recent30Submissions?.count || 0), reason: null },
     };
+    try {
+      const [todayAnalytics, recent30Analytics] = await Promise.all([
+        cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: bounds.date, endDate: bounds.date }),
+        cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: periods.recent30.start, endDate: bounds.date }),
+      ]);
+      home_metrics = buildCrmHomeMetrics({ tenantId: auth.tenant_id, todayAnalytics, recent30Analytics,
+        trafficSummary: todayAnalytics.trafficSummary, todayDate: bounds.date });
+      home_metrics.submissions = submissions;
+      const flowAnalysis=todayAnalytics?.flowAnalysis;
+      if (flowAnalysis?.available) marketing_flow={
+        date: bounds.date,
+        period: flowAnalysis.periods,
+        channels: (flowAnalysis.sources || []).slice(0,20).map((source) => ({
+          channel: source.channel,
+          count: Number(source.current?.savedLeads || 0),
+          visits: Number(source.current?.visits || 0),
+          conversion_rate: source.current?.rates?.visitToSaved?.value ?? null,
+          status: source.judgment?.status || flowAnalysis.judgment?.status || 'unavailable',
+          visits_change_pct: source.previous?.visits > 0 ? ((Number(source.current?.visits || 0) - Number(source.previous.visits || 0)) / Number(source.previous.visits)) * 100 : null,
+          receipts_change_pct: source.previous?.savedLeads > 0 ? ((Number(source.current?.savedLeads || 0) - Number(source.previous.savedLeads || 0)) / Number(source.previous.savedLeads)) * 100 : null,
+        })),
+        has_more: Boolean(flowAnalysis.sourcesHasMore),
+      };
+    } catch {
+      home_metrics = buildCrmHomeMetrics({ tenantId: auth.tenant_id, todayAnalytics: null, recent30Analytics: null,
+        todayDate: bounds.date });
+      home_metrics.submissions = submissions;
+    }
   }
   const daily_brief=briefRow ? { date:briefRow.briefing_date,created_at:briefRow.created_at,type:briefRow.type || 'daily_briefing',payload:(() => { try { return JSON.parse(briefRow.payload_json || '{}'); } catch { return {}; } })() } : null;
   return {date:bounds.date,timezone:'Asia/Seoul',intake:{pending_count:Number(pending.count)},today,home_metrics,daily_brief,marketing_flow};
@@ -360,8 +378,10 @@ async function routeMobileCrm(request, env, ctx) {
   if (path === "/auth/verify-otp" && request.method === "POST") return verifyMobileOtp(request, env);
   if (path === "/auth/logout" && request.method === "POST") { await revokeSession(env.DB, request); return jsonOk({ loggedIn: false }); }
   if (path === '/support/renew' && request.method === 'POST') return renewSupport(request, env);
-  const auth = await authenticateSupport(env.DB, request) || await authenticate(env.DB, request);
+  const auth = await authenticateTenantPreview(env.DB, request) || await authenticateSupport(env.DB, request) || await authenticate(env.DB, request);
   if (!auth) return jsonError(401, "authentication required");
+  if (path === '/platform/preview-session/end' && request.method === 'POST') return endTenantPreview(request, env, auth);
+  if (isTenantPreview(auth) && !previewReadAllowed(request.method, path)) return jsonError(403, 'tenant preview is read-only');
   if (path === '/support/end' && request.method === 'POST') return endSupportSession(request, env, auth);
   if (isSupportReadonly(auth) && !isSupportAdmin(auth)) {
     if(path==='/sync' && request.method==='GET')return jsonOk({readonly:true});
