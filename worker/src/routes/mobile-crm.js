@@ -1,5 +1,6 @@
 import { jsonError as baseJsonError, jsonOk as baseJsonOk } from "../lib/response.js";
 import { authenticate, nowIso, revokeSession, requestMobileOtp, verifyMobileOtp } from '../lib/crm-auth.js';
+import { authenticateSupport, endSupportSession, isSupportReadonly } from '../lib/crm-support.js';
 import { handleMobileNotifications } from './mobile-notifications.js';
 import { handleMobileDevices } from './mobile-devices.js';
 import { handleMobileManagement } from './mobile-management.js';
@@ -33,6 +34,23 @@ function iso(value) {
   if(typeof value!=="string" || !/(Z|[+-]\d{2}:\d{2})$/.test(value))return "";
   const candidate = new Date(value);
   return Number.isFinite(candidate.getTime()) ? candidate.toISOString() : "";
+}
+
+export function homeKstBounds(nowMs = Date.now()) {
+  const date = new Date(nowMs + 9 * 3600000).toISOString().slice(0,10);
+  const start = Date.parse(date+'T00:00:00+09:00');
+  return {date,startUtc:new Date(start).toISOString(),endExclusiveUtc:new Date(start+86400000).toISOString()};
+}
+async function homeSummary(env,auth) {
+  const bounds=homeKstBounds();
+  const pending=await env.DB.prepare("SELECT COUNT(*) count FROM Estimates WHERE CrmTenantId=? AND Status IN ('접수대기','new')").bind(auth.tenant_id).first();
+  const today={};
+  for(const kind of ['visit','measurement']) {
+    const count=await env.DB.prepare("SELECT COUNT(*) count FROM CrmAppointments WHERE tenant_id=? AND kind=? AND starts_at>=? AND starts_at<? AND status<>'cancelled'").bind(auth.tenant_id,kind,bounds.startUtc,bounds.endExclusiveUtc).first();
+    const rows=await env.DB.prepare("SELECT a.*,e.Name customer_name FROM CrmAppointments a LEFT JOIN Estimates e ON e.id=a.estimate_id AND e.CrmTenantId=a.tenant_id WHERE a.tenant_id=? AND a.kind=? AND a.starts_at>=? AND a.starts_at<? AND a.status<>'cancelled' ORDER BY a.starts_at,a.id LIMIT 5").bind(auth.tenant_id,kind,bounds.startUtc,bounds.endExclusiveUtc).all();
+    today[kind==='visit'?'consultation':kind]={count:Number(count.count),items:rows.results||[]};
+  }
+  return jsonOk({date:bounds.date,timezone:'Asia/Seoul',intake:{pending_count:Number(pending.count)},today});
 }
 
 function id() {
@@ -204,8 +222,15 @@ async function routeMobileCrm(request, env, ctx) {
   if (path === "/auth/request-otp" && request.method === "POST") return requestMobileOtp(request, env, ctx);
   if (path === "/auth/verify-otp" && request.method === "POST") return verifyMobileOtp(request, env);
   if (path === "/auth/logout" && request.method === "POST") { await revokeSession(env.DB, request); return jsonOk({ loggedIn: false }); }
-  const auth = await authenticate(env.DB, request);
+  const auth = await authenticateSupport(env.DB, request) || await authenticate(env.DB, request);
   if (!auth) return jsonError(401, "authentication required");
+  if (isSupportReadonly(auth)) {
+    if(path==='/support/end' && request.method==='POST')return endSupportSession(request,env,auth);
+    const allowed=['/me','/home','/customers','/appointments','/analytics'].includes(path) || /^\/customers\/[A-Za-z0-9_-]+$/.test(path);
+    if(request.method!=='GET'||!allowed)return jsonError(403,'support session is read-only');
+  }
+  if(path==='/home' && request.method==='GET')return homeSummary(env,auth);
+
   if (request.method === 'PATCH' && new URL(request.url).pathname.startsWith('/api/mobile/appointments/')) {
     return updateAppointment(request, env, auth, new URL(request.url).pathname.slice('/api/mobile/appointments/'.length));
   }

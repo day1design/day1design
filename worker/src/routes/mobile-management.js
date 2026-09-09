@@ -1,3 +1,4 @@
+import { startSupportSession } from '../lib/crm-support.js';
 import { readCrmJson } from '../lib/crm-request.js';
 import { jsonError as baseJsonError, jsonOk as baseJsonOk } from "../lib/response.js";
 import { decryptCredentials, deliveryMissingFields, encryptCredentials } from '../lib/crm-delivery.js';
@@ -373,6 +374,8 @@ export async function handleMobileManagement(request, env, auth) {
     if (path === "/platform/overview" && request.method === "GET") return platformOverview(request, env, auth);
     if (path === "/platform/tenants" && request.method === "GET") return platformTenants(request, env, auth);
     if (path === "/platform/tenants" && request.method === "POST") return registerTenant(request, env, auth);
+    const support=path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/support-sessions$/);
+    if(support && request.method==='POST')return startSupportSession(request,env,auth,support[1]);
     const tenant = path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})$/);
     if (tenant && request.method === "GET") return platformTenantDetail(request, env, auth, tenant[1]);
     if (tenant && request.method === "PATCH") return setTenantSuspended(request, env, auth, tenant[1]);
