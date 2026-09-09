@@ -62,12 +62,13 @@ export async function authenticate(db, request) {
   const token = bearer(request);
   if (!token) return null;
   const row = await db.prepare(`
-    SELECT s.id session_id, s.user_id, s.expires_at, u.email, u.role, u.tenant_id,
+    SELECT s.id session_id, s.user_id, s.expires_at, s.persistent, u.email, u.role, u.tenant_id,
            u.active user_active, t.name tenant_name, t.brand, t.logo_url, t.suspended
     FROM CrmSessions s
     JOIN CrmUsers u ON u.id = s.user_id
     JOIN CrmTenants t ON t.id = u.tenant_id
-    WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
+    WHERE s.token_hash = ? AND s.revoked_at IS NULL
+      AND (s.persistent = 1 OR s.expires_at > ?)
   `).bind(await hashToken(token), nowIso()).first();
   if (!row || !row.user_active || row.suspended) return null;
   return { ...row, id: row.user_id, token };
@@ -76,8 +77,8 @@ export async function authenticate(db, request) {
 export async function createSession(db, userId) {
   const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
   const created = nowIso();
-  await db.prepare("INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?,?)")
-    .bind(crypto.randomUUID(), await hashToken(token), userId, new Date(Date.now() + 86_400_000).toISOString(), created).run();
+  await db.prepare("INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,persistent,created_at) VALUES(?,?,?,?,?,?)")
+    .bind(crypto.randomUUID(), await hashToken(token), userId, new Date(Date.now() + 86_400_000).toISOString(), 1, created).run();
   return token;
 }
 
@@ -175,9 +176,9 @@ export async function verifyMobileOtp(request, env) {
   const sessionId = crypto.randomUUID();
   const results = await env.DB.batch([
     env.DB.prepare("UPDATE CrmOtpRequests SET used_at=? WHERE id=? AND used_at IS NULL AND attempts<5 AND expires_at>? AND EXISTS(SELECT 1 FROM CrmUsers u JOIN CrmTenants t ON t.id=u.tenant_id WHERE u.id=? AND u.active=1 AND t.suspended=0)").bind(created, row.id, created, row.user_id),
-    env.DB.prepare("INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,created_at) SELECT ?,?,?,?,? WHERE changes() = 1")
-      .bind(sessionId, await hashToken(token), row.user_id, new Date(Date.now() + 86_400_000).toISOString(), created),
+    env.DB.prepare("INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,persistent,created_at) SELECT ?,?,?,?,?,? WHERE changes() = 1")
+      .bind(sessionId, await hashToken(token), row.user_id, new Date(Date.now() + 86_400_000).toISOString(), 1, created),
   ]);
   if (!results?.[0]?.meta?.changes || !results?.[1]?.meta?.changes) return error(401, "invalid or expired code");
-  return ok({ token, expires_in: 86400 });
+  return ok({ token, expires_in: null });
 }

@@ -8,7 +8,7 @@ import { fcmConfig, genericPushMessage, sendFcmMessage } from '../src/lib/crm-fc
 
 function fixture() {
   const sqlite = new DatabaseSync(':memory:');
-  for (const file of ['0001_init.sql', '0041_consult_booking.sql', '0042_contract_fields.sql', '0043_consult_cancel.sql', '0044_consult_reminders.sql', '0045_mobile_crm.sql', '0046_crm_notifications.sql', '0052_crm_devices.sql', '0053_crm_push.sql']) {
+  for (const file of ['0001_init.sql', '0041_consult_booking.sql', '0042_contract_fields.sql', '0043_consult_cancel.sql', '0044_consult_reminders.sql', '0045_mobile_crm.sql', '0046_crm_notifications.sql', '0052_crm_devices.sql', '0053_crm_push.sql', '0054_crm_persistent_sessions.sql']) {
     sqlite.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
   }
   class Statement {
@@ -136,8 +136,8 @@ test('FCM message is generic and HTTP v1 sender validates OAuth and provider acc
   const result = await sendFcmMessage(config, { tenantId: 'day1design', token: 'token', notificationId: 'n1', fetchImpl, now: 1_757_392_800_000 });
   assert.equal(result.accepted, true);
   assert.equal(requests.length, 2);
-  assert.equal(requests[0].options.redirect, 'error');
-  assert.equal(requests[1].options.redirect, 'error');
+  assert.equal(requests[0].options.redirect, 'manual');
+  assert.equal(requests[1].options.redirect, 'manual');
   assert.match(requests[1].options.headers.authorization, /^Bearer access$/);
   assert.equal(JSON.parse(requests[1].options.body).message.notification.body, '새 알림이 도착했습니다.');
   const denied = await sendFcmMessage(config, { tenantId: 'day1design', token: 'token', notificationId: 'n2', fetchImpl, beforeSend: () => false });

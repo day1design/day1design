@@ -6,7 +6,7 @@ import {handleMobileDevices} from '../src/routes/mobile-devices.js';
 
 function fixture() {
  const DB=openLocalD1(':memory:');
- for(const name of ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0052_crm_devices.sql'])DB.sqlite.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+ for(const name of ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0052_crm_devices.sql','0054_crm_persistent_sessions.sql'])DB.sqlite.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
  DB.sqlite.exec("INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,created_at) VALUES('device-session','test','day1-owner','2099-01-01','2026-01-01')");
  return {DB};
 }
@@ -55,7 +55,7 @@ test('registration limits devices and rejects oversized or unknown fields',async
 test('expired registrations can be replaced by a fresh session without old logout deleting new binding',async()=>{
  const env=fixture();try {
  await handleMobileDevices(req(),env,auth);
- env.DB.sqlite.exec("UPDATE CrmSessions SET expires_at='2000-01-01' WHERE id='device-session'; INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,created_at) VALUES('fresh-session','fresh','day1-owner','2099-01-01','2026-01-01')");
+    env.DB.sqlite.exec("UPDATE CrmSessions SET persistent=0,expires_at='2000-01-01' WHERE id='device-session'; INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,created_at) VALUES('fresh-session','fresh','day1-owner','2099-01-01','2026-01-01')");
  assert.equal((await handleMobileDevices(req(),env,auth)).status,409);
  const fresh={...auth,session_id:'fresh-session'};
  assert.equal((await handleMobileDevices(req(),env,fresh)).status,200);

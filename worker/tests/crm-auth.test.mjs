@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { requestMobileOtp, verifyMobileOtp } from "../src/lib/crm-auth.js";
+import { authenticate, requestMobileOtp, verifyMobileOtp } from "../src/lib/crm-auth.js";
 
 function database() {
   const sqlite = new DatabaseSync(":memory:");
-  for (const file of ["../migrations/0001_init.sql", "../migrations/0041_consult_booking.sql", "../migrations/0042_contract_fields.sql", "../migrations/0045_mobile_crm.sql", "../migrations/0047_crm_auth.sql"]) sqlite.exec(readFileSync(new URL(file, import.meta.url), "utf8"));
+  for (const file of ["../migrations/0001_init.sql", "../migrations/0041_consult_booking.sql", "../migrations/0042_contract_fields.sql", "../migrations/0045_mobile_crm.sql", "../migrations/0047_crm_auth.sql", "../migrations/0054_crm_persistent_sessions.sql"]) sqlite.exec(readFileSync(new URL(file, import.meta.url), "utf8"));
   return sqlite;
 }
 
@@ -81,5 +81,12 @@ test("same OTP can be consumed only once", async () => {
   await requestMobileOtp(request("/api/mobile/auth/request-otp", { email: "gahyun.co@gmail.com" }), service);
   const responses = await Promise.all([1, 2].map(() => verifyMobileOtp(request("/api/mobile/auth/verify-otp", { email: "gahyun.co@gmail.com", code: delivered[0].code }), service)));
   assert.deepEqual(responses.map((response) => response.status).sort(), [200, 401]);
+  const body = await responses.find((response) => response.status === 200).json();
+  assert.equal(body.expires_in, null);
+  sqlite.prepare("UPDATE CrmSessions SET expires_at='2000-01-01T00:00:00Z'").run();
+  const session = await authenticate(d1(sqlite), new Request("https://test.local/api/mobile/me", { headers: { authorization: `Bearer ${body.token}` } }));
+  assert.equal(session.email, "gahyun.co@gmail.com");
+  sqlite.prepare("UPDATE CrmSessions SET revoked_at='2026-09-09T00:00:00Z'").run();
+  assert.equal(await authenticate(d1(sqlite), new Request("https://test.local/api/mobile/me", { headers: { authorization: `Bearer ${body.token}` } })), null);
   sqlite.close();
 });

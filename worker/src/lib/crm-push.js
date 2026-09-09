@@ -27,7 +27,8 @@ async function liveCandidate(db, row, at) {
     FROM CrmNotificationRecipients r
     JOIN CrmNotifications n ON n.id=r.notification_id AND n.tenant_id=r.tenant_id
     JOIN CrmDevices d ON d.tenant_id=r.tenant_id AND d.user_id=r.recipient_id AND d.notifications_enabled=1
-    JOIN CrmSessions s ON s.id=d.session_id AND s.user_id=d.user_id AND s.revoked_at IS NULL AND s.expires_at>?
+    JOIN CrmSessions s ON s.id=d.session_id AND s.user_id=d.user_id AND s.revoked_at IS NULL
+      AND (s.persistent=1 OR s.expires_at>?)
     JOIN CrmUsers u ON u.id=r.recipient_id AND u.id=d.user_id AND u.tenant_id=r.tenant_id AND u.active=1
     JOIN CrmTenants t ON t.id=r.tenant_id AND t.suspended=0
     WHERE r.tenant_id=? AND r.notification_id=? AND r.recipient_id=? AND r.created_at=?

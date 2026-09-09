@@ -11,7 +11,7 @@ const runtime = resolve(root, '.tools', 'worker-runtime');
 mkdirSync(runtime, { recursive: true });
 const DB = openLocalD1(resolve(runtime, 'local.sqlite3'));
 DB.sqlite.exec('CREATE TABLE IF NOT EXISTS LocalMigrations(name TEXT PRIMARY KEY)');
-const migrations = ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0047_crm_auth.sql','0048_crm_automation.sql','0049_crm_calendar.sql','0050_crm_scheduler.sql','0051_crm_assignment.sql','0052_crm_devices.sql','0053_crm_push.sql'];
+const migrations = ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0047_crm_auth.sql','0048_crm_automation.sql','0049_crm_calendar.sql','0050_crm_scheduler.sql','0051_crm_assignment.sql','0052_crm_devices.sql','0053_crm_push.sql','0054_crm_persistent_sessions.sql'];
 for (const name of migrations) {
   const path = resolve(root, '..', 'worker', 'migrations', name);
   if (!existsSync(path)) throw new Error('Local migration not ready: ' + name);

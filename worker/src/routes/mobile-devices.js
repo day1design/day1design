@@ -29,10 +29,12 @@ export async function handleMobileDevices(request,env,auth) {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO CrmMutationGuard(id,allowed) VALUES(?,CASE WHEN EXISTS(
         SELECT 1 FROM CrmSessions s JOIN CrmUsers u ON u.id=s.user_id JOIN CrmTenants t ON t.id=u.tenant_id
-        WHERE s.id=? AND s.user_id=? AND u.tenant_id=? AND s.revoked_at IS NULL AND s.expires_at>?
+        WHERE s.id=? AND s.user_id=? AND u.tenant_id=? AND s.revoked_at IS NULL
+        AND (s.persistent=1 OR s.expires_at>?)
         AND u.active=1 AND t.suspended=0) THEN 1 ELSE 0 END)`).bind(guard,auth.session_id,user,auth.tenant_id,now),
       env.DB.prepare(`DELETE FROM CrmDevices WHERE (id=? OR push_token=?) AND session_id IN
-        (SELECT id FROM CrmSessions WHERE id=CrmDevices.session_id AND (expires_at<=? OR revoked_at IS NOT NULL))`).bind(value.id,value.push_token,now),
+        (SELECT id FROM CrmSessions WHERE id=CrmDevices.session_id
+          AND (revoked_at IS NOT NULL OR (persistent=0 AND expires_at<=?)))`).bind(value.id,value.push_token,now),
       env.DB.prepare(`INSERT INTO CrmMutationGuard(id,allowed) VALUES(?,CASE WHEN
         NOT EXISTS(SELECT 1 FROM CrmDevices WHERE (id=? OR push_token=?) AND (tenant_id<>? OR user_id<>?))
         AND ((SELECT COUNT(*) FROM CrmDevices WHERE tenant_id=? AND user_id=?)<5

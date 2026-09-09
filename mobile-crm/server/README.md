@@ -28,7 +28,7 @@ Prefix every endpoint with `/api/mobile`. Unprefixed equivalents exist only for 
 | --- | --- |
 | GET `/health` | Explicit isolated-development marker |
 | POST `/auth/request-otp` | `{email}` → `{requested,expires_in}`; known, unknown and suspended identity responses are generic |
-| POST `/auth/verify-otp` | `{email,code}` → `{token,expires_in}` |
+| POST `/auth/verify-otp` | `{email,code}` → `{token,expires_in:null}`; the device session persists until logout or administrative revocation |
 | POST `/auth/logout` | Deletes the presented token, including suspended tenant tokens |
 | GET `/me` | `{id,email,role,tenant:{id,name},branding:{brand,logo}}` |
 | GET `/members` | Current tenant active members only, maximum 100 |
@@ -47,7 +47,7 @@ Customer PATCH allows `name,phone,email,region,budget,status,assignee_id`. `budg
 
 Customer reads use an indexed 50-row cursor window (51st row only determines continuation). Search filters that window; follow `next_cursor` even if the current filtered page is empty. Detail histories are capped at 100 per kind and expose a truncation flag. Full history pagination is a follow-up.
 
-OTP: random six digits, five-minute expiry, five failed attempts, 60-second request cooldown, independent email/IP request ceilings of five per 15 minutes, atomic single-use consumption, reissue invalidates the prior code. Sessions currently expire after 24 hours; refresh rotation/device registration is not yet implemented. Responses use `Cache-Control: no-store`; request bodies are capped at 64 KiB.
+OTP: random six digits, five-minute expiry, five failed attempts, 60-second request cooldown, independent email/IP request ceilings of five per 15 minutes, atomic single-use consumption, reissue invalidates the prior code. A verified mobile session is persistent per device until explicit logout, administrator revocation, account deactivation, or tenant suspension; uninstalling or clearing app data removes the locally held token. Responses use `Cache-Control: no-store`; request bodies are capped at 64 KiB.
 
 ## Verification
 

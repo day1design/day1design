@@ -6,7 +6,7 @@
 2. 완료: 이메일 OTP HMAC 릴레이, FCM HTTP v1 및 감사 영수증, SENS 승인 템플릿 전송 어댑터와 독립 푸시 스케줄러 구현·회귀 검증.
 3. 완료: Android Firebase SDK/token/알림 권한/탭 연결, 빌드·lint와 전용 에뮬레이터 검증.
 4. 완료: 사용자 지정 Chrome 계정으로 CRM 운영/개발 앱 등록·설정 연결. 실제 FCM 수신 및 탭 이동을 전용 에뮬레이터에서 확인.
-5. 진행 중: OTP HTTPS 릴레이 운영 호스트, Worker 마이그레이션/배포/운영 설정 적용, 실제 로그인·휴대폰 FCM 수신 확인. 별도 호스팅 경로를 확정해야 한다.
+5. 진행 중: iMac OTP HTTPS 릴레이 및 Worker/D1 0045–0053 배포 완료. Workers redirect 호환성 수정과 기기별 영구 로그인 적용 후 실제 운영 로그인·재실행 검증. 알림톡 provider/승인 템플릿은 미연결.
 6. 조건부 승인: 전체 제품 검증 이후만 R3CX80FNR3H 설치 및 최종 APK를 mkt@polarad.co.kr에서 같은 주소로 1회 전송. 현재 미설치·미전송.
 
-실제 자격 증명은 `.tools/production/worker-secrets.json`에 Git 제외 상태로 준비했다. 모든 운영/자동화/푸시/발송 플래그는 false이며 기존 worker/.dev.vars는 수정하지 않았다. 키 값은 문서에 기록하지 않는다.
+실제 자격 증명은 `.tools/production/worker-secrets.json`에 Git 제외 상태로 준비했다. 운영 CRM/푸시는 true, 고객 자동화/발송은 false다. 기존 worker/.dev.vars는 수정하지 않았다. 키 값은 문서에 기록하지 않는다.

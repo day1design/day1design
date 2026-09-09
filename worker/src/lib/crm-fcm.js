@@ -44,7 +44,7 @@ async function signedJwt(config, now = Date.now()) {
 async function fetchWithPolicy(fetchImpl, url, options, timeoutMs = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try { return await fetchImpl(url, { ...options, redirect: 'error', signal: controller.signal }); }
+  try { return await fetchImpl(url, { ...options, redirect: 'manual', signal: controller.signal }); }
   finally { clearTimeout(timer); }
 }
 

@@ -104,7 +104,7 @@ export async function deliverCrmOtp(env, payload) {
       },
       body,
       signal: controller.signal,
-      redirect: "error",
+      redirect: "manual",
     });
     if (!response.ok) throw new Error(`CRM OTP relay HTTP ${response.status}`);
     let result;

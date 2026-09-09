@@ -7,7 +7,7 @@ import { handleMobileCrm } from "../src/routes/mobile-crm.js";
 
 function makeDb() {
   const sqlite = new DatabaseSync(":memory:");
-  for (const file of ["../migrations/0001_init.sql", "../migrations/0041_consult_booking.sql", "../migrations/0042_contract_fields.sql", "../migrations/0043_consult_cancel.sql", "../migrations/0044_consult_reminders.sql", "../migrations/0045_mobile_crm.sql", "../migrations/0046_crm_notifications.sql", "../migrations/0047_crm_auth.sql"]) sqlite.exec(readFileSync(new URL(file, import.meta.url), "utf8"));
+  for (const file of ["../migrations/0001_init.sql", "../migrations/0041_consult_booking.sql", "../migrations/0042_contract_fields.sql", "../migrations/0043_consult_cancel.sql", "../migrations/0044_consult_reminders.sql", "../migrations/0045_mobile_crm.sql", "../migrations/0046_crm_notifications.sql", "../migrations/0047_crm_auth.sql", "../migrations/0054_crm_persistent_sessions.sql"]) sqlite.exec(readFileSync(new URL(file, import.meta.url), "utf8"));
   sqlite.prepare("INSERT INTO Estimates(id,Name,Phone,Email,Branch,Status,SubmittedAt) VALUES(?,?,?,?,?,?,?)").run("estimate-1", "고객 A", "010", "a@example.com", "강남", "new", new Date().toISOString());
   return sqlite;
 }

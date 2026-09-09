@@ -5,7 +5,7 @@ import { openLocalD1 } from '../../mobile-crm/server/d1-local.mjs';
 import { runCrmScheduled } from '../src/lib/crm-scheduler.js';
 function setup(){
  const DB=openLocalD1(':memory:');
- for(const file of ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0047_crm_auth.sql','0048_crm_automation.sql','0049_crm_calendar.sql','0050_crm_scheduler.sql','0051_crm_assignment.sql','0052_crm_devices.sql','0053_crm_push.sql'])DB.sqlite.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
+ for(const file of ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0047_crm_auth.sql','0048_crm_automation.sql','0049_crm_calendar.sql','0050_crm_scheduler.sql','0051_crm_assignment.sql','0052_crm_devices.sql','0053_crm_push.sql','0054_crm_persistent_sessions.sql'])DB.sqlite.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
  return DB;
 }
 test('scheduler is off by default and creates one daily owner briefing after 10 KST',async()=>{
