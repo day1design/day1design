@@ -410,14 +410,6 @@ async function sendPhoto(pngPath, caption) {
   return res.result?.message_id;
 }
 
-async function sendFailure(message) {
-  await curlTelegram("sendMessage", [
-    `text=${cq(`[day1design/daily-report] ${message}`.slice(0, 3900))}`,
-  ]).catch((error) => {
-    console.error(JSON.stringify({ ok: false, stage: "failure-notification", error: error.message }));
-  });
-}
-
 /* ────────────────────────── 실행 ────────────────────────── */
 
 let stage = "generate";
@@ -465,8 +457,7 @@ async function main() {
   );
 }
 
-main().catch(async (e) => {
+main().catch((e) => {
   console.error(JSON.stringify({ ok: false, stage, error: e.message }));
-  if (!NO_SEND) await sendFailure(`${stage === "send" ? "리포트 이미지는 생성했지만 텔레그램 전송에 실패했습니다" : "리포트를 만들지 못했습니다"} — ${e.message}`);
   process.exit(1);
 });
