@@ -129,6 +129,11 @@ IPv6 는 `EHOSTUNREACH` 로 둘 다 막히는데(2026-09-03 실측) 같은 순�
 뜨므로 표준입력으로 넘겨 인자에는 남기지 않는다. 브리프 API 호출은 `fetch` 로 잘 나가서
 그대로 둔다.
 
+TLS 협상 실패(`curl 35`)는 1초·3초 간격으로 최대 3회 시도한다. 응답 유실이나
+시간초과는 사진이 이미 접수됐을 수 있어 자동 재전송하지 않는다. `show-error`로
+상세 오류를 남기되 봇 토큰을 가리고, 사용자 curl 설정의 영향을 받지 않도록
+`--disable`을 첫 인자로 사용한다. 생성 후 전송 실패는 생성 실패와 구분해 알린다.
+
 ```bash
 node daily-report.mjs                 # 만들어서 보낸다
 node daily-report.mjs --no-send       # 이미지까지만
@@ -139,7 +144,7 @@ node daily-report.mjs --from-dir DIR  # DIR 의 brief_yday.json·brief_7d.json �
 
 ```bash
 scp bot.mjs stats.mjs run_bot.sh pola@<아이맥>:/Users/pola/day1design-mkt-bot/
-scp daily-report.mjs run_daily_report.sh pola@<아이맥>:/Users/pola/day1design-mkt-bot/
+scp daily-report.mjs telegram-transport.mjs run_daily_report.sh pola@<아이맥>:/Users/pola/day1design-mkt-bot/
 scp com.day1design.mkt-daily-report.plist pola@<아이맥>:/Users/pola/Library/LaunchAgents/
 scp com.day1design.mkt-brief-bot.plist pola@<아이맥>:/Users/pola/Library/LaunchAgents/
 ssh pola@<아이맥> 'bash -lc "cd ~/day1design-mkt-bot && node --check bot.mjs && node --check stats.mjs"'
@@ -152,6 +157,7 @@ ssh pola@<아이맥> 'bash -lc "launchctl kickstart -k gui/$(id -u)/com.day1desi
 
 ```bash
 node --test workers/imac-mkt-brief-bot/stats.test.mjs   # 통계 회귀 가드 17건
+node --test workers/imac-mkt-brief-bot/telegram-transport.test.mjs # 네트워크/발송 없는 전송 회귀 검사
 node bot.mjs --selftest                                  # 게이트 18건 + 기간 파서 10건
 ```
 

@@ -13,7 +13,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { cq, curlTelegram as requestTelegram } from "./telegram-transport.mjs";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -392,37 +392,12 @@ async function renderPng(htmlPath, pngPath) {
 // 토큰을 명령행 인자에 두면 ps 에 그대로 뜬다. --config - 로 표준입력에 넘겨
 // 인자에는 남기지 않는다.
 // curl config 는 값을 큰따옴표로 감싸므로 역슬래시와 큰따옴표를 막아 준다
-const cq = (v) => String(v).split("\\").join("\\\\").split('"').join('\\"');
-
 function curlTelegram(method, lines) {
-  const token = env("DAY1_MKT_BOT_TOKEN");
-  const chatId = env("DAY1_MKT_CHAT_ID");
-  if (!token) throw new Error("DAY1_MKT_BOT_TOKEN 이 없다");
-  if (!chatId) throw new Error("DAY1_MKT_CHAT_ID 가 없다");
-  const config = [
-    `url = "https://api.telegram.org/bot${token}/${method}"`,
-    `form = "chat_id=${cq(chatId)}"`,
-    ...lines.map((l) => `form = "${l}"`),
-    "silent",
-    "max-time = 90",
-  ].join("\n");
-
-  return new Promise((resolve, reject) => {
-    const cp = spawn("curl", ["--config", "-"], { stdio: ["pipe", "pipe", "pipe"] });
-    let out = "";
-    let err = "";
-    cp.stdout.on("data", (d) => (out += d));
-    cp.stderr.on("data", (d) => (err += d));
-    cp.on("error", reject);
-    cp.on("close", (code) => {
-      if (code !== 0) return reject(new Error(`curl 종료코드 ${code} ${err.trim()}`));
-      try {
-        resolve(JSON.parse(out));
-      } catch {
-        reject(new Error(`텔레그램 응답을 읽지 못했다: ${out.slice(0, 200)}`));
-      }
-    });
-    cp.stdin.end(config);
+  return requestTelegram({
+    token: env("DAY1_MKT_BOT_TOKEN"),
+    chatId: env("DAY1_MKT_CHAT_ID"),
+    method,
+    lines,
   });
 }
 
@@ -438,10 +413,14 @@ async function sendPhoto(pngPath, caption) {
 async function sendFailure(message) {
   await curlTelegram("sendMessage", [
     `text=${cq(`[day1design/daily-report] ${message}`.slice(0, 3900))}`,
-  ]).catch(() => {});
+  ]).catch((error) => {
+    console.error(JSON.stringify({ ok: false, stage: "failure-notification", error: error.message }));
+  });
 }
 
 /* ────────────────────────── 실행 ────────────────────────── */
+
+let stage = "generate";
 
 async function main() {
   const yday = kstDate(1);
@@ -467,7 +446,10 @@ async function main() {
       : "");
 
   let messageId = null;
-  if (!NO_SEND) messageId = await sendPhoto(pngPath, caption);
+  if (!NO_SEND) {
+    stage = "send";
+    messageId = await sendPhoto(pngPath, caption);
+  }
 
   console.log(
     JSON.stringify({
@@ -484,7 +466,7 @@ async function main() {
 }
 
 main().catch(async (e) => {
-  console.error(JSON.stringify({ ok: false, error: e.message }));
-  if (!NO_SEND) await sendFailure(`리포트를 만들지 못했습니다 — ${e.message}`);
+  console.error(JSON.stringify({ ok: false, stage, error: e.message }));
+  if (!NO_SEND) await sendFailure(`${stage === "send" ? "리포트 이미지는 생성했지만 텔레그램 전송에 실패했습니다" : "리포트를 만들지 못했습니다"} — ${e.message}`);
   process.exit(1);
 });
