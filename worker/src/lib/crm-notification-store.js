@@ -6,6 +6,7 @@ import {
   revalidateReminderExecution,
   snapshotStaffAudience,
 } from "./crm-notifications.js";
+import { hashToken } from "./crm-auth.js";
 
 const MAX_PAGE = 100;
 const TEMPLATE_KINDS = new Set(["visit", "measurement"]);
@@ -19,8 +20,29 @@ function actorFor(actor) {
   return actor;
 }
 function owner(actor) { if (actorFor(actor).role !== "owner") throw new Error("owner_required"); return actor; }
+function isSupportActor(actor) {
+  return actor?.role === "owner"
+    && actor?.support_mode === "admin"
+    && actor?.support_readonly === true
+    && typeof actor?.support_session_id === "string"
+    && typeof actor?.token === "string"
+    && actor.token.startsWith("crm_support_");
+}
 async function liveActor(db, actor) {
   const a = actorFor(actor);
+  if (isSupportActor(a)) {
+    const row = await db.prepare(`SELECT s.id,s.tenant_id,s.actor_id
+      FROM CrmSupportSessions s
+      JOIN CrmTenants target ON target.id=s.tenant_id
+      JOIN CrmUsers platform_actor ON platform_actor.id=s.actor_id
+      WHERE s.id=? AND s.token_hash=? AND s.tenant_id=? AND s.actor_id=?
+        AND s.revoked_at IS NULL AND s.expires_at>?
+        AND target.suspended=0
+        AND platform_actor.tenant_id='platform' AND platform_actor.role='owner' AND platform_actor.active=1`)
+      .bind(a.support_session_id, await hashToken(a.token), a.tenant_id, a.id, nowIso()).first();
+    if (!row) throw new Error("actor_inactive");
+    return a;
+  }
   const row = await db.prepare("SELECT u.id,u.tenant_id,u.role,u.active,t.suspended FROM CrmUsers u JOIN CrmTenants t ON t.id=u.tenant_id WHERE u.id=? AND u.tenant_id=?").bind(a.id, a.tenant_id).first();
   if (!row || row.active !== 1 || row.suspended === 1 || row.role !== a.role) throw new Error("actor_inactive");
   return a;

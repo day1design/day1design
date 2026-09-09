@@ -7,7 +7,7 @@ import { readCrmAnalyticsDimensions } from '../lib/crm-analytics-dimensions.js';
 import { readThroughCrmAnalytics } from '../lib/crm-read-cache.js';
 import { jsonError as baseJsonError, jsonOk as baseJsonOk } from "../lib/response.js";
 import { authenticate, nowIso, revokeSession, requestMobileOtp, verifyMobileOtp } from '../lib/crm-auth.js';
-import { authenticateSupport, endSupportSession, isSupportAdmin, isSupportReadonly, supportReadAllowed } from '../lib/crm-support.js';
+import { authenticateSupport, endSupportSession, isSupportAdmin, isSupportReadonly, platformAllowed, renewSupportSession, supportReadAllowed } from '../lib/crm-support.js';
 import { handleMobileNotifications } from './mobile-notifications.js';
 import { handleMobileDevices } from './mobile-devices.js';
 import { handleMobileManagement } from './mobile-management.js';
@@ -53,7 +53,7 @@ async function cachedAnalytics(env, query) {
   return readThroughCrmAnalytics(env.DB, { ...query, cacheBucket: env.CRM_CACHE, load: async () => {
     const [analytics, dimensions, flowAnalysis, trafficSummary] = await Promise.all([
       readCrmAnalytics(env.DB, query), readCrmAnalyticsDimensions(env.DB, query),
-      readCrmFlowAnalysis(env.DB, query), readCrmTrafficSummary(env.DB, query),
+      readCrmFlowAnalysis(env.DB, query), readCrmTrafficSummary(env.DB, { ...query, propertyId: env.GA4_PROPERTY_ID }),
     ]);
     return { ...analytics, dimensions, flowAnalysis, trafficSummary };
   }});
@@ -67,6 +67,7 @@ async function homeSummary(env,auth) {
 async function buildHomePayload(env,auth) {
   const bounds=homeKstBounds();
   const pending=await env.DB.prepare("SELECT COUNT(*) count FROM Estimates WHERE CrmTenantId=? AND Status IN ('접수대기','new')").bind(auth.tenant_id).first();
+  const briefRow=auth.role==='owner' ? await env.DB.prepare("SELECT b.briefing_date,b.created_at,n.type,n.payload_json FROM CrmDailyBriefings b LEFT JOIN CrmNotifications n ON n.id=b.notification_id AND n.tenant_id=b.tenant_id WHERE b.tenant_id=? AND b.recipient_id=? ORDER BY b.briefing_date DESC,b.created_at DESC LIMIT 1").bind(auth.tenant_id,auth.user_id).first() : null;
   const today={};
   for(const kind of ['visit','measurement']) {
     const count=await env.DB.prepare("SELECT COUNT(*) count FROM CrmAppointments WHERE tenant_id=? AND kind=? AND starts_at>=? AND starts_at<? AND status<>'cancelled'").bind(auth.tenant_id,kind,bounds.startUtc,bounds.endExclusiveUtc).first();
@@ -74,6 +75,7 @@ async function buildHomePayload(env,auth) {
     today[kind==='visit'?'consultation':kind]={count:Number(count.count),items:rows.results||[]};
   }
   let home_metrics = null;
+  let marketing_flow = null;
   if (auth.role === 'owner') {
     const periods = homeMetricPeriods(bounds.date);
     const [todayAnalytics, recent30Analytics] = await Promise.all([
@@ -82,8 +84,24 @@ async function buildHomePayload(env,auth) {
     ]);
     home_metrics = buildCrmHomeMetrics({ tenantId: auth.tenant_id, todayAnalytics, recent30Analytics,
       trafficSummary: todayAnalytics.trafficSummary, todayDate: bounds.date });
+    const flowAnalysis=todayAnalytics?.flowAnalysis;
+    if (flowAnalysis?.available) marketing_flow={
+      date: bounds.date,
+      period: flowAnalysis.periods,
+      channels: (flowAnalysis.sources || []).slice(0,20).map((source) => ({
+        channel: source.channel,
+        count: Number(source.current?.savedLeads || 0),
+        visits: Number(source.current?.visits || 0),
+        conversion_rate: source.current?.rates?.visitToSaved?.value ?? null,
+        status: source.judgment?.status || flowAnalysis.judgment?.status || 'unavailable',
+        visits_change_pct: source.previous?.visits > 0 ? ((Number(source.current?.visits || 0) - Number(source.previous.visits || 0)) / Number(source.previous.visits)) * 100 : null,
+        receipts_change_pct: source.previous?.savedLeads > 0 ? ((Number(source.current?.savedLeads || 0) - Number(source.previous.savedLeads || 0)) / Number(source.previous.savedLeads)) * 100 : null,
+      })),
+      has_more: Boolean(flowAnalysis.sourcesHasMore),
+    };
   }
-  return {date:bounds.date,timezone:'Asia/Seoul',intake:{pending_count:Number(pending.count)},today,home_metrics};
+  const daily_brief=briefRow ? { date:briefRow.briefing_date,created_at:briefRow.created_at,type:briefRow.type || 'daily_briefing',payload:(() => { try { return JSON.parse(briefRow.payload_json || '{}'); } catch { return {}; } })() } : null;
+  return {date:bounds.date,timezone:'Asia/Seoul',intake:{pending_count:Number(pending.count)},today,home_metrics,daily_brief,marketing_flow};
 }
 
 function id() {
@@ -325,12 +343,23 @@ async function createRecord(request, env, auth, table) {
   return jsonOk({id:recordId,version:version+1});
 }
 
+async function renewSupport(request, env) {
+  const value = await body(request);
+  const supportToken = typeof value?.support_token === 'string' ? value.support_token.trim() : '';
+  if (!supportToken || supportToken.length > 300 || !supportToken.startsWith('crm_support_')) return jsonError(400, 'invalid support token');
+  const platformAuth = await authenticate(env.DB, request);
+  if (!platformAllowed(env, platformAuth)) return jsonError(403, 'platform session required');
+  const supportRequest = new Request(request.url, { method: 'POST', headers: { authorization: `Bearer ${supportToken}` } });
+  return renewSupportSession(env.DB, supportRequest, platformAuth);
+}
+
 async function routeMobileCrm(request, env, ctx) {
   if (!enabled(env)) return jsonError(404, "Not Found");
   const path = new URL(request.url).pathname.replace(/^\/api\/mobile/, "") || "/";
   if (path === "/auth/request-otp" && request.method === "POST") return requestMobileOtp(request, env, ctx);
   if (path === "/auth/verify-otp" && request.method === "POST") return verifyMobileOtp(request, env);
   if (path === "/auth/logout" && request.method === "POST") { await revokeSession(env.DB, request); return jsonOk({ loggedIn: false }); }
+  if (path === '/support/renew' && request.method === 'POST') return renewSupport(request, env);
   const auth = await authenticateSupport(env.DB, request) || await authenticate(env.DB, request);
   if (!auth) return jsonError(401, "authentication required");
   if (path === '/support/end' && request.method === 'POST') return endSupportSession(request, env, auth);

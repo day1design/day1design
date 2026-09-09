@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { authenticateSupport, endSupportSession, isSupportAdmin, supportBlocksExternalSend, startSupportSession } from '../src/lib/crm-support.js';
+import { hashToken } from '../src/lib/crm-auth.js';
+import { handleMobileCrm } from '../src/routes/mobile-crm.js';
+import { authenticateSupport, endSupportSession, isSupportAdmin, renewSupportSession, supportBlocksExternalSend, startSupportSession } from '../src/lib/crm-support.js';
 
 function setup() {
   const sqlite = new DatabaseSync(':memory:');
@@ -62,5 +64,41 @@ test('support start denies other actor and unknown tenant, accepts no reason, an
   env.sqlite.exec("INSERT INTO CrmSupportSessions(id,token_hash,tenant_id,actor_id,reason,expires_at,created_at) VALUES('expired','expiredhash','tenant-b','platform-owner','x','2000-01-01T00:00:00Z','2000-01-01T00:00:00Z')");
   const expired = await authenticateSupport(env.DB, request('/api/mobile/me', 'GET', undefined, 'expired-token'));
   assert.equal(expired, null);
+  env.sqlite.close();
+});
+
+test('support renewal requires the live originating platform session and rotates the token', async () => {
+  const env = setup();
+  const platform = { user_id: 'platform-owner', id: 'platform-owner', email: 'mkt@polarad.co.kr', role: 'owner', tenant_id: 'platform', session_id: 'platform-session' };
+  const runtime = { DB: env.DB, CRM_PLATFORM_EMAILS: 'mkt@polarad.co.kr' };
+  env.sqlite.exec("INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,persistent,created_at) VALUES('platform-session','platform-hash','platform-owner','2099-01-01T00:00:00Z',1,'2026-09-10T00:00:00Z')");
+  const started = await startSupportSession(request('/api/mobile/platform/tenants/tenant-b/support-sessions', 'POST', {}), runtime, platform, 'tenant-b');
+  const oldToken = (await started.json()).token;
+  const renewals = await Promise.all([
+    renewSupportSession(env.DB, request('/api/mobile/support/renew', 'POST', undefined, oldToken), platform),
+    renewSupportSession(env.DB, request('/api/mobile/support/renew', 'POST', undefined, oldToken), platform),
+  ]);
+  assert.deepEqual(renewals.map((response) => response.status).sort(), [200, 409]);
+  const nextToken = (await renewals.find((response) => response.status === 200).json()).token;
+  assert.notEqual(nextToken, oldToken);
+  assert.equal(await authenticateSupport(env.DB, request('/api/mobile/me', 'GET', undefined, oldToken)), null);
+  assert.equal((await authenticateSupport(env.DB, request('/api/mobile/me', 'GET', undefined, nextToken))).tenant_id, 'tenant-b');
+  env.sqlite.prepare("UPDATE CrmSessions SET revoked_at='2026-09-10T00:01:00Z' WHERE id='platform-session'").run();
+  assert.equal((await renewSupportSession(env.DB, request('/api/mobile/support/renew', 'POST', undefined, nextToken), platform)).status, 403);
+  env.sqlite.close();
+});
+
+test('support renewal route authenticates platform bearer and verifies body support token', async () => {
+  const env = setup();
+  const platformToken = 'platform-session-token';
+  const platform = { user_id: 'platform-owner', id: 'platform-owner', email: 'mkt@polarad.co.kr', role: 'owner', tenant_id: 'platform', session_id: 'platform-session' };
+  const runtime = { DB: env.DB, CRM_ENABLED: 'true', CRM_PLATFORM_EMAILS: 'mkt@polarad.co.kr' };
+  env.sqlite.exec("INSERT INTO CrmSessions(id,token_hash,user_id,expires_at,persistent,created_at) VALUES('platform-session','platform-hash','platform-owner','2099-01-01T00:00:00Z',1,'2026-09-10T00:00:00Z')");
+  env.sqlite.prepare("UPDATE CrmSessions SET token_hash=? WHERE id='platform-session'").run(await hashToken(platformToken));
+  const started = await startSupportSession(new Request('https://test.local/api/mobile/platform/tenants/tenant-b/support-sessions', { method: 'POST' }), runtime, platform, 'tenant-b');
+  const supportToken = (await started.json()).token;
+  const response = await handleMobileCrm(new Request('https://test.local/api/mobile/support/renew', { method: 'POST', headers: { authorization: `Bearer ${platformToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ support_token: supportToken }) }), runtime);
+  assert.equal(response.status, 200);
+  assert.notEqual((await response.json()).token, supportToken);
   env.sqlite.close();
 });

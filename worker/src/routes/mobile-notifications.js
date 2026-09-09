@@ -10,6 +10,7 @@ async function readBody(request) { return readCrmJson(request, 16384); }
 
 async function listMobileMessageTemplates(db, actor) {
   const templates = await listNotificationTemplates(db, { actor });
+  if (actor.tenant_id !== 'day1design') return templates;
   const intake = {
     tenant_id: actor.tenant_id,
     kind: 'intake',
@@ -33,7 +34,15 @@ export async function handleMobileNotifications(request, env, auth) {
   const path = url.pathname.slice('/api/mobile'.length);
   const readMatch = path.match(/^\/notifications\/([A-Za-z0-9_-]{1,100})\/read$/);
   if (!['/notifications','/message-templates','/message-preview'].includes(path) && !readMatch) return null;
-  const actor = { id: auth.id || auth.user_id, tenant_id: auth.tenant_id, role: auth.role };
+  const actor = {
+    id: auth.id || auth.user_id,
+    tenant_id: auth.tenant_id,
+    role: auth.role,
+    support_session_id: auth.support_session_id,
+    support_mode: auth.support_mode,
+    support_readonly: auth.support_readonly,
+    token: auth.token,
+  };
   try {
     if (path === '/notifications' && request.method === 'GET') {
       const cursor = url.searchParams.get('cursor');

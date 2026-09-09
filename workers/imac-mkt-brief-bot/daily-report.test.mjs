@@ -26,6 +26,7 @@ test("daily dry-run uses fixture agents and never persists or sends", async () =
     date: "2026-09-08",
     day,
     week,
+    dayCompleteness: { status: "complete", reportDate: "2026-09-08", evidence: "fixture" },
     dryRun: true,
     persist: true,
     imageKey: "briefs/daily/2026-09-08.png",
@@ -48,6 +49,7 @@ test("daily production path runs the three existing expert stages", async () => 
     date: "2026-09-08",
     day,
     week,
+    dayCompleteness: { status: "complete", reportDate: "2026-09-08", evidence: "fixture" },
     dryRun: false,
     persist: false,
     agentRunner: {
@@ -61,6 +63,25 @@ test("daily production path runs the three existing expert stages", async () => 
   assert.equal(result.payload.snapshot.week.range.endDate, "2026-09-08");
 });
 
+test("missing daily ads data is explicit and cannot become a zero performance claim", async () => {
+  let prompt = "";
+  const result = await runDailyExpertAnalysis({
+    date: "2026-09-09",
+    day,
+    week,
+    dayCompleteness: { status: "not_collected", reportDate: "2026-09-09", lastSyncedAt: "2026-09-08T19:00:45+09:00" },
+    persist: false,
+    agentRunner: {
+      interpret: async (p) => { prompt = p; return { ok: true, out: "미집계" }; },
+      audit: async () => ({ ok: true, out: "미집계" }),
+      synthesize: async () => ({ ok: true, out: "미집계" }),
+    },
+  });
+  assert.equal(result.payload.snapshot.dayCompleteness.status, "not_collected");
+  assert.match(prompt, /당일 광고 완결성=not_collected/);
+  assert.match(prompt, /미집계이면 성과를 0으로 해석하지 말고/);
+});
+
 test("CLI dry-run never enters the Telegram send branch", () => {
   const root = mkdtempSync(path.join(tmpdir(), "day1-daily-dry-run-"));
   const out = path.join(root, "out");
@@ -70,12 +91,13 @@ test("CLI dry-run never enters the Telegram send branch", () => {
   try {
     const result = spawnSync(
       process.execPath,
-      [path.join(process.cwd(), "workers/imac-mkt-brief-bot/daily-report.mjs"), "--dry-run", "--from-dir", root, "--out", out],
+      [path.join(process.cwd(), "workers/imac-mkt-brief-bot/daily-report.mjs"), "--dry-run", "--date", "2026-09-08", "--from-dir", root, "--out", out],
       { encoding: "utf8", timeout: 120000, env: { ...process.env, DAY1_MKT_BOT_TOKEN: "must-not-be-used" } },
     );
     assert.equal(result.status, 0, result.stderr);
     const line = result.stdout.trim().split(/\r?\n/).at(-1);
     const summary = JSON.parse(line);
+    assert.equal(summary.date, "2026-09-08");
     assert.equal(summary.sent, false);
     assert.equal(summary.noSend, true);
     assert.equal(summary.dryRun, true);
@@ -83,6 +105,9 @@ test("CLI dry-run never enters the Telegram send branch", () => {
     const expert = readdirSync(out).find((name) => /^expert-daily-\d{8}\.md$/.test(name));
     assert.ok(expert);
     assert.match(readFileSync(path.join(out, expert), "utf8"), /드라이런 전문가 분석/);
+    const html = readdirSync(out).find((name) => /^daily-\d{8}\.html$/.test(name));
+    assert.ok(html);
+    assert.match(readFileSync(path.join(out, html), "utf8"), /Meta 광고 데이터 미집계/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

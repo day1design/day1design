@@ -53,8 +53,11 @@ test("GET home returns tenant-matched home metrics and the same-period analytics
     assert.equal(home.home_metrics.periods.today.start, bounds.date);
     assert.equal(home.home_metrics.periods.recent30.end, bounds.date);
     assert.equal(home.home_metrics.traffic.touches.value, 2);
-    assert.equal(home.home_metrics.traffic.pageviews.value, 3);
+    assert.equal(home.home_metrics.traffic.pageviews.value, null);
+    assert.equal(home.home_metrics.traffic.pageviews.reason, "ga4_property_binding_missing");
     assert.deepEqual(home.home_metrics.periods.today, { start: bounds.date, end: bounds.date, timezone: "Asia/Seoul" });
+    assert.ok(home.marketing_flow);
+    assert.deepEqual(home.marketing_flow.period, analytics.flowAnalysis.periods);
     assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM CrmAnalyticsCache WHERE tenant_id='day1design' AND start_date=? AND end_date=?").get(bounds.date, bounds.date).count, 1);
   } finally { sqlite.close(); }
 });

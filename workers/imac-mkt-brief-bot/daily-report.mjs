@@ -30,6 +30,7 @@ const NO_SEND = flag("--no-send") || flag("--dry-run");
 const FIXTURE_AGENT = flag("--dry-run");
 const FROM_DIR = optOf("--from-dir");
 const OUT_DIR = optOf("--out") || path.join(HERE, "report");
+const SAVE_REPORT = flag("--save-report") && NO_SEND && !FIXTURE_AGENT;
 
 /* ────────────────────────── 환경 ────────────────────────── */
 
@@ -68,9 +69,30 @@ function kstDate(daysAgo = 0) {
   }).format(now);
 }
 
+function requestedDate() {
+  const value = optOf("--date");
+  if (!value) return kstDate(1);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("--date 는 YYYY-MM-DD 이어야 한다");
+  const d = new Date(`${value}T00:00:00Z`);
+  if (d.toISOString().slice(0, 10) !== value) throw new Error("--date 는 유효한 날짜여야 한다");
+  return value;
+}
+
 function dowLabel(ymd) {
   const d = new Date(`${ymd}T12:00:00+09:00`);
   return "일월화수목금토"[d.getDay()];
+}
+
+function adsCompleteness(day, date) {
+  const ads = day?.ads || {};
+  const rows = Array.isArray(ads.daily) ? ads.daily : [];
+  const matched = rows.some((row) => String(row?.date || row?.day || "") === date);
+  return {
+    status: matched ? "complete" : "not_collected",
+    reportDate: date,
+    lastSyncedAt: String(ads.lastSyncedAt || ""),
+    evidence: matched ? "ads.daily" : "ads.daily row missing",
+  };
 }
 
 /* ────────────────────────── 데이터 ────────────────────────── */
@@ -164,7 +186,7 @@ function advise(c, target, mult) {
 
 /* ────────────────────────── HTML ────────────────────────── */
 
-function buildHtml({ yday, day, week }) {
+function buildHtml({ yday, day, week, dayCompleteness }) {
   const dayAds = day.ads || {};
   const weekAds = week.ads || {};
   const dayCamps = [...(dayAds.campaigns || [])].sort(
@@ -174,6 +196,7 @@ function buildHtml({ yday, day, week }) {
     (a, b) => (b.spend || 0) - (a.spend || 0),
   );
   const s = dayAds.summary || {};
+  const dayNotCollected = dayCompleteness?.status === "not_collected";
 
   // 붉게 칠하는 기준은 목표 단가다. 최근 7일 평균은 목표에서 얼마나 벌어져
   // 있는지 보여 주는 참고값으로만 아래에 적는다
@@ -191,7 +214,9 @@ function buildHtml({ yday, day, week }) {
     .map((r) => `${sourceLabel(r.source)} ${r.n}`)
     .join(" · ");
 
-  const dayRows = dayCamps
+  const dayRows = dayNotCollected
+    ? `<tr><td colspan="7" class="dash" style="padding:20px 6px">${esc(yday)} Meta 광고 데이터 미집계 · 마지막 동기화 ${esc(dayCompleteness.lastSyncedAt || "확인 불가")}</td></tr>`
+    : dayCamps
     .map((c) => {
       const goal = isLeadGoal(c);
       const over = goal && c.leads > 0 && c.cpl > target;
@@ -242,6 +267,9 @@ function buildHtml({ yday, day, week }) {
           .filter(Boolean)
           .join(" · ")
       : "지금 손댈 캠페인은 없습니다";
+  const todoText = dayNotCollected
+    ? `Meta ${yday} 광고 데이터 미집계 · 데이터 수집 완료 후 판단합니다`
+    : todo;
 
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -297,17 +325,17 @@ td.act em{font-style:normal;display:block;font-size:12.5px;color:#b6bdc8;margin-
   <div class="sub">${yday}(${dowLabel(yday)}) 하루 · 단위 USD($) · 리드는 Meta 집계 기준 · 오늘 오전 10시 발송</div>
 
   <div class="cards">
-    <div class="card"><b>지출</b><span>${usd(s.spend)}</span></div>
-    <div class="card"><b>노출</b><span>${int(s.impressions)}</span></div>
-    <div class="card"><b>클릭</b><span>${int(s.clicks)}</span></div>
-    <div class="card"><b>Meta 리드</b><span>${int(s.leads)}</span></div>
-    <div class="card accent${dayCpl > target ? " bad" : ""}">
+    <div class="card"><b>지출</b><span>${dayNotCollected ? "미집계" : usd(s.spend)}</span></div>
+    <div class="card"><b>노출</b><span>${dayNotCollected ? "미집계" : int(s.impressions)}</span></div>
+    <div class="card"><b>클릭</b><span>${dayNotCollected ? "미집계" : int(s.clicks)}</span></div>
+    <div class="card"><b>Meta 리드</b><span>${dayNotCollected ? "미집계" : int(s.leads)}</span></div>
+    <div class="card accent${!dayNotCollected && dayCpl > target ? " bad" : ""}">
       <b>리드단가 <i>목표 ${usd(target)}</i></b>
-      <span>${s.leads > 0 ? usd(dayCpl) : "—"}</span>
+      <span>${dayNotCollected ? "미집계" : s.leads > 0 ? usd(dayCpl) : "—"}</span>
     </div>
   </div>
 
-  <div class="todo">오늘 할 일 &nbsp;${todo}</div>
+  <div class="todo">오늘 할 일 &nbsp;${todoText}</div>
 
   <h2>어제 캠페인별<em>지출 순</em></h2>
   <table>
@@ -417,7 +445,7 @@ async function sendPhoto(pngPath, caption) {
 let stage = "generate";
 
 async function main() {
-  const yday = kstDate(1);
+  const yday = requestedDate();
   const { day, week } = await loadData(yday);
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -425,19 +453,21 @@ async function main() {
   const htmlPath = path.join(OUT_DIR, `daily-${stamp}.html`);
   const pngPath = path.join(OUT_DIR, `daily-${stamp}.png`);
 
-  fs.writeFileSync(htmlPath, buildHtml({ yday, day, week }), "utf8");
+  const dayCompleteness = adsCompleteness(day, yday);
+  fs.writeFileSync(htmlPath, buildHtml({ yday, day, week, dayCompleteness }), "utf8");
   await renderPng(htmlPath, pngPath);
 
   const imageKey = `briefs/daily/${yday}.png`;
-  const imageBase64 = NO_SEND || FIXTURE_AGENT ? "" : fs.readFileSync(pngPath).toString("base64");
+  const imageBase64 = (NO_SEND && !SAVE_REPORT) || FIXTURE_AGENT ? "" : fs.readFileSync(pngPath).toString("base64");
   const expert = await runDailyExpertAnalysis({
     date: yday,
     day,
     week,
     dryRun: FIXTURE_AGENT,
-    persist: !NO_SEND && !FIXTURE_AGENT,
+    persist: SAVE_REPORT || (!NO_SEND && !FIXTURE_AGENT),
     imageKey,
     imageBase64,
+    dayCompleteness,
   });
   const expertPath = path.join(OUT_DIR, `expert-daily-${stamp}.md`);
   fs.writeFileSync(
@@ -475,6 +505,7 @@ async function main() {
       messageId,
       dryRun: FIXTURE_AGENT,
       noSend: NO_SEND,
+      saveReport: SAVE_REPORT,
       expertPath,
       expert: {
         status: expert.payload.status,

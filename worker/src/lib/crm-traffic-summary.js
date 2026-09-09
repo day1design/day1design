@@ -3,6 +3,7 @@ import { dateRange } from "./crm-analytics.js";
 const ALLOWED_TENANT = "day1design";
 const TENANT_COLUMNS = ["tenant_id", "TenantId", "TenantID", "CrmTenantId"];
 const DATE_COLUMN = "CreatedAt";
+const GA4_SOURCE_KIND = "ga4";
 
 function safeIdentifier(value) {
   return `"${String(value).replaceAll('"', '""')}"`;
@@ -37,10 +38,67 @@ function rowsOf(result) {
 }
 
 async function queryOne(statement, ...bindings) {
+  if (typeof statement.get === "function") return statement.get(...bindings);
   if (typeof statement.bind === "function") statement = statement.bind(...bindings);
   if (typeof statement.first === "function") return statement.first();
-  if (typeof statement.get === "function") return statement.get(...bindings);
   throw new Error("traffic_query_one_unsupported");
+}
+
+async function queryRun(statement, ...bindings) {
+  if (typeof statement.run === "function" && typeof statement.first !== "function") return statement.run(...bindings);
+  if (typeof statement.bind === "function") statement = statement.bind(...bindings);
+  if (typeof statement.run === "function") return statement.run();
+  throw new Error("traffic_query_run_unsupported");
+}
+
+function validPropertyId(value) {
+  return /^\d{4,20}$/.test(String(value || ""));
+}
+
+function parsePayload(value) {
+  try {
+    const parsed = JSON.parse(String(value || "{}"));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readGa4Snapshot(db, { tenantId, propertyId, startDate, endDate } = {}) {
+  if (!validPropertyId(propertyId)) return { available: false, reason: "ga4_property_binding_missing" };
+  try {
+    const row = await queryOne(db.prepare(`
+      SELECT payload_json,created_at
+      FROM CrmGa4AnalyticsSnapshots
+      WHERE tenant_id=? AND source_kind=? AND source_id=? AND start_date=? AND end_date=?
+      ORDER BY created_at DESC LIMIT 1
+    `), tenantId, GA4_SOURCE_KIND, String(propertyId), startDate, endDate);
+    if (!row) return { available: false, reason: "ga4_tenant_snapshot_missing" };
+    const payload = parsePayload(row.payload_json);
+    const summary = payload?.summary;
+    if (!payload || payload.tenant_id !== String(tenantId) || payload.source_id !== String(propertyId) || payload.source_kind !== GA4_SOURCE_KIND || !summary) {
+      return { available: false, reason: "ga4_snapshot_binding_mismatch" };
+    }
+    return { available: true, createdAt: row.created_at || "", summary };
+  } catch (error) {
+    if (/no such table/i.test(String(error?.message || error))) return { available: false, reason: "ga4_tenant_snapshot_table_missing" };
+    return { available: false, reason: "ga4_snapshot_read_failed" };
+  }
+}
+
+export async function persistCrmGa4Snapshot(db, { tenantId, propertyId, startDate, endDate, summary, createdAt = new Date().toISOString(), id = "" } = {}) {
+  if (String(tenantId) !== ALLOWED_TENANT) throw new Error("ga4_snapshot_tenant_not_authorized");
+  if (!validPropertyId(propertyId)) throw new Error("ga4_snapshot_property_invalid");
+  dateRange(startDate, endDate);
+  if (!summary || typeof summary !== "object") throw new Error("ga4_snapshot_summary_required");
+  const payload = JSON.stringify({ tenant_id: ALLOWED_TENANT, source_kind: GA4_SOURCE_KIND, source_id: String(propertyId), summary });
+  const recordId = String(id || `${ALLOWED_TENANT}:${propertyId}:${startDate}:${endDate}:${createdAt}`);
+  await queryRun(db.prepare(`
+    INSERT INTO CrmGa4AnalyticsSnapshots(id,tenant_id,source_kind,source_id,start_date,end_date,payload_json,created_at)
+    VALUES(?,?,?,?,?,?,?,?)
+    ON CONFLICT(tenant_id,source_kind,source_id,start_date,end_date) DO UPDATE SET payload_json=excluded.payload_json,created_at=excluded.created_at
+  `), recordId, ALLOWED_TENANT, GA4_SOURCE_KIND, String(propertyId), startDate, endDate, payload, createdAt);
+  return { id: recordId, tenant_id: ALLOWED_TENANT, source_kind: GA4_SOURCE_KIND, source_id: String(propertyId), startDate, endDate, createdAt };
 }
 
 async function tableColumns(db, table) {
@@ -74,7 +132,7 @@ async function sourceMeta(db) {
   return { available: true, tenant };
 }
 
-export async function readCrmTrafficSummary(db, { tenantId, startDate, endDate } = {}) {
+export async function readCrmTrafficSummary(db, { tenantId, propertyId = null, startDate, endDate } = {}) {
   if (!tenantId) throw new Error("traffic_summary_tenant_required");
   const range = dateRange(startDate, endDate);
   const base = { tenant_id: String(tenantId), period: { start: startDate, end: endDate, timezone: "Asia/Seoul" }, source: "HeatmapEvents" };
@@ -111,17 +169,20 @@ export async function readCrmTrafficSummary(db, { tenantId, startDate, endDate }
     const touches = numberOrNull(aggregate?.touches);
     const pageviews = numberOrNull(aggregate?.pageviews);
     const avgDuration = numberOrNull(aggregate?.avg_duration);
+    const ga4 = await readGa4Snapshot(db, { tenantId, propertyId, startDate, endDate });
+    const ga4Summary = ga4.available ? ga4.summary : {};
     return {
       ...base,
       available: true,
       traffic: {
-        visitors: metric(null, "traffic_visitors_ga4_unavailable"),
+        visitors: metric(ga4Summary.visitors, ga4.reason || "traffic_visitors_ga4_unavailable"),
         touches: metric(touches, touches === null ? "traffic_touches_read_failed" : null),
         returningVisitors: metric(null, "traffic_returning_visitors_tenant_history_unavailable"),
-        pageviews: metric(pageviews, pageviews === null ? "traffic_pageviews_read_failed" : null),
-        avgDurationSec: metric(avgDuration === null ? null : Math.round(avgDuration * 1000) / 1000, avgDuration === null ? "traffic_avg_duration_insufficient_events" : null),
-        bounceRate: metric(null, "traffic_bounce_rate_ga4_unavailable"),
+        pageviews: metric(ga4Summary.pageviews, ga4.reason || "traffic_pageviews_ga4_unavailable"),
+        avgDurationSec: metric(ga4Summary.avgDurationSec, ga4.reason || "traffic_avg_duration_ga4_unavailable"),
+        bounceRate: metric(ga4Summary.bounceRate, ga4.reason || "traffic_bounce_rate_ga4_unavailable"),
       },
+      ga4: { available: ga4.available, reason: ga4.available ? null : ga4.reason, createdAt: ga4.createdAt || null, propertyId: ga4.available ? String(propertyId) : null },
       definitions: {
         touches: "distinct non-bot page_view SessionId in tenant/date range",
         pageviews: "non-bot page_view rows in tenant/date range",

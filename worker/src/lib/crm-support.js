@@ -7,7 +7,7 @@ function noStore(response) { response.headers.set('cache-control', 'no-store'); 
 function error(status, message) { return noStore(jsonError(status, message)); }
 function ok(data) { return noStore(jsonOk(data)); }
 function bearer(request) { const value = request.headers.get('authorization') || ''; return value.startsWith('Bearer ') ? value.slice(7).trim() : ''; }
-function platformAllowed(env, auth) {
+export function platformAllowed(env, auth) {
   if (auth?.role !== 'owner' || auth?.tenant_id !== 'platform') return false;
   return String(env.CRM_PLATFORM_EMAILS || '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
     .includes(String(auth.email || '').trim().toLowerCase());
@@ -21,6 +21,28 @@ export function isSupportSession(auth) { return Boolean(auth?.support_session_id
 export function isSupportAdmin(auth) { return isSupportSession(auth); }
 export function isSupportReadonly(auth) { return auth?.support_readonly === true; }
 export function supportBlocksExternalSend(auth) { return isSupportSession(auth); }
+
+export async function renewSupportSession(db, request, platformAuth) {
+  const token = bearer(request);
+  if (!token || !platformAuth?.session_id || platformAuth.role !== 'owner' || platformAuth.tenant_id !== 'platform') return error(403, 'platform session required');
+  const now = Date.now();
+  const nowValue = new Date(now).toISOString();
+  const oldHash = await hashToken(token);
+  const platformUserId = platformAuth.user_id || platformAuth.id;
+  const row = await db.prepare(`SELECT s.id session_id,s.tenant_id,s.actor_id,s.reason,t.suspended,u.email actor_email
+    FROM CrmSupportSessions s JOIN CrmTenants t ON t.id=s.tenant_id JOIN CrmUsers u ON u.id=s.actor_id
+    JOIN CrmSessions ps ON ps.id=? AND ps.user_id=u.id
+    WHERE s.token_hash=? AND s.revoked_at IS NULL AND t.suspended=0
+      AND u.id=? AND u.active=1 AND u.tenant_id='platform' AND u.role='owner'
+      AND ps.revoked_at IS NULL AND (ps.persistent=1 OR ps.expires_at>?)`).bind(platformAuth.session_id, oldHash, platformUserId, nowValue).first();
+  if (!row) return error(403, 'support session expired');
+  const nextToken = 'crm_support_' + `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll('-', '');
+  const nextExpires = new Date(now + TTL_MS).toISOString();
+  const changed = await db.prepare('UPDATE CrmSupportSessions SET token_hash=?,expires_at=? WHERE id=? AND token_hash=? AND revoked_at IS NULL').bind(await hashToken(nextToken), nextExpires, row.session_id, oldHash).run();
+  if (!changed?.meta?.changes) return error(409, 'support session renewal conflict');
+  await audit(db, row.tenant_id, row.actor_id, 'tenant.support.renew');
+  return ok({ support_session: { id: row.session_id, tenant_id: row.tenant_id, mode: 'admin', expires_at: nextExpires }, token: nextToken });
+}
 
 export async function startSupportSession(request, env, auth, tenantId) {
   if (!platformAllowed(env, auth)) return error(403, 'platform access required');

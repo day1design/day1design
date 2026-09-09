@@ -10,6 +10,7 @@ database_name = "day1design"
 database_id = "60c293bc-5359-4a94-bc18-c3cda0829366"
 
 [vars]
+GA4_PROPERTY_ID = "537274300"
 ALLOWED_ORIGINS = "https://admin.day1design.co.kr"
 
 [[routes]]

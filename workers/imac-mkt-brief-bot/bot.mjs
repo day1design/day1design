@@ -488,6 +488,8 @@ const COMMON_RULES = [
   "  stats.leads.metaCostPerLead 를 쓰고, 그 기준이라고 밝히세요.",
   "- leads.byStatus 는 아직 운영에서 쓰지 않는 항목이라 거의 전부 '접수대기'입니다.",
   "  이것으로 상담·계약 전환을 논하거나 '데이터가 비어 있다'고 지적하지 마세요.",
+  "- dailyContext.ads.status 가 not_collected 이면 해당 날짜 광고 성과를 0으로 해석하지 마세요.",
+  "  그 날짜는 '미집계'로만 쓰고, comparison 으로 표시된 다른 기간의 숫자를 전날 값처럼 쓰지 마세요.",
 ].join("\n");
 
 function interpretPrompt(question, data, stats) {
@@ -630,15 +632,33 @@ export async function runDailyExpertAnalysis({
   persist = true,
   imageKey = "",
   imageBase64 = "",
+  dayCompleteness = null,
   agentRunner,
 } = {}) {
   if (!day || typeof day !== "object") throw new TypeError("daily_analysis_day_required");
   const reportDate = String(date || day.range?.endDate || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) throw new TypeError("daily_analysis_date_required");
 
-  const data = { ...day, dailyContext: { reportDate, week: week || null } };
-  const stats = analyze(day);
-  const question = `${reportDate} 전날 광고 효율을 분석하고 최근 7일 흐름과 함께 다음 조치를 제안하세요.`;
+  const completeness = dayCompleteness || { status: "unknown", reportDate };
+  const unavailable = completeness.status === "not_collected";
+  const data = {
+    ...day,
+    ...(unavailable
+      ? {
+          ads: { ...day.ads, summary: null, campaigns: [], daily: [] },
+          efficiency: null,
+        }
+      : {}),
+    dailyContext: {
+      reportDate,
+      ads: completeness,
+      comparison: week ? { period: week.range || null, data: week } : null,
+    },
+  };
+  const stats = unavailable
+    ? { dataStatus: "not_collected", reportDate, lastSyncedAt: completeness.lastSyncedAt || "" }
+    : analyze(day);
+  const question = `${reportDate} 전날 광고 효율을 분석하세요. 당일 광고 완결성=${completeness.status}. 미집계이면 성과를 0으로 해석하지 말고 미집계 상태만 설명하세요. 최근 7일은 별도 비교구간으로만 표시하세요.`;
   const runner = agentRunner || {
     interpret: (prompt) => askClaude(prompt),
     audit: (prompt) => askCodex(prompt),
@@ -668,8 +688,8 @@ export async function runDailyExpertAnalysis({
     periodLabel: `전날 ${reportDate} · 최근 7일 비교`,
     startDate: reportDate,
     endDate: reportDate,
-    spend: stats?.rates?.spend ?? day.ads?.summary?.spend ?? 0,
-    leads: stats?.leads?.total ?? day.leads?.total ?? 0,
+    spend: unavailable ? null : stats?.rates?.spend ?? day.ads?.summary?.spend ?? 0,
+    leads: unavailable ? null : stats?.leads?.total ?? day.leads?.total ?? 0,
     metaLeads: stats?.leads?.metaLeads ?? 0,
     metaCostPerLead: stats?.leads?.metaCostPerLead ?? 0,
     bottleneck: stats?.funnel?.bottleneck ? `${stats.funnel.bottleneck.from}→${stats.funnel.bottleneck.at}` : "",
@@ -681,7 +701,7 @@ export async function runDailyExpertAnalysis({
     reportKind: "daily",
     imageKey: String(imageKey || ""),
     imageBase64: String(imageBase64 || ""),
-    snapshot: { reportDate, day, week: week || null, stats, dryRun },
+    snapshot: { reportDate, day, week: week || null, stats, dayCompleteness: completeness, dryRun },
   };
   let saved = null;
   if (persist && !dryRun) saved = await saveRun(payload);
