@@ -41,6 +41,13 @@ async function tableColumns(db) {
   return new Set(rowsOf(result).map((row) => String(row.name || "")));
 }
 
+async function catalogColumns(db) {
+  try {
+    const result = await db.prepare(`PRAGMA table_info("MetaAdsCreativeCatalog")`).all();
+    return new Set(rowsOf(result).map((row) => String(row.name || "")));
+  } catch (_) { return new Set(); }
+}
+
 async function queryAll(db, sql, bindings) {
   let statement = db.prepare(sql);
   if (typeof statement.bind === "function") return statement.bind(...bindings).all();
@@ -95,14 +102,21 @@ export async function readCrmMetaAdCards(db, options = {}) {
   const required = ["CrmTenantId", "Date", "AdId", "AdName", "AdsetId", "AdsetName", "CampaignId", "CampaignName", "CreativeId", "CreativeType", "ThumbnailUrl", "Status", "Impressions", "Clicks", "LinkClicks", "Spend", "Leads"];
   const missing = required.filter((name) => !columns.has(name));
   if (missing.length) return { available: false, reason: "meta_ad_columns_missing", missing, cards: [], nextCursor: null };
+  const catalog = await catalogColumns(db);
+  const catalogEnabled = ["CrmTenantId", "SnapshotDate", "AdId"].every((name) => catalog.has(name));
   const creative = selectedCreativeColumns(columns);
   const dates = Array.from({ length: range.days }, (_, index) => new Date(Date.parse(`${range.startDate}T00:00:00Z`) + index * 86400000).toISOString().slice(0, 10));
   const candidateIds = new Set();
   for (let offset = 0; offset < dates.length; offset += 5) {
     const chunk = dates.slice(offset, offset + 5);
-    const candidateCtes = chunk.map((_, index) => `d${index} AS (SELECT AdId AS adId FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_date_adid WHERE CrmTenantId=? AND Date=? AND AdId>? ORDER BY AdId ASC LIMIT ${limit + 1})`).join(",");
+    const candidateCtes = chunk.map((_, index) => {
+      const metaSource = `SELECT AdId AS adId FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_date_adid WHERE CrmTenantId=? AND Date=? AND AdId>? LIMIT ${limit + 1}`;
+      const catalogSource = `SELECT AdId AS adId FROM MetaAdsCreativeCatalog INDEXED BY idx_meta_creative_catalog_tenant_date_adid WHERE CrmTenantId=? AND SnapshotDate=? AND AdId>? LIMIT ${limit + 1}`;
+      const source = catalogEnabled ? `SELECT adId FROM (${metaSource}) UNION SELECT adId FROM (${catalogSource}) ORDER BY adId ASC LIMIT ${limit + 1}` : metaSource;
+      return `d${index} AS (${source})`;
+    }).join(",");
     const candidateUnion = chunk.map((_, index) => `SELECT adId FROM d${index}`).join(" UNION ALL ");
-    const rows = rowsOf(await queryAll(db, `WITH ${candidateCtes} SELECT DISTINCT adId FROM (${candidateUnion}) ORDER BY adId ASC LIMIT ${limit + 1}`, chunk.flatMap((date) => [tenantId, date, cursor || ""])));
+    const rows = rowsOf(await queryAll(db, `WITH ${candidateCtes} SELECT DISTINCT adId FROM (${candidateUnion}) ORDER BY adId ASC LIMIT ${limit + 1}`, chunk.flatMap((date) => catalogEnabled ? [tenantId, date, cursor || "", tenantId, date, cursor || ""] : [tenantId, date, cursor || ""])));
     for (const row of rows) { const adId = String(row.adId || ""); if (adId) candidateIds.add(adId); }
   }
   const idRows = [...candidateIds].sort().slice(0, limit + 1).map((adId) => ({ adId }));
@@ -112,7 +126,9 @@ export async function readCrmMetaAdCards(db, options = {}) {
   const selected = ids.map(() => "?").join(",");
   const sourceRows = rowsOf(await queryAll(db, `SELECT Date AS date,AdId AS adId,AdName AS adName,AdsetId AS adsetId,AdsetName AS adsetName,CampaignId AS campaignId,CampaignName AS campaignName,CreativeId AS creativeId,CreativeType AS creativeType,ThumbnailUrl AS thumbnailUrl,Status AS status,${Object.entries(creative).map(([key, column]) => column ? `${id(column)} AS creative_${key}` : `NULL AS creative_${key}`).join(",")},Impressions AS impressions,Clicks AS clicks,LinkClicks AS linkClicks,Spend AS spend,Leads AS leads FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_adid_date WHERE CrmTenantId=? AND Date BETWEEN ? AND ? AND AdId IN (${selected}) ORDER BY AdId ASC,Date ASC LIMIT ${MAX_SOURCE_ROWS + 1}`, [tenantId, range.startDate, range.endDate, ...ids]));
   if (sourceRows.length > MAX_SOURCE_ROWS) return { available: false, reason: "meta_ad_source_cap_exceeded", period: { start: range.startDate, end: range.endDate, timezone: "Asia/Seoul" }, cards: [], nextCursor: null };
-  const aggregates = new Map(ids.map((adId) => [adId, { adId, impressions: null, clicks: null, linkClicks: null, spend: null, leads: null, latest: null, daily: new Map(), missing: new Set() }]));
+  const catalogRows = catalogEnabled ? rowsOf(await queryAll(db, `SELECT SnapshotDate AS date,AdId AS adId,AdName AS adName,AdsetId AS adsetId,AdsetName AS adsetName,CampaignId AS campaignId,CampaignName AS campaignName,CreativeId AS creativeId,CreativeType AS creativeType,'' AS thumbnailUrl,Status AS status,NULL AS creative_title,NULL AS creative_body,NULL AS creative_callToAction,NULL AS creative_linkUrl,NULL AS creative_variants,VideoId AS creative_videoId,UpdatedAt AS updatedAt FROM MetaAdsCreativeCatalog INDEXED BY idx_meta_creative_catalog_tenant_adid_date WHERE CrmTenantId=? AND SnapshotDate BETWEEN ? AND ? AND AdId IN (${selected}) ORDER BY AdId ASC,SnapshotDate DESC LIMIT ${MAX_SOURCE_ROWS}`, [tenantId, range.startDate, range.endDate, ...ids])) : [];
+  const aggregates = new Map(ids.map((adId) => [adId, { adId, impressions: null, clicks: null, linkClicks: null, spend: null, leads: null, latest: null, catalogLatest: null, daily: new Map(), missing: new Set() }]));
+  for (const row of catalogRows) { const aggregate = aggregates.get(String(row.adId)); if (aggregate && !aggregate.catalogLatest) aggregate.catalogLatest = row; }
   for (const row of sourceRows) {
     const key = String(row.adId); const aggregate = aggregates.get(key); if (!aggregate) continue;
     const daily = { date: String(row.date) };
@@ -126,7 +142,7 @@ export async function readCrmMetaAdCards(db, options = {}) {
     aggregate.daily.set(String(row.date), daily);
     if (!aggregate.latest || String(row.date) >= String(aggregate.latest.date)) aggregate.latest = row;
   }
-  const page = ids.map((adId) => { const aggregate = aggregates.get(adId); for (const field of aggregate.missing) aggregate[field] = null; const latest = aggregate.latest || {}; return { ...latest, adId, ...aggregate }; });
+  const page = ids.map((adId) => { const aggregate = aggregates.get(adId); for (const field of aggregate.missing) aggregate[field] = null; const latest = { ...(aggregate.latest || {}) }; for (const field of ["adName", "adsetId", "adsetName", "campaignId", "campaignName", "creativeId", "creativeType", "status", "creative_videoId", "updatedAt"]) { if (aggregate.catalogLatest?.[field] !== undefined) latest[field] = aggregate.catalogLatest[field]; } return { ...latest, adId, ...aggregate }; });
   const dailyByAd = new Map(ids.map((adId) => [adId, [...aggregates.get(adId).daily.values()].map((row) => ({ ...row, impressions: finite(row.impressions), clicks: finite(row.clicks), linkClicks: finite(row.linkClicks), spend: finite(row.spend), leads: finite(row.leads) }))]));
   return { available: true, period: { start: range.startDate, end: range.endDate, timezone: "Asia/Seoul" }, limit, cards: page.map((row) => card({ ...row, creativeTitle: row.creative_title, creativeBody: row.creative_body, creativeCallToAction: row.creative_callToAction, creativeLinkUrl: row.creative_linkUrl, creativeVariants: row.creative_variants, creativeVideoId: row.creative_videoId }, dailyByAd.get(String(row.adId)) || [], currency)), nextCursor, creativeColumns: creative, currency };
 }

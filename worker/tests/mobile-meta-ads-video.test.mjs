@@ -6,8 +6,14 @@ import { openLocalD1 } from "../../mobile-crm/server/d1-local.mjs";
 
 function fixture() {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec("CREATE TABLE MetaAdsAd(Date TEXT,AdId TEXT,VideoId TEXT,CrmTenantId TEXT); CREATE INDEX idx_meta_ads_ad_adid_date ON MetaAdsAd(AdId,Date); CREATE INDEX idx_meta_ads_ad_tenant_adid_date ON MetaAdsAd(CrmTenantId,AdId,Date);");
-  sqlite.prepare("INSERT INTO MetaAdsAd(Date,AdId,VideoId,CrmTenantId) VALUES(?,?,?,?)").run("2026-09-10", "101", "video-101", "day1design");
+  sqlite.exec("CREATE TABLE MetaAdsAd(Date TEXT,AdId TEXT,VideoId TEXT,CreativeId TEXT,CrmTenantId TEXT); CREATE INDEX idx_meta_ads_ad_adid_date ON MetaAdsAd(AdId,Date); CREATE INDEX idx_meta_ads_ad_tenant_adid_date ON MetaAdsAd(CrmTenantId,AdId,Date); CREATE TABLE MetaAdsCreativeCatalog(CrmTenantId TEXT,SnapshotDate TEXT,AdId TEXT,CreativeId TEXT,VideoId TEXT); CREATE INDEX idx_meta_creative_catalog_tenant_adid_date ON MetaAdsCreativeCatalog(CrmTenantId,AdId,SnapshotDate);");
+  sqlite.prepare("INSERT INTO MetaAdsAd(Date,AdId,VideoId,CreativeId,CrmTenantId) VALUES(?,?,?,?,?)").run("2026-09-10", "101", "video-101", "creative-101", "day1design");
+  return openLocalD1(sqlite);
+}
+function catalogOnlyFixture() {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec("CREATE TABLE MetaAdsAd(Date TEXT,AdId TEXT,VideoId TEXT,CreativeId TEXT,CrmTenantId TEXT); CREATE INDEX idx_meta_ads_ad_tenant_adid_date ON MetaAdsAd(CrmTenantId,AdId,Date); CREATE TABLE MetaAdsCreativeCatalog(CrmTenantId TEXT,SnapshotDate TEXT,AdId TEXT,CreativeId TEXT,VideoId TEXT); CREATE INDEX idx_meta_creative_catalog_tenant_adid_date ON MetaAdsCreativeCatalog(CrmTenantId,AdId,SnapshotDate);");
+  sqlite.prepare("INSERT INTO MetaAdsCreativeCatalog VALUES(?,?,?,?,?)").run("day1design", "2026-09-10", "202", "creative-202", "video-202");
   return openLocalD1(sqlite);
 }
 function request(path) { return new Request(`https://test.local${path}`); }
@@ -37,4 +43,18 @@ test("enforces owner tenant, validates embed URL, and returns 404 for unavailabl
   assert.equal((await handleMobileMetaAdCards(request(path), token.env, owner, "/meta/ads/101/video-preview")).status, 404);
   const missing = makeEnv(fixture(), null);
   assert.equal((await handleMobileMetaAdCards(request(path), missing.env, owner, "/meta/ads/101/video-preview")).status, 404);
+});
+
+test("resolves catalog-only creative assets through protected preview paths", async () => {
+  const db = catalogOnlyFixture();
+  const calls = [];
+  const env = { DB: db, CRM_CACHE: { async get(key) { calls.push(key); if (key.endsWith("video-202.json")) { const body = JSON.stringify({ kind: "facebook_embed", url: "https://facebook.com/plugins/video.php?video_id=video-202" }); return { size: body.length, body: new Blob([body]).stream() }; } return { size: 12, body: new Blob(["image-bytes"]).stream(), httpMetadata: { contentType: "image/png" } }; } } };
+  const query = "?start=2026-09-10&end=2026-09-10";
+  const image = await handleMobileMetaAdCards(request(`/meta/ads/202/image${query}`), env, owner, "/meta/ads/202/image");
+  assert.equal(image.status, 200);
+  assert.equal(image.headers.get("content-type"), "image/png");
+  const video = await handleMobileMetaAdCards(request(`/meta/ads/202/video-preview${query}`), env, owner, "/meta/ads/202/video-preview");
+  assert.equal(video.status, 200);
+  assert.deepEqual(await video.json(), { kind: "facebook_embed", url: "https://facebook.com/plugins/video.php?video_id=video-202", updatedAt: "" });
+  assert.deepEqual(calls, ["meta-ads/thumbs/creative-202", "meta-ads/video-previews/video-202.json"]);
 });

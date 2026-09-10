@@ -16,6 +16,20 @@ function consume(auth) {
   return ++row.count <= 120;
 }
 
+async function latestMetaCreative(env, tenantId, adId, startDate, endDate) {
+  let insight = null;
+  let catalog = null;
+  try {
+    insight = await env.DB.prepare("SELECT Date,CreativeId,VideoId FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_adid_date WHERE CrmTenantId=? AND AdId=? AND Date BETWEEN ? AND ? ORDER BY Date DESC LIMIT 1").bind(tenantId, adId, startDate, endDate).first();
+  } catch (_) {}
+  try {
+    catalog = await env.DB.prepare("SELECT SnapshotDate AS Date,CreativeId,VideoId FROM MetaAdsCreativeCatalog INDEXED BY idx_meta_creative_catalog_tenant_adid_date WHERE CrmTenantId=? AND AdId=? AND SnapshotDate BETWEEN ? AND ? ORDER BY SnapshotDate DESC LIMIT 1").bind(tenantId, adId, startDate, endDate).first();
+  } catch (_) {}
+  if (!insight) return catalog;
+  if (!catalog) return insight;
+  return String(catalog.Date || '') >= String(insight.Date || '') ? catalog : insight;
+}
+
 export async function handleMobileMetaAdCards(request, env, auth, path) {
   if (path !== '/meta/ads' && !path.startsWith('/meta/ads/')) return null;
   if (!auth?.id || !auth.tenant_id) return jsonError(401, 'authentication required');
@@ -62,10 +76,7 @@ export async function handleMobileMetaAdCards(request, env, auth, path) {
       range = dateRange(videoUrl.searchParams.get('start'), videoUrl.searchParams.get('end'));
       if (range.days > 31) throw new Error('range');
     } catch { return jsonError(400, 'meta_query_invalid'); }
-    let row;
-    try {
-      row = await env.DB.prepare("SELECT VideoId FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_adid_date WHERE CrmTenantId=? AND AdId=? AND Date BETWEEN ? AND ? AND VideoId IS NOT NULL AND TRIM(VideoId)<>'' ORDER BY Date DESC LIMIT 1").bind(auth.tenant_id, videoMatch[1], range.startDate, range.endDate).first();
-    } catch { return jsonError(404, 'meta_video_unavailable'); }
+    const row = await latestMetaCreative(env, auth.tenant_id, videoMatch[1], range.startDate, range.endDate);
     const videoId = String(row?.VideoId || '').trim();
     if (!/^[A-Za-z0-9_-]{1,120}$/.test(videoId) || !env.CRM_CACHE?.get) return jsonError(404, 'meta_video_unavailable');
     const object = await env.CRM_CACHE.get(`meta-ads/video-previews/${videoId}.json`);
@@ -89,7 +100,7 @@ export async function handleMobileMetaAdCards(request, env, auth, path) {
     range = dateRange(imageUrl.searchParams.get('start'), imageUrl.searchParams.get('end'));
     if (range.days > 31) throw new Error('range');
   } catch { return jsonError(400, 'meta_query_invalid'); }
-  const row = await env.DB.prepare('SELECT CreativeId FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_adid_date WHERE CrmTenantId=? AND AdId=? AND Date BETWEEN ? AND ? ORDER BY Date DESC LIMIT 1').bind(auth.tenant_id, match[1], range.startDate, range.endDate).first();
+  const row = await latestMetaCreative(env, auth.tenant_id, match[1], range.startDate, range.endDate);
   if (!row?.CreativeId || !env.CRM_CACHE) return jsonError(404, 'meta_preview_unavailable');
   let key;
   try { key = metaCreativeThumbKey(row.CreativeId); } catch { return jsonError(404, 'meta_preview_unavailable'); }

@@ -43,9 +43,9 @@ const INSIGHT_METRICS = [
 const CAMPAIGN_META_FIELDS =
   "id,name,status,objective,daily_budget,lifetime_budget";
 const AD_META_FIELDS =
-  "id,name,status,creative{id,thumbnail_url,object_type,video_id,image_url,asset_feed_spec{bodies,titles,call_to_action_types,link_urls},object_story_spec{link_data{message,name,link,call_to_action},video_data{message,title,call_to_action}}}";
+  "id,name,status,campaign{id,name},adset{id,name},creative{id,thumbnail_url,object_type,video_id,image_url,asset_feed_spec{bodies,titles,call_to_action_types,link_urls},object_story_spec{link_data{message,name,link,call_to_action},video_data{message,title,call_to_action}}}";
 const AD_META_FIELDS_FALLBACK =
-  "id,name,status,creative{id,thumbnail_url,object_type,video_id,image_url}";
+  "id,name,status,campaign{id,name},adset{id,name},creative{id,thumbnail_url,object_type,video_id,image_url}";
 
 // ─── 어드민 라우터 ────────────────────────────────────────
 export async function handleMetaAds(request, env, ctx) {
@@ -1156,9 +1156,10 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     log.ApiCallsUsed++;
 
     // 5) ad 메타 (status, creative thumbnail)
-    const adMeta = await fetchAdMeta(token, accountId);
-    log.ApiCallsUsed++;
-    await mirrorFetchedCreativeThumbs(env, adRows, adMeta, log).catch(() => 0);
+    const adMeta = await fetchAdMeta(token, accountId, log);
+    await saveMetaCreativeCatalog(env, adMeta, kstToday());
+    const media = createMediaCounters();
+    await mirrorFetchedCreativeThumbs(env, adRows, adMeta, log, media).catch(() => 0);
 
     // 6-10) breakdown 5종 + 시간대 (각 1회)
     const brkPlatform = await fetchBreakdown(
@@ -1254,10 +1255,10 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
           Date: row.date_start,
           AdId: String(row.ad_id || ""),
           AdName: String(row.ad_name || meta.name || ""),
-          AdsetId: String(row.adset_id || ""),
-          AdsetName: String(row.adset_name || ""),
-          CampaignId: String(row.campaign_id || ""),
-          CampaignName: String(row.campaign_name || ""),
+          AdsetId: String(row.adset_id || meta.adset?.id || ""),
+          AdsetName: String(row.adset_name || meta.adset?.name || ""),
+          CampaignId: String(row.campaign_id || meta.campaign?.id || ""),
+          CampaignName: String(row.campaign_name || meta.campaign?.name || ""),
           CreativeId: String(creative.id || ""),
           CreativeType: String(creative.object_type || ""),
           VideoId: String(creative.video_id || ""),
@@ -1327,7 +1328,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       const videoIds = Object.values(adMeta || {})
         .map((m) => m?.creative?.video_id)
         .filter(Boolean);
-      await fillVideoLengths(env, token, videoIds, log);
+      await fillVideoLengths(env, token, videoIds, log, media);
     } catch (e) {
       // 길이를 못 채워도 나머지 지표는 이미 저장됐다. 다음 동기화가 다시 시도한다
       console.error("[day1design/meta-ads] video length fill", e?.message);
@@ -1343,6 +1344,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       range: { startDate, endDate },
       apiCalls: log.ApiCallsUsed,
       recordsUpdated: updated,
+      media,
     });
   } catch (e) {
     const msg = String(e.message || "unknown").slice(0, 400);
@@ -1480,11 +1482,23 @@ async function mirrorCreativeThumb(env, creativeId, key) {
 const PRIVATE_THUMB_MAX_BYTES = 2 * 1024 * 1024;
 const PRIVATE_THUMB_MAX_PER_RUN = 15;
 const PRIVATE_THUMB_CACHE_CONTROL = "private, max-age=604800, immutable";
-const PRIVATE_THUMB_PREVIEW_VERSION = "2";
+const PRIVATE_THUMB_PREVIEW_VERSION = "3";
 const VIDEO_PREVIEW_R2_PREFIX = "meta-ads/video-previews/";
 const VIDEO_PREVIEW_VERSION = "2";
 const VIDEO_PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
 const VIDEO_PREVIEW_MAX_PER_RUN = 15;
+
+function createMediaCounters() {
+  return {
+    thumbnail: { attempted: 0, success: 0, reasonCounts: {} },
+    video: { attempted: 0, success: 0, reasonCounts: {} },
+  };
+}
+
+function mediaReason(stats, kind, reason) {
+  if (!stats?.[kind]) return;
+  stats[kind].reasonCounts[reason] = Number(stats[kind].reasonCounts[reason] || 0) + 1;
+}
 
 function trustedCreativeUrl(value) {
   try {
@@ -1540,7 +1554,7 @@ async function boundedImageBody(response) {
   return bytes.byteLength ? { bytes, contentType } : null;
 }
 
-async function mirrorFetchedCreativeThumb(env, creative, key, log) {
+async function mirrorFetchedCreativeThumb(env, creative, key, log, outcome) {
   if (!env?.CRM_CACHE) return false;
   const privateHead = await env.CRM_CACHE.head(key).catch(() => null);
   const cachedVersion = String(privateHead?.customMetadata?.previewVersion || "");
@@ -1567,22 +1581,35 @@ async function mirrorFetchedCreativeThumb(env, creative, key, log) {
         );
         const data = await res.json();
         if (res.ok) source = trustedCreativeUrl(data?.image_url) || trustedCreativeUrl(data?.thumbnail_url);
+        else outcome.reason = `graph_http_${res.status}`;
       } finally {
         clearTimeout(timer);
       }
-    } catch {}
+    } catch (error) {
+      outcome.reason = error?.name === "AbortError" ? "timeout" : "graph_failed";
+    }
   }
   if (!source) {
     source = trustedCreativeUrl(creative?.image_url);
     if (!source && !token) source = trustedCreativeUrl(creative?.thumbnail_url);
   }
-  if (!source) return false;
+  if (!source) {
+    outcome.reason ||= "no_source";
+    return false;
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
     const response = await fetch(source, { method: "GET", redirect: "error", signal: controller.signal });
+    if (!response.ok) {
+      outcome.reason = `image_http_${response.status}`;
+      return false;
+    }
     const image = await boundedImageBody(response);
-    if (!image) return false;
+    if (!image) {
+      outcome.reason = "image_invalid";
+      return false;
+    }
     await env.CRM_CACHE.put(key, image.bytes, {
       httpMetadata: {
         contentType: image.contentType,
@@ -1591,30 +1618,47 @@ async function mirrorFetchedCreativeThumb(env, creative, key, log) {
       customMetadata: { previewVersion: PRIVATE_THUMB_PREVIEW_VERSION },
     });
     return true;
-  } catch {
+  } catch (error) {
+    outcome.reason = error?.name === "AbortError" ? "timeout" : "r2_put_failed";
     return false;
   } finally {
     clearTimeout(timer);
   }
 }
 
-export async function mirrorFetchedCreativeThumbs(env, adRows, adMeta, log) {
-  if (!env?.CRM_CACHE) return 0;
+export async function mirrorFetchedCreativeThumbs(env, adRows, adMeta, log, stats) {
+  if (!env?.CRM_CACHE) {
+    mediaReason(stats, "thumbnail", "cache_unavailable");
+    return 0;
+  }
   const creatives = new Map();
   for (const row of adRows || []) {
     const creative = adMeta?.[row.ad_id]?.creative;
     const id = String(creative?.id || "");
     if (id && !creatives.has(id)) creatives.set(id, creative);
   }
+  for (const ad of Object.values(adMeta || {})) {
+    const creative = ad?.creative;
+    const id = String(creative?.id || "");
+    if (id && !creatives.has(id)) creatives.set(id, creative);
+  }
   let attempted = 0;
   let copied = 0;
+  let checked = 0;
   for (const [id, creative] of creatives) {
+    if (checked >= 100) break;
+    checked++;
     const key = `${THUMB_R2_PREFIX}${id}`;
     const head = await env.CRM_CACHE.head(key).catch(() => null);
     if (head && String(head?.customMetadata?.previewVersion || "") === PRIVATE_THUMB_PREVIEW_VERSION && validPrivateThumb(head)) continue;
     if (attempted >= PRIVATE_THUMB_MAX_PER_RUN) break;
     attempted++;
-    if (await mirrorFetchedCreativeThumb(env, creative, key, log)) copied++;
+    if (stats?.thumbnail) stats.thumbnail.attempted++;
+    const outcome = { reason: "unknown" };
+    if (await mirrorFetchedCreativeThumb(env, creative, key, log, outcome)) {
+      copied++;
+      if (stats?.thumbnail) stats.thumbnail.success++;
+    } else mediaReason(stats, "thumbnail", outcome.reason);
   }
   return copied;
 }
@@ -1655,19 +1699,33 @@ async function videoPreviewIsFresh(env, videoId) {
   return Number.isFinite(updatedAt) && Date.now() - updatedAt < VIDEO_PREVIEW_TTL_MS;
 }
 
-export async function cacheFacebookVideoPreview(env, videoId, data, now) {
-  if (!env?.CRM_CACHE) return false;
+export async function cacheFacebookVideoPreview(env, videoId, data, now, outcome) {
+  if (!env?.CRM_CACHE) {
+    if (outcome) outcome.reason = "cache_unavailable";
+    return false;
+  }
   const url = extractFacebookVideoEmbedUrl(data?.embed_html, data?.permalink_url);
-  if (!url) return false;
+  if (!url) {
+    if (outcome) outcome.reason = "no_source";
+    return false;
+  }
   const body = JSON.stringify({ kind: "facebook_embed", url, updatedAt: now });
-  if (new TextEncoder().encode(body).byteLength > 8192) return false;
-  await env.CRM_CACHE.put(`${VIDEO_PREVIEW_R2_PREFIX}${videoId}.json`, body, {
-    httpMetadata: {
-      contentType: "application/json",
-      cacheControl: "private, max-age=86400",
-    },
-    customMetadata: { previewVersion: VIDEO_PREVIEW_VERSION, updatedAt: now },
-  });
+  if (new TextEncoder().encode(body).byteLength > 8192) {
+    if (outcome) outcome.reason = "payload_too_large";
+    return false;
+  }
+  try {
+    await env.CRM_CACHE.put(`${VIDEO_PREVIEW_R2_PREFIX}${videoId}.json`, body, {
+      httpMetadata: {
+        contentType: "application/json",
+        cacheControl: "private, max-age=86400",
+      },
+      customMetadata: { previewVersion: VIDEO_PREVIEW_VERSION, updatedAt: now },
+    });
+  } catch {
+    if (outcome) outcome.reason = "r2_put_failed";
+    return false;
+  }
   return true;
 }
 
@@ -1716,7 +1774,7 @@ async function getAdThumbUrls(request, env) {
 //
 // 길이는 광고가 아니라 영상에 붙는 속성이고 바뀌지 않는다. 그래서 한 번 조회한 영상은
 // MetaVideos 에 남겨 두고 다시 묻지 않는다 — Graph 호출은 subrequest 한도를 먹는다.
-async function fillVideoLengths(env, token, videoIds, log) {
+async function fillVideoLengths(env, token, videoIds, log, stats) {
   const wanted = [...new Set((videoIds || []).filter(Boolean))];
   if (!wanted.length) return 0;
 
@@ -1749,13 +1807,21 @@ async function fillVideoLengths(env, token, videoIds, log) {
         `https://graph.facebook.com/${META_API_VERSION}/${id}` +
         `?fields=length,title,embed_html,permalink_url&access_token=${encodeURIComponent(token)}`;
       if (log) log.ApiCallsUsed = Number(log.ApiCallsUsed || 0) + 1;
+      if (stats?.video) stats.video.attempted++;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
       try {
         const res = await fetch(url, { method: "GET", redirect: "error", signal: controller.signal });
         const data = await res.json();
-        if (!res.ok) continue;
-        await cacheFacebookVideoPreview(env, String(id), data, now).catch(() => false);
+        if (!res.ok) {
+          mediaReason(stats, "video", `graph_http_${res.status}`);
+          continue;
+        }
+        const outcome = { reason: "unknown" };
+        const cached = await cacheFacebookVideoPreview(env, String(id), data, now, outcome).catch(() => false);
+        if (cached) {
+          if (stats?.video) stats.video.success++;
+        } else mediaReason(stats, "video", outcome.reason);
         const len = Number(data?.length || 0);
         if (!len) continue;
         stmts.push(
@@ -1771,8 +1837,8 @@ async function fillVideoLengths(env, token, videoIds, log) {
       } finally {
         clearTimeout(timer);
       }
-    } catch (_) {
-      // 영상 하나를 못 받아도 동기화 전체를 멈추지 않는다
+    } catch (error) {
+      mediaReason(stats, "video", error?.name === "AbortError" ? "timeout" : "graph_failed");
     }
   }
 
@@ -1780,30 +1846,117 @@ async function fillVideoLengths(env, token, videoIds, log) {
   return stmts.length;
 }
 
-async function fetchAdMeta(token, accountId) {
+const MAX_AD_META_PAGES = 5;
+const MAX_AD_META_ROWS = 500;
+
+export async function fetchAdMeta(token, accountId, log) {
+  let requests = 0;
   async function fetchFields(fields) {
-    const params = new URLSearchParams({ fields, limit: "500", access_token: token });
-    const url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/ads?${params}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (!res.ok) {
-      const err = new Error(`Meta ads ${res.status}: ${data?.error?.message || "unknown"}`);
-      err.metaError = data?.error;
-      throw err;
+    const params = new URLSearchParams({ fields, limit: "100", access_token: token });
+    let url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/ads?${params}`;
+    const seen = new Set();
+    const rows = [];
+    for (let page = 0; page < MAX_AD_META_PAGES; page++) {
+      if (seen.has(url)) {
+        const err = new Error("Meta ads pagination cursor repeated");
+        err.code = "meta_ads_pagination_cap";
+        throw err;
+      }
+      seen.add(url);
+      if (requests >= MAX_AD_META_PAGES) {
+        const err = new Error("Meta ads pagination request cap reached");
+        err.code = "meta_ads_pagination_cap";
+        throw err;
+      }
+      requests++;
+      if (log) log.ApiCallsUsed = Number(log.ApiCallsUsed || 0) + 1;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      let data;
+      let res;
+      try {
+        res = await fetch(url, { method: "GET", redirect: "error", signal: controller.signal });
+        data = await res.json();
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!res.ok) {
+        const err = new Error(`Meta ads ${res.status}: ${data?.error?.message || "unknown"}`);
+        err.metaError = data?.error;
+        throw err;
+      }
+      rows.push(...(Array.isArray(data?.data) ? data.data : []));
+      if (rows.length > MAX_AD_META_ROWS) {
+        const err = new Error("Meta ads catalog row cap reached");
+        err.code = "meta_ads_pagination_cap";
+        throw err;
+      }
+      const next = String(data?.paging?.next || "");
+      if (!next) return rows;
+      if (!/^https:\/\/graph\.facebook\.com\//i.test(next)) {
+        const err = new Error("Meta ads pagination URL rejected");
+        err.code = "meta_ads_pagination_cap";
+        throw err;
+      }
+      url = next;
     }
-    return data;
+    const err = new Error("Meta ads pagination page cap reached");
+    err.code = "meta_ads_pagination_cap";
+    throw err;
   }
   let data;
   try {
     data = await fetchFields(AD_META_FIELDS);
   } catch (expandedError) {
+    if (expandedError?.code === "meta_ads_pagination_cap") throw expandedError;
     data = await fetchFields(AD_META_FIELDS_FALLBACK).catch(() => { throw expandedError; });
   }
   const map = {};
-  for (const a of data.data || []) {
+  for (const a of data || []) {
     map[a.id] = a;
   }
   return map;
+}
+
+function buildMetaCreativeCatalogStmt(env, ad, snapshotDate) {
+  const now = new Date().toISOString();
+  const creative = ad?.creative || {};
+  const adset = ad?.adset || {};
+  const campaign = ad?.campaign || {};
+  return env.DB.prepare(
+    `INSERT INTO MetaAdsCreativeCatalog
+       (CrmTenantId, SnapshotDate, AdId, AdName, AdsetId, AdsetName,
+        CampaignId, CampaignName, CreativeId, CreativeType, VideoId, Status, UpdatedAt)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(CrmTenantId, SnapshotDate, AdId) DO UPDATE SET
+       AdName=excluded.AdName, AdsetId=excluded.AdsetId, AdsetName=excluded.AdsetName,
+       CampaignId=excluded.CampaignId, CampaignName=excluded.CampaignName,
+       CreativeId=excluded.CreativeId, CreativeType=excluded.CreativeType,
+       VideoId=excluded.VideoId, Status=excluded.Status, UpdatedAt=excluded.UpdatedAt`,
+  ).bind(
+    "day1design",
+    snapshotDate,
+    String(ad?.id || ""),
+    String(ad?.name || ""),
+    String(adset.id || ""),
+    String(adset.name || ""),
+    String(campaign.id || ""),
+    String(campaign.name || ""),
+    String(creative.id || ""),
+    String(creative.object_type || ""),
+    String(creative.video_id || ""),
+    String(ad?.status || ""),
+    now,
+  );
+}
+
+export async function saveMetaCreativeCatalog(env, adMeta, snapshotDate) {
+  const stmts = Object.values(adMeta || {})
+    .filter((ad) => String(ad?.id || ""))
+    .slice(0, MAX_AD_META_ROWS)
+    .map((ad) => buildMetaCreativeCatalogStmt(env, ad, snapshotDate));
+  if (stmts.length) await runBatch(env, stmts);
+  return stmts.length;
 }
 
 function creativeAssetValue(value, key) {

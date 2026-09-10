@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import {
   buildAdStmt,
   cacheFacebookVideoPreview,
+  fetchAdMeta,
   extractFacebookVideoEmbedUrl,
   mirrorFetchedCreativeThumbs,
   normalizeCreativeCopy,
+  saveMetaCreativeCatalog,
 } from "../src/routes/meta-ads.js";
 
 function r2Mock(initial = {}) {
@@ -133,7 +135,7 @@ test("cron thumbnail mirror is private, bounded, allowlisted, and capped per run
     assert.equal(fetched.length, 15);
     assert.ok(fetched.every(({ url, options }) => url.includes("fbcdn.net") && options.redirect === "error" && options.method === "GET"));
     assert.equal(cache.objects.get("meta-ads/thumbs/creative-1").httpMetadata.contentType, "image/webp");
-    assert.equal(cache.objects.get("meta-ads/thumbs/already").customMetadata.previewVersion, "2");
+    assert.equal(cache.objects.get("meta-ads/thumbs/already").customMetadata.previewVersion, "3");
     assert.equal(cache.objects.has("meta-ads/thumbs/creative-16"), false);
   } finally {
     globalThis.fetch = oldFetch;
@@ -177,7 +179,7 @@ test("thumbnail mirror requests the high-resolution Graph URL and upgrades stale
     assert.equal(graphUrl.searchParams.get("thumbnail_height"), "2048");
     assert.equal(fetched[1].url, "https://scontent.fbcdn.net/high.jpg");
     assert.deepEqual([...cache.objects.get("meta-ads/thumbs/creative-high").bytes], [9, 8, 7]);
-    assert.equal(cache.objects.get("meta-ads/thumbs/creative-high").customMetadata.previewVersion, "2");
+    assert.equal(cache.objects.get("meta-ads/thumbs/creative-high").customMetadata.previewVersion, "3");
 
     assert.equal(await mirrorFetchedCreativeThumbs(env, rows, meta), 0);
     assert.equal(fetched.length, 2);
@@ -220,4 +222,64 @@ test("video preview cache stores the bounded private JSON contract", async () =>
     url: "https://www.facebook.com/video/embed/1",
     updatedAt: "2026-09-10T00:00:00.000Z",
   });
+});
+
+test("catalog persistence includes an ad without insights", async () => {
+  const batches = [];
+  const env = { DB: {
+    prepare(sql) {
+      return { bind(...values) { return { sql, values }; } };
+    },
+    async batch(stmts) { batches.push(stmts); },
+  } };
+  const count = await saveMetaCreativeCatalog(env, {
+    "ad-1": { id: "ad-1", name: "Catalog only", status: "PAUSED", campaign: { id: "camp-1", name: "Campaign" }, adset: { id: "set-1", name: "Set" }, creative: { id: "creative-1", object_type: "VIDEO", video_id: "video-1" } },
+  }, "2026-09-10");
+  assert.equal(count, 1);
+  assert.equal(batches[0][0].values[2], "ad-1");
+  assert.equal(batches[0][0].values[8], "creative-1");
+  assert.equal(batches[0][0].values[9], "VIDEO");
+});
+
+test("catalog pagination follows at most five bounded pages", async () => {
+  const oldFetch = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    const page = urls.length;
+    return new Response(JSON.stringify({ data: [{ id: `ad-${page}` }], paging: page < 2 ? { next: `https://graph.facebook.com/v18.0/page-${page + 1}` } : undefined }), { status: 200 });
+  };
+  try {
+    const result = await fetchAdMeta("token", "123", { ApiCallsUsed: 0 });
+    assert.equal(Object.keys(result).length, 2);
+    assert.equal(urls.length, 2);
+    const first = new URL(urls[0]);
+    assert.equal(first.searchParams.get("limit"), "100");
+    assert.match(first.searchParams.get("fields"), /campaign\{id,name\}/);
+    assert.match(first.searchParams.get("fields"), /adset\{id,name\}/);
+  } finally { globalThis.fetch = oldFetch; }
+});
+
+test("catalog pagination rejects repeated cursors and a sixth page", async () => {
+  const oldFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => new Response(JSON.stringify({ data: [{ id: "ad-1" }], paging: { next: String(url) } }), { status: 200 });
+    await assert.rejects(() => fetchAdMeta("token", "123", { ApiCallsUsed: 0 }), (error) => error.code === "meta_ads_pagination_cap");
+
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return new Response(JSON.stringify({ data: [{ id: `ad-${calls}` }], paging: { next: `https://graph.facebook.com/v18.0/page-${calls + 1}` } }), { status: 200 });
+    };
+    await assert.rejects(() => fetchAdMeta("token", "123", { ApiCallsUsed: 0 }), (error) => error.code === "meta_ads_pagination_cap");
+    assert.equal(calls, 5);
+  } finally { globalThis.fetch = oldFetch; }
+});
+
+test("catalog pagination rejects a response beyond the 500 row cap", async () => {
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => new Response(JSON.stringify({ data: Array.from({ length: 501 }, (_, index) => ({ id: `ad-${index}` })) }), { status: 200 });
+  try {
+    await assert.rejects(() => fetchAdMeta("token", "123", { ApiCallsUsed: 0 }), (error) => error.code === "meta_ads_pagination_cap");
+  } finally { globalThis.fetch = oldFetch; }
 });
