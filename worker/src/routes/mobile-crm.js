@@ -38,6 +38,16 @@ function text(value, max = 500) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function sourceStatus({ visits = null, saved = null, qualityIssue = false } = {}) {
+  const savedNumber = saved === null || saved === undefined ? null : Number(saved);
+  const visitNumber = visits === null || visits === undefined ? null : Number(visits);
+  if (Number.isFinite(savedNumber) && savedNumber >= 1) return "receipt";
+  if (qualityIssue || !Number.isFinite(visitNumber) || !Number.isFinite(savedNumber)) return "quality";
+  if (visitNumber >= 100) return "none";
+  if (visitNumber >= 1) return "sample";
+  return "inactive";
+}
+
 function iso(value) {
   if(typeof value!=="string" || !/(Z|[+-]\d{2}:\d{2})$/.test(value))return "";
   const candidate = new Date(value);
@@ -90,12 +100,13 @@ async function buildHomePayload(env,auth) {
       recent30: { value: Number(recent30Submissions?.count || 0), reason: null },
     };
     try {
-      const [todayAnalytics, recent30Analytics] = await Promise.all([
+      const [todayAnalytics, recent30Analytics, trafficSummary] = await Promise.all([
         cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: bounds.date, endDate: bounds.date }),
         cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: periods.recent30.start, endDate: bounds.date }),
+        readCrmTrafficSummary(env.DB, { tenantId: auth.tenant_id, propertyId: env.GA4_PROPERTY_ID, startDate: bounds.date, endDate: bounds.date }).catch(() => null),
       ]);
       home_metrics = buildCrmHomeMetrics({ tenantId: auth.tenant_id, todayAnalytics, recent30Analytics,
-        trafficSummary: todayAnalytics.trafficSummary, todayDate: bounds.date });
+        trafficSummary, todayDate: bounds.date });
       home_metrics.submissions = submissions;
       const flowAnalysis=todayAnalytics?.flowAnalysis;
       if (flowAnalysis?.available) marketing_flow={
@@ -107,6 +118,11 @@ async function buildHomePayload(env,auth) {
           visits: Number(source.current?.visits || 0),
           conversion_rate: source.current?.rates?.visitToSaved?.value ?? null,
           status: source.judgment?.status || flowAnalysis.judgment?.status || 'unavailable',
+          source_status: sourceStatus({
+            visits: source.current?.visits,
+            saved: source.current?.savedLeads,
+            qualityIssue: source.judgment?.status === 'unavailable' || flowAnalysis.judgment?.status === 'unavailable',
+          }),
           visits_change_pct: source.previous?.visits > 0 ? ((Number(source.current?.visits || 0) - Number(source.previous.visits || 0)) / Number(source.previous.visits)) * 100 : null,
           receipts_change_pct: source.previous?.savedLeads > 0 ? ((Number(source.current?.savedLeads || 0) - Number(source.previous.savedLeads || 0)) / Number(source.previous.savedLeads)) * 100 : null,
         })),
