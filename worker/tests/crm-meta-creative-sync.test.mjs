@@ -6,6 +6,7 @@ import {
   fetchAdMeta,
   extractFacebookVideoEmbedUrl,
   mirrorFetchedCreativeThumbs,
+  cleanupInactiveMediaAssets,
   normalizeCreativeCopy,
   saveMetaCreativeCatalog,
 } from "../src/routes/meta-ads.js";
@@ -23,10 +24,32 @@ function r2Mock(initial = {}) {
       const value = objects.get(key);
       return value ? { body: value.bytes } : null;
     },
+    delete: async (key) => { objects.delete(key); },
     put: async (key, body, options) => {
       const bytes = body instanceof Uint8Array ? body : new Uint8Array(await new Response(body).arrayBuffer());
       objects.set(key, { bytes, httpMetadata: options.httpMetadata, customMetadata: options.customMetadata });
     },
+  };
+}
+
+function inventoryDb(inventory, leaseOwner = "lease-1", leaseExpiry = "2099-01-01T00:00:00.000Z") {
+  const deleted = [];
+  return {
+    deleted,
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            sql,
+            values,
+            async all() { return { results: inventory }; },
+            async first() { return { OwnerId: leaseOwner, ExpiresAt: leaseExpiry }; },
+            async run() { deleted.push(values); return { meta: { changes: 1 } }; },
+          };
+        },
+      };
+    },
+    async batch() {},
   };
 }
 
@@ -124,6 +147,7 @@ test("cron thumbnail mirror is private, bounded, allowlisted, and capped per run
     });
     const rows = Array.from({ length: 17 }, (_, index) => ({ ad_id: `ad-${index}` }));
     const meta = Object.fromEntries(rows.map((row, index) => [row.ad_id, {
+      status: "ACTIVE", effective_status: "ACTIVE", adset: { status: "ACTIVE", effective_status: "ACTIVE" }, campaign: { status: "ACTIVE", effective_status: "ACTIVE" },
       creative: {
         id: index === 0 ? "already" : `creative-${index}`,
         thumbnail_url: index === 16 ? "https://evil.test/nope" : `https://scontent.fbcdn.net/${index}.jpg`,
@@ -167,7 +191,7 @@ test("thumbnail mirror requests the high-resolution Graph URL and upgrades stale
     });
     const env = { CRM_CACHE: cache, META_AD_ACCESS_TOKEN: "test-token" };
     const rows = [{ ad_id: "ad-high" }];
-    const meta = { "ad-high": { creative: {
+    const meta = { "ad-high": { status: "ACTIVE", effective_status: "ACTIVE", adset: { status: "ACTIVE", effective_status: "ACTIVE" }, campaign: { status: "ACTIVE", effective_status: "ACTIVE" }, creative: {
       id: "creative-high",
       thumbnail_url: "https://scontent.fbcdn.net/low-local.jpg",
       image_url: "https://scontent.fbcdn.net/high-local.jpg",
@@ -186,6 +210,53 @@ test("thumbnail mirror requests the high-resolution Graph URL and upgrades stale
   } finally {
     globalThis.fetch = oldFetch;
   }
+});
+
+test("image inventory protects shared active media and removes only inactive media", async () => {
+  const cache = r2Mock({
+    "meta-ads/thumbs/shared": { bytes: new Uint8Array([1]), httpMetadata: { contentType: "image/jpeg" }, customMetadata: {} },
+    "meta-ads/thumbs/off": { bytes: new Uint8Array([2]), httpMetadata: { contentType: "image/jpeg" }, customMetadata: {} },
+  });
+  const db = inventoryDb([
+    { CrmTenantId: "day1design", Kind: "image", MediaId: "shared", R2Key: "meta-ads/thumbs/shared", State: "ready", UpdatedAt: "2026-09-01" },
+    { CrmTenantId: "day1design", Kind: "image", MediaId: "off", R2Key: "meta-ads/thumbs/off", State: "ready", UpdatedAt: "2026-09-02" },
+  ]);
+  const result = await cleanupInactiveMediaAssets({ DB: db, CRM_CACHE: cache }, {
+    on: { effective_status: "ACTIVE", adset: { effective_status: "ACTIVE" }, campaign: { effective_status: "ACTIVE" }, creative: { id: "shared" } },
+    off: { effective_status: "PAUSED", adset: { effective_status: "ACTIVE" }, campaign: { effective_status: "ACTIVE" }, creative: { id: "off" } },
+  }, { leaseOwner: "lease-1" });
+  assert.equal(result.deleted, 1);
+  assert.equal(cache.objects.has("meta-ads/thumbs/shared"), true);
+  assert.equal(cache.objects.has("meta-ads/thumbs/off"), false);
+});
+
+test("failed or overlapping sync cannot clean media, and reactivation protects it", async () => {
+  const inventory = [{ CrmTenantId: "day1design", Kind: "image", MediaId: "reactivated", R2Key: "meta-ads/thumbs/reactivated", State: "ready", UpdatedAt: "2026-09-01" }];
+  const cache = r2Mock({ "meta-ads/thumbs/reactivated": { bytes: new Uint8Array([1]), httpMetadata: { contentType: "image/jpeg" }, customMetadata: {} } });
+  const noLease = await cleanupInactiveMediaAssets({ DB: inventoryDb(inventory, "other"), CRM_CACHE: cache }, {}, { leaseOwner: "lease-1" });
+  assert.equal(noLease.reason, "lease_required");
+  assert.equal(cache.objects.has("meta-ads/thumbs/reactivated"), true);
+  const expired = await cleanupInactiveMediaAssets({ DB: inventoryDb(inventory, "lease-1", "2000-01-01T00:00:00.000Z"), CRM_CACHE: cache }, {}, { leaseOwner: "lease-1" });
+  assert.equal(expired.reason, "lease_required");
+  const unknown = await cleanupInactiveMediaAssets({ DB: inventoryDb(inventory), CRM_CACHE: cache }, {
+    ad: { creative: { id: "unknown-status" } },
+  }, { leaseOwner: "lease-1" });
+  assert.equal(unknown.reason, "status_unknown");
+  const active = await cleanupInactiveMediaAssets({ DB: inventoryDb(inventory), CRM_CACHE: cache }, {
+    ad: { effective_status: "ACTIVE", adset: { effective_status: "ACTIVE" }, campaign: { effective_status: "ACTIVE" }, creative: { id: "reactivated" } },
+  }, { leaseOwner: "lease-1" });
+  assert.equal(active.deleted, 0);
+  assert.equal(cache.objects.has("meta-ads/thumbs/reactivated"), true);
+});
+
+test("inventory sentinel prevents cleanup beyond the bounded snapshot", async () => {
+  const inventory = Array.from({ length: 501 }, (_, index) => ({
+    CrmTenantId: "day1design", Kind: "image", MediaId: `old-${index}`, R2Key: `meta-ads/thumbs/old-${index}`, State: "ready", UpdatedAt: "2026-09-01",
+  }));
+  const cache = r2Mock();
+  const result = await cleanupInactiveMediaAssets({ DB: inventoryDb(inventory), CRM_CACHE: cache }, {}, { leaseOwner: "lease-1" });
+  assert.equal(result.reason, "inventory_cap");
+  assert.equal(result.deleted, 0);
 });
 
 test("video preview extraction accepts only official Facebook iframe URLs", () => {
@@ -241,6 +312,18 @@ test("catalog persistence includes an ad without insights", async () => {
   assert.equal(batches[0][0].values[9], "VIDEO");
 });
 
+test("catalog status stays unknown when a parent effective status is missing", async () => {
+  let statement;
+  const env = { DB: {
+    prepare(sql) { return { bind(...values) { statement = { sql, values }; return statement; } }; },
+    async batch() {},
+  } };
+  await saveMetaCreativeCatalog(env, {
+    "ad-unknown": { id: "ad-unknown", effective_status: "ACTIVE", campaign: { effective_status: "ACTIVE" }, adset: {}, creative: { id: "creative-unknown" } },
+  }, "2026-09-10");
+  assert.equal(statement.values[11], "");
+});
+
 test("catalog pagination follows at most five bounded pages", async () => {
   const oldFetch = globalThis.fetch;
   const urls = [];
@@ -255,8 +338,8 @@ test("catalog pagination follows at most five bounded pages", async () => {
     assert.equal(urls.length, 2);
     const first = new URL(urls[0]);
     assert.equal(first.searchParams.get("limit"), "100");
-    assert.match(first.searchParams.get("fields"), /campaign\{id,name\}/);
-    assert.match(first.searchParams.get("fields"), /adset\{id,name\}/);
+    assert.match(first.searchParams.get("fields"), /campaign\{id,name,/);
+    assert.match(first.searchParams.get("fields"), /adset\{id,name,/);
   } finally { globalThis.fetch = oldFetch; }
 });
 

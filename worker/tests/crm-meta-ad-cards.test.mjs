@@ -6,7 +6,7 @@ import { metaCreativeThumbKey } from "../src/lib/crm-meta-preview.js";
 
 function fixture() {
   const db = new DatabaseSync(":memory:");
-  db.exec(`CREATE TABLE MetaAdsAd (CrmTenantId TEXT NOT NULL DEFAULT 'day1design',Date TEXT,AdId TEXT,AdName TEXT,AdsetId TEXT,AdsetName TEXT,CampaignId TEXT,CampaignName TEXT,CreativeId TEXT,CreativeType TEXT,ThumbnailUrl TEXT,Status TEXT,CreativeTitle TEXT,CreativeBody TEXT,CreativeCallToAction TEXT,CreativeLinkUrl TEXT,CreativeVariants TEXT,Impressions INTEGER,Clicks INTEGER,LinkClicks INTEGER,Spend REAL,Leads INTEGER); CREATE INDEX idx_meta_ads_ad_date_adid ON MetaAdsAd(Date,AdId); CREATE INDEX idx_meta_ads_ad_adid_date ON MetaAdsAd(AdId,Date); CREATE INDEX idx_meta_ads_ad_tenant_date_adid ON MetaAdsAd(CrmTenantId,Date,AdId); CREATE INDEX idx_meta_ads_ad_tenant_adid_date ON MetaAdsAd(CrmTenantId,AdId,Date); CREATE TABLE MetaAdsCreativeCatalog (CrmTenantId TEXT NOT NULL,SnapshotDate TEXT NOT NULL,AdId TEXT NOT NULL,AdName TEXT NOT NULL DEFAULT '',AdsetId TEXT NOT NULL DEFAULT '',AdsetName TEXT NOT NULL DEFAULT '',CampaignId TEXT NOT NULL DEFAULT '',CampaignName TEXT NOT NULL DEFAULT '',CreativeId TEXT NOT NULL DEFAULT '',CreativeType TEXT NOT NULL DEFAULT '',VideoId TEXT NOT NULL DEFAULT '',Status TEXT NOT NULL DEFAULT '',UpdatedAt TEXT NOT NULL DEFAULT ''); CREATE INDEX idx_meta_creative_catalog_tenant_date_adid ON MetaAdsCreativeCatalog(CrmTenantId,SnapshotDate,AdId); CREATE INDEX idx_meta_creative_catalog_tenant_adid_date ON MetaAdsCreativeCatalog(CrmTenantId,AdId,SnapshotDate);`);
+  db.exec(`CREATE TABLE MetaAdsAd (CrmTenantId TEXT NOT NULL DEFAULT 'day1design',Date TEXT,AdId TEXT,AdName TEXT,AdsetId TEXT,AdsetName TEXT,CampaignId TEXT,CampaignName TEXT,CreativeId TEXT,CreativeType TEXT,ThumbnailUrl TEXT,Status TEXT,CreativeTitle TEXT,CreativeBody TEXT,CreativeCallToAction TEXT,CreativeLinkUrl TEXT,CreativeVariants TEXT,Impressions INTEGER,Clicks INTEGER,LinkClicks INTEGER,Spend REAL,Leads INTEGER); CREATE INDEX idx_meta_ads_ad_date_adid ON MetaAdsAd(Date,AdId); CREATE INDEX idx_meta_ads_ad_adid_date ON MetaAdsAd(AdId,Date); CREATE INDEX idx_meta_ads_ad_tenant_date_adid ON MetaAdsAd(CrmTenantId,Date,AdId); CREATE INDEX idx_meta_ads_ad_tenant_adid_date ON MetaAdsAd(CrmTenantId,AdId,Date); CREATE TABLE MetaAdsCreativeCatalog (CrmTenantId TEXT NOT NULL,SnapshotDate TEXT NOT NULL,AdId TEXT NOT NULL,AdName TEXT NOT NULL DEFAULT '',AdsetId TEXT NOT NULL DEFAULT '',AdsetName TEXT NOT NULL DEFAULT '',CampaignId TEXT NOT NULL DEFAULT '',CampaignName TEXT NOT NULL DEFAULT '',CreativeId TEXT NOT NULL DEFAULT '',CreativeType TEXT NOT NULL DEFAULT '',VideoId TEXT NOT NULL DEFAULT '',Status TEXT NOT NULL DEFAULT '',UpdatedAt TEXT NOT NULL DEFAULT ''); CREATE INDEX idx_meta_creative_catalog_tenant_date_adid ON MetaAdsCreativeCatalog(CrmTenantId,SnapshotDate,AdId); CREATE INDEX idx_meta_creative_catalog_tenant_adid_date ON MetaAdsCreativeCatalog(CrmTenantId,AdId,SnapshotDate); CREATE INDEX idx_meta_creative_catalog_tenant_snapshot_status_adid ON MetaAdsCreativeCatalog(CrmTenantId,SnapshotDate,Status,AdId);`);
   db.exec("ALTER TABLE MetaAdsAd ADD COLUMN VideoId TEXT");
   const add = db.prepare("INSERT INTO MetaAdsAd (Date,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,ThumbnailUrl,Status,CreativeTitle,CreativeBody,CreativeCallToAction,CreativeLinkUrl,CreativeVariants,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   add.run("2026-09-10", "101", "Ad 1", "set-1", "Set", "camp-1", "Campaign", "cr-1", "IMAGE", "https://r2.test/a.webp", "ACTIVE", "제목", "본문", "상담하기", "https://example.test", JSON.stringify([{ title: "제목", body: "본문" }, { title: "대체 제목", body: "대체 본문" }]), 1000, 100, 80, 50, 5);
@@ -45,14 +45,23 @@ test("does not mix rows from another tenant", async () => {
   assert.equal(result.cards.some((card) => card.adId === "099"), false);
 });
 
+test("uses latest catalog active set before carousel pagination", async () => {
+  const db = fixture();
+  db.prepare("INSERT INTO MetaAdsCreativeCatalog (CrmTenantId,SnapshotDate,AdId,AdName,CreativeId,CreativeType,Status) VALUES(?,?,?,?,?,?,?)").run("day1design", "2026-09-10", "101", "active", "cr-1", "IMAGE", "ACTIVE");
+  db.prepare("INSERT INTO MetaAdsCreativeCatalog (CrmTenantId,SnapshotDate,AdId,AdName,CreativeId,CreativeType,Status) VALUES(?,?,?,?,?,?,?)").run("day1design", "2026-09-10", "102", "paused", "cr-2", "IMAGE", "PAUSED");
+  const result = await readCrmMetaAdCards(db, { tenantId: "day1design", startDate: "2026-09-09", endDate: "2026-09-10", limit: 20 });
+  assert.deepEqual(result.cards.map((item) => item.adId), ["101"]);
+  assert.equal(result.cards[0].status, "ACTIVE");
+});
+
 test("keeps a new catalog ad visible when Insights has no row", async () => {
   const db = fixture();
   db.prepare("INSERT INTO MetaAdsCreativeCatalog (CrmTenantId,SnapshotDate,AdId,AdName,CreativeId,CreativeType,Status,UpdatedAt) VALUES(?,?,?,?,?,?,?,?)")
-    .run("day1design", "2026-09-10", "099", "신규 광고", "creative-099", "VIDEO", "PAUSED", "2026-09-10T04:00:00Z");
+    .run("day1design", "2026-09-10", "099", "신규 광고", "creative-099", "VIDEO", "ACTIVE", "2026-09-10T04:00:00Z");
   const result = await readCrmMetaAdCards(db, { tenantId: "day1design", startDate: "2026-09-10", endDate: "2026-09-10" });
   const card = result.cards.find((item) => item.adId === "099");
   assert.equal(card.adName, "신규 광고");
-  assert.equal(card.status, "PAUSED");
+  assert.equal(card.status, "ACTIVE");
   assert.equal(card.metrics.impressions, null);
   assert.deepEqual(card.daily, []);
 });
@@ -60,7 +69,7 @@ test("keeps a new catalog ad visible when Insights has no row", async () => {
 test("catalog metadata does not overwrite metrics from overlapping Insights", async () => {
   const db = fixture();
   db.prepare("INSERT INTO MetaAdsCreativeCatalog (CrmTenantId,SnapshotDate,AdId,AdName,CreativeId,CreativeType,Status,UpdatedAt) VALUES(?,?,?,?,?,?,?,?)")
-    .run("day1design", "2026-09-10", "101", "최신 이름", "creative-latest", "VIDEO", "PAUSED", "2026-09-10T04:00:00Z");
+    .run("day1design", "2026-09-10", "101", "최신 이름", "creative-latest", "VIDEO", "ACTIVE", "2026-09-10T04:00:00Z");
   const card = (await readCrmMetaAdCards(db, { tenantId: "day1design", startDate: "2026-09-10", endDate: "2026-09-10" })).cards.find((item) => item.adId === "101");
   assert.equal(card.adName, "최신 이름");
   assert.equal(card.metrics.impressions, 1000);
@@ -89,7 +98,7 @@ test("hydrates latest catalog metadata for 20 ads across 31 snapshots", async ()
   const catalog = db.prepare("INSERT INTO MetaAdsCreativeCatalog (CrmTenantId,SnapshotDate,AdId,AdName,CreativeId,Status) VALUES(?,?,?,?,?,?)");
   for (let day = 0; day < 31; day += 1) {
     const date = new Date(Date.parse("2026-08-11T00:00:00Z") + day * 86400000).toISOString().slice(0, 10);
-    for (let ad = 1; ad <= 20; ad += 1) catalog.run("day1design", date, `cat-${ad}`, `ad-${ad}-${date}`, `creative-${ad}`, "PAUSED");
+    for (let ad = 1; ad <= 20; ad += 1) catalog.run("day1design", date, `cat-${ad}`, `ad-${ad}-${date}`, `creative-${ad}`, "ACTIVE");
   }
   const result = await readCrmMetaAdCards(db, { tenantId: "day1design", startDate: "2026-08-11", endDate: "2026-09-10", limit: 20, cursor: "102" });
   assert.equal(result.cards.length, 20);
@@ -107,6 +116,25 @@ test("uses strict keyset cursors and singleflight cache", async () => {
   const next = await readCrmMetaAdCards(db, { ...query, cursor: a.nextCursor });
   assert.equal(next.cards.length, 1);
   assert.equal(next.cards[0].adId, "102");
+});
+
+test("singleflight cache executes one read, then zero reads within TTL", async () => {
+  const base = fixture();
+  let calls = 0;
+  const db = { prepare(sql) {
+    const statement = base.prepare(sql);
+    return {
+      all(...args) { calls += 1; return statement.all(...args); },
+      ...(typeof statement.bind === "function" ? { bind(...args) { const bound = statement.bind(...args); return { all() { calls += 1; return bound.all(); } }; } } : {}),
+    };
+  } };
+  const query = { tenantId: "day1design", startDate: "2026-09-09", endDate: "2026-09-10", limit: 1, now: 1000 };
+  await Promise.all([readCachedCrmMetaAdCards(db, query), readCachedCrmMetaAdCards(db, query)]);
+  const afterFirst = calls;
+  await readCachedCrmMetaAdCards(db, { ...query, now: 1001 });
+  assert.equal(calls, afterFirst);
+  await readCachedCrmMetaAdCards(db, { ...query, now: 301001 });
+  assert.ok(calls > afterFirst);
 });
 
 test("uses the date and ad index for bounded candidate selection", () => {

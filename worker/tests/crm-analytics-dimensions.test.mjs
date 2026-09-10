@@ -50,16 +50,14 @@ test("tenant-scoped HeatmapEvents provide visitor dimensions without converted-s
   sqlite.close();
 });
 
-test("visitor source falls back to InflowApp when UTM source is empty", async () => {
+test("traffic source falls back to InflowApp when UTM source is empty", async () => {
   const { sqlite, db } = dbWith(`
-    CREATE TABLE HeatmapEvents (id TEXT, tenant_id TEXT, Page TEXT, EventType TEXT, Device TEXT, SessionId TEXT, UtmSource TEXT, InflowApp TEXT, UtmCampaign TEXT, IsBot INTEGER, CreatedAt TEXT);
-    CREATE INDEX heatmap_tenant_date ON HeatmapEvents(tenant_id, CreatedAt);
-    INSERT INTO HeatmapEvents VALUES ('h1','t1','/','page_view','mobile','s1','','홈페이지', '',0,'2026-09-01T01:00:00Z');
-    INSERT INTO HeatmapEvents VALUES ('h2','t1','/','page_view','mobile','s2','google','카카오', 'spring',0,'2026-09-01T01:01:00Z');
-    INSERT INTO HeatmapEvents VALUES ('h3','t2','/','page_view','mobile','other','','다른업체', '',0,'2026-09-01T01:00:00Z');
+    CREATE TABLE HeatmapEvents (id TEXT, CrmTenantId TEXT, Page TEXT, EventType TEXT, Device TEXT, SessionId TEXT, UtmSource TEXT, InflowApp TEXT, IsBot INTEGER, CreatedAt TEXT);
+    CREATE INDEX heatmap_tenant_date ON HeatmapEvents(CrmTenantId, CreatedAt);
+    INSERT INTO HeatmapEvents VALUES ('h1','t1','/','page_view','mobile','s1','','instagram-app',0,'2026-09-01T01:00:00Z');
   `);
   const result = await readCrmAnalyticsDimensions(db, { tenantId: "t1", startDate: "2026-09-01", endDate: "2026-09-01" });
-  assert.deepEqual(result.traffic.dimensions.source.values, [{ value: "google", count: 1 }, { value: "홈페이지", count: 1 }]);
+  assert.deepEqual(result.traffic.dimensions.source.values, [{ value: "instagram-app", count: 1 }]);
   sqlite.close();
 });
 
@@ -86,6 +84,24 @@ test("Meta dimensions aggregate real tenant rows and calculate rates", async () 
   assert.equal(result.meta.dimensions.campaigns.values[0].id, "c1");
   assert.equal(result.meta.dimensions.adsets.values[0].name, "Adset 1");
   assert.equal(result.meta.dimensions.ads.values[0].name, "Ad");
+  sqlite.close();
+});
+
+test("Meta ad dimensions expose current catalog status without changing period metrics", async () => {
+  const { sqlite, db } = dbWith(`
+    CREATE TABLE MetaAdsAd (Date TEXT, CrmTenantId TEXT, AdId TEXT, AdName TEXT, AdsetId TEXT, AdsetName TEXT, CampaignId TEXT, CampaignName TEXT, Impressions INTEGER, Clicks INTEGER, LinkClicks INTEGER, Spend REAL, Leads INTEGER);
+    CREATE INDEX meta_ad_tenant_date ON MetaAdsAd(CrmTenantId, Date);
+    CREATE TABLE MetaAdsCreativeCatalog (CrmTenantId TEXT, SnapshotDate TEXT, AdId TEXT, AdsetId TEXT, CampaignId TEXT, Status TEXT);
+    INSERT INTO MetaAdsAd VALUES ('2026-09-01','t1','a1','Ad 1','s1','Set 1','c1','Campaign 1',100,10,8,5,1);
+    INSERT INTO MetaAdsAd VALUES ('2026-09-01','t1','a2','Ad 2','s2','Set 2','c2','Campaign 2',100,10,8,4,1);
+    INSERT INTO MetaAdsCreativeCatalog VALUES ('t1','2026-09-10','a1','s1','c1','ACTIVE');
+    INSERT INTO MetaAdsCreativeCatalog VALUES ('t1','2026-09-10','a2','s2','c2','PAUSED');
+  `);
+  const result = await readCrmAnalyticsDimensions(db, { tenantId: "t1", startDate: "2026-09-01", endDate: "2026-09-01" });
+  const statuses = new Map(result.meta.dimensions.ads.values.map((row) => [row.id, row.status]));
+  assert.equal(statuses.get("a1"), "ACTIVE");
+  assert.equal(statuses.get("a2"), "OFF");
+  assert.equal(result.meta.dimensions.ads.values.find((row) => row.id === "a1").spend, 5);
   sqlite.close();
 });
 

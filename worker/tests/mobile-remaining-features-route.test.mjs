@@ -32,11 +32,18 @@ function database() {
     CREATE INDEX idx_meta_ads_ad_tenant_adid_date ON MetaAdsAd(CrmTenantId, AdId, Date);
     CREATE TABLE HeatmapEvents (id TEXT PRIMARY KEY, CrmTenantId TEXT, SessionId TEXT, Page TEXT, EventType TEXT, IsBot INTEGER, Device TEXT NOT NULL DEFAULT '', Referrer TEXT NOT NULL DEFAULT '', UtmSource TEXT, UtmMedium TEXT, UtmCampaign TEXT NOT NULL DEFAULT '', CreatedAt TEXT);
     CREATE INDEX heatmap_tenant_date ON HeatmapEvents(CrmTenantId, CreatedAt);
+    CREATE TABLE MetaAdsCreativeCatalog (CrmTenantId TEXT, SnapshotDate TEXT, AdId TEXT, AdName TEXT, AdsetId TEXT, AdsetName TEXT, CampaignId TEXT, CampaignName TEXT, CreativeId TEXT, CreativeType TEXT, VideoId TEXT, Status TEXT, UpdatedAt TEXT);
+    CREATE INDEX idx_meta_creative_catalog_tenant_date_adid ON MetaAdsCreativeCatalog(CrmTenantId, SnapshotDate, AdId);
+    CREATE INDEX idx_meta_creative_catalog_tenant_adid_date ON MetaAdsCreativeCatalog(CrmTenantId, AdId, SnapshotDate);
+    CREATE INDEX idx_meta_creative_catalog_tenant_snapshot_status_adid ON MetaAdsCreativeCatalog(CrmTenantId, SnapshotDate, Status, AdId);
   `);
   sqlite.exec("ALTER TABLE Estimates ADD COLUMN SessionId TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstSource TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstPlatform TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstReferrer TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstInflowApp TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN MetaFieldData TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN MetaLeadId TEXT NOT NULL DEFAULT ''; CREATE INDEX IF NOT EXISTS idx_heatmap_crm_tenant_session_event_bot_created_id ON HeatmapEvents(CrmTenantId,SessionId,EventType,IsBot,CreatedAt,id);");
   sqlite.exec(readFileSync(new URL("../migrations/0083_crm_customer_source_channels.sql", import.meta.url), "utf8"));
   sqlite.prepare("INSERT INTO MetaAdsAd (Date,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,ThumbnailUrl,Status,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
     "2026-09-10", "1001", "실내광고", "set-1", "세트", "campaign-1", "캠페인", "creative-1", "image", "", "ACTIVE", 1000, 80, 70, 35, 5,
+  );
+  sqlite.prepare("INSERT INTO MetaAdsCreativeCatalog (CrmTenantId,SnapshotDate,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,Status) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(
+    "day1design", "2026-09-10", "1001", "실내광고", "set-1", "세트", "campaign-1", "캠페인", "creative-1", "image", "ACTIVE",
   );
   sqlite.prepare("INSERT INTO CrmUsers(id,tenant_id,email,role,active) VALUES(?,?,?,?,?)").run("staff-route", "day1design", "staff-route@example.test", "staff", 1);
   sqlite.prepare("INSERT INTO CrmUsers(id,tenant_id,email,role,active) VALUES(?,?,?,?,?)").run("staff-other", "day1design", "staff-other@example.test", "staff", 1);

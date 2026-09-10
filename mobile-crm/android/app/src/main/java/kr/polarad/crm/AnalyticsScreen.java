@@ -1108,9 +1108,10 @@ final class AnalyticsScreen {
             for(int i=0;i<rows.length();i++){
                 JSONObject row=rows.optJSONObject(i);if(row==null)continue;
                 String label = row.optString("name", row.optString("value", "확인할 수 없음"));
-                root.addView(rowCard(label,adHierarchy(row, allDimensions)+"광고비 "+money(row,"spend",currencySource)+" · 리드 "+withUnit(row,"leads","건")+
-                    "\n노출 " + countWithUnit(row, "impressions", "회") + " · 링크 클릭 " + countWithUnit(row, "linkClicks", "회")),top(7));
-                root.addView(body("CPL "+ratio(row,"cpl",currencySource)+" · CPC "+ratio(row,"cpc",currencySource)+" · CPM "+ratio(row,"cpm",currencySource)),top(3));
+                root.addView(adRowCard(label,adHierarchy(row, allDimensions)+"광고비 "+money(row,"spend",currencySource)+" · 리드 "+withUnit(row,"leads","건")+
+                    "\n노출 " + countWithUnit(row, "impressions", "회") + " · 링크 클릭 " + countWithUnit(row, "linkClicks", "회")+
+                    "\nCPL " + ratio(row,"cpl",currencySource) + " · CPC " + ratio(row,"cpc",currencySource) + " · CPM " + ratio(row,"cpm",currencySource),
+                    row, "캠페인별".equals(title) || "광고 세트".equals(title) || "광고 소재".equals(title)),top(7));
             }
             if(dimension.optBoolean("hasMore"))root.addView(note("광고비 기준 상위 100개를 표시합니다."),top(8));
         }
@@ -1910,6 +1911,39 @@ final class AnalyticsScreen {
             return box;
         }
         View rowCard(String heading, String value) { return card(heading, value, false); }
+        View adRowCard(String heading, String value, JSONObject row, boolean showStatus) {
+            LinearLayout box = column();
+            box.setPadding(dp(15), dp(14), dp(15), dp(14));
+            box.setBackground(round(PANEL, 6));
+            LinearLayout title = new LinearLayout(activity);
+            title.setGravity(Gravity.CENTER_VERTICAL);
+            title.addView(text(heading, 14, true, INK), weight());
+            String status = showStatus ? adDeliveryStatus(row) : "";
+            if (!status.isEmpty()) {
+                int color = "ON".equals(status) ? Color.rgb(53, 99, 78) : MUTED;
+                int background = "ON".equals(status) ? Color.rgb(232, 244, 236) : Color.rgb(237, 240, 241);
+                TextView indicator = pill(status, color);
+                indicator.setBackground(round(background, 4));
+                title.addView(indicator, left(6));
+            }
+            box.addView(title);
+            box.addView(text(value, 13, false, MUTED), top(8));
+            return box;
+        }
+        String adDeliveryStatus(JSONObject row) {
+            String raw = firstString(row, "effectiveStatus", "effective_status", "deliveryStatus", "delivery_status", "status").toUpperCase(Locale.ROOT);
+            if ("ACTIVE".equals(raw) || "ON".equals(raw) || "ENABLED".equals(raw) || "LIVE".equals(raw) || "PUBLISHED".equals(raw)) return "ON";
+            if ("PAUSED".equals(raw) || "ADSET_PAUSED".equals(raw) || "CAMPAIGN_PAUSED".equals(raw) || "OFF".equals(raw) || "INACTIVE".equals(raw) || "DISABLED".equals(raw) || "DELETED".equals(raw) || "ARCHIVED".equals(raw)) return "OFF";
+            return "";
+        }
+        String firstString(JSONObject row, String... keys) {
+            if (row == null) return "";
+            for (String key : keys) {
+                String value = row.optString(key, "").trim();
+                if (!value.isEmpty()) return value;
+            }
+            return "";
+        }
         View intakeBars(String heading, JSONArray rows, String labelKey, String valueKey, int highlighted, String detail) {
             LinearLayout box = column();
             box.setPadding(dp(16), dp(16), dp(16), dp(16));
@@ -2006,6 +2040,7 @@ final class AnalyticsScreen {
         View wrap(View v) { return v; }
         LinearLayout.LayoutParams top(int margin) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.topMargin = dp(margin); return p; }
         LinearLayout.LayoutParams weight() { return new LinearLayout.LayoutParams(0, -2, 1); }
+        LinearLayout.LayoutParams left(int margin) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2); p.leftMargin = dp(margin); return p; }
         int dp(int value) { return (int) (value * activity.getResources().getDisplayMetrics().density + 0.5f); }
         GradientDrawable round(int color, int radius) { GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); d.setStroke(dp(1), LINE); return d; }
         static String message(JSONObject body, String error, String fallback) { String value = body == null ? "" : body.optString("message", ""); return value.isEmpty() ? (error == null || error.isEmpty() ? fallback : error) : value; }

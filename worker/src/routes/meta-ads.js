@@ -43,9 +43,9 @@ const INSIGHT_METRICS = [
 const CAMPAIGN_META_FIELDS =
   "id,name,status,objective,daily_budget,lifetime_budget";
 const AD_META_FIELDS =
-  "id,name,status,campaign{id,name},adset{id,name},creative{id,thumbnail_url,object_type,video_id,image_url,asset_feed_spec{bodies,titles,call_to_action_types,link_urls},object_story_spec{link_data{message,name,link,call_to_action},video_data{message,title,call_to_action}}}";
+  "id,name,status,effective_status,campaign{id,name,status,effective_status},adset{id,name,status,effective_status},creative{id,thumbnail_url,object_type,video_id,image_url,asset_feed_spec{bodies,titles,call_to_action_types,link_urls},object_story_spec{link_data{message,name,link,call_to_action},video_data{message,title,call_to_action}}}";
 const AD_META_FIELDS_FALLBACK =
-  "id,name,status,campaign{id,name},adset{id,name},creative{id,thumbnail_url,object_type,video_id,image_url}";
+  "id,name,status,effective_status,campaign{id,name,status,effective_status},adset{id,name,status,effective_status},creative{id,thumbnail_url,object_type,video_id,image_url}";
 
 // ─── 어드민 라우터 ────────────────────────────────────────
 export async function handleMetaAds(request, env, ctx) {
@@ -1116,10 +1116,14 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     CreatedAt: startedAt,
   };
 
+  let leaseOwner = "";
   try {
     const token = String(env.META_AD_ACCESS_TOKEN || "").trim();
     const accountId = String(env.META_AD_ACCOUNT_ID || "").trim();
     if (!token || !accountId) throw new Error("META_AD_* env not configured");
+    const lease = await acquireMediaSyncLease(env);
+    if (!lease.acquired) return jsonOk({ status: "busy", syncType, changed: false });
+    leaseOwner = lease.owner;
 
     // 1) account 레벨 일별 인사이트
     const accountRows = await fetchInsights(
@@ -1238,7 +1242,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
           Level: "campaign",
           EntityId: String(row.campaign_id || ""),
           EntityName: String(row.campaign_name || meta.name || ""),
-          Status: String(meta.status || ""),
+          Status: String(meta.effective_status || meta.status || ""),
           Objective: String(meta.objective || ""),
           ...mapInsight(row),
           FetchedAt: fetchedAt,
@@ -1270,7 +1274,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
           CreativeCallToAction: copy.callToAction,
           CreativeLinkUrl: copy.linkUrl,
           CreativeVariants: copy.variants.length ? JSON.stringify(copy.variants) : "",
-          Status: String(meta.status || ""),
+          Status: String(meta.effective_status || meta.status || ""),
           ...mapInsight(row),
           FetchedAt: fetchedAt,
         }),
@@ -1334,10 +1338,13 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       console.error("[day1design/meta-ads] video length fill", e?.message);
     }
 
+    const cleanup = await cleanupInactiveMediaAssets(env, adMeta, { leaseOwner });
+
     log.Status = "success";
     log.RecordsUpdated = updated;
     log.CompletedAt = new Date().toISOString();
     await writeLog(env, log);
+    await releaseMediaSyncLease(env, leaseOwner);
     return jsonOk({
       status: "success",
       syncType,
@@ -1345,6 +1352,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       apiCalls: log.ApiCallsUsed,
       recordsUpdated: updated,
       media,
+      cleanup,
     });
   } catch (e) {
     const msg = String(e.message || "unknown").slice(0, 400);
@@ -1353,6 +1361,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     log.ErrorMessage = msg;
     log.CompletedAt = new Date().toISOString();
     await writeLog(env, log);
+    await releaseMediaSyncLease(env, leaseOwner);
 
     // rate limit / sync 실패 → 별도 텔레그램 채널로 알림
     // (env.META_RATE_TELEGRAM_BOT_TOKEN + META_RATE_TELEGRAM_CHAT_ID)
@@ -1483,6 +1492,10 @@ const PRIVATE_THUMB_MAX_BYTES = 2 * 1024 * 1024;
 const PRIVATE_THUMB_MAX_PER_RUN = 15;
 const PRIVATE_THUMB_CACHE_CONTROL = "private, max-age=604800, immutable";
 const PRIVATE_THUMB_PREVIEW_VERSION = "3";
+const MEDIA_ASSET_TENANT = "day1design";
+const MEDIA_ASSET_KIND_IMAGE = "image";
+const MEDIA_ASSET_MAX_ROWS = 500;
+const MEDIA_ASSET_CLEANUP_MAX = 30;
 const VIDEO_PREVIEW_R2_PREFIX = "meta-ads/video-previews/";
 const VIDEO_PREVIEW_VERSION = "2";
 const VIDEO_PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
@@ -1520,6 +1533,135 @@ function imageMetadata(value) {
 function validPrivateThumb(head) {
   const size = Number(head?.size);
   return Number.isFinite(size) && size > 0 && size <= PRIVATE_THUMB_MAX_BYTES && !!imageMetadata(head?.httpMetadata?.contentType);
+}
+
+function isActiveMetaAd(ad) {
+  const statuses = [ad, ad?.adset, ad?.campaign].map((item) =>
+    String(item?.effective_status || item?.status || "").trim().toUpperCase(),
+  );
+  if (statuses.some((status) => !status)) return null;
+  return statuses.every((status) => status === "ACTIVE");
+}
+
+function metaAdStatus(ad) {
+  const statuses = [ad, ad?.adset, ad?.campaign].map((item) =>
+    String(item?.effective_status || item?.status || "").trim().toUpperCase(),
+  );
+  if (statuses.some((status) => !status)) return "";
+  return statuses.find((status) => status !== "ACTIVE") || statuses[0] || "";
+}
+
+function mediaAssetKey(kind, mediaId) {
+  const id = String(mediaId || "");
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return null;
+  if (kind === MEDIA_ASSET_KIND_IMAGE) return `${THUMB_R2_PREFIX}${id}`;
+  return null;
+}
+
+function mediaAssetReadyStmt(env, mediaId, updatedAt = new Date().toISOString()) {
+  const r2Key = mediaAssetKey(MEDIA_ASSET_KIND_IMAGE, mediaId);
+  if (!r2Key || !env?.DB?.prepare) return null;
+  return env.DB.prepare(
+    `INSERT INTO MetaAdsMediaAssets
+       (CrmTenantId, Kind, MediaId, R2Key, State, UpdatedAt)
+     VALUES (?, ?, ?, ?, 'ready', ?)
+     ON CONFLICT(CrmTenantId, Kind, MediaId) DO UPDATE SET
+       R2Key=excluded.R2Key, State='ready', UpdatedAt=excluded.UpdatedAt`,
+  ).bind(MEDIA_ASSET_TENANT, MEDIA_ASSET_KIND_IMAGE, String(mediaId), r2Key, updatedAt);
+}
+
+async function registerReadyMediaAssets(env, mediaIds) {
+  if (!env?.DB?.batch) return 0;
+  const ids = [...new Set((mediaIds || []).map(String))];
+  if (ids.length > MEDIA_ASSET_MAX_ROWS) return 0;
+  const stmts = ids
+    .map((id) => mediaAssetReadyStmt(env, id))
+    .filter(Boolean);
+  if (stmts.length) await runBatch(env, stmts);
+  return stmts.length;
+}
+
+const MEDIA_SYNC_LEASE_TTL_MS = 15 * 60 * 1000;
+
+async function acquireMediaSyncLease(env) {
+  if (!env?.DB?.prepare) return { acquired: false, owner: "", reason: "db_unavailable" };
+  const owner = generateId();
+  const expiresAt = new Date(Date.now() + MEDIA_SYNC_LEASE_TTL_MS).toISOString();
+  const result = await env.DB.prepare(
+    `INSERT INTO MetaAdsMediaSyncLeases (CrmTenantId, OwnerId, ExpiresAt)
+     VALUES (?, ?, ?)
+     ON CONFLICT(CrmTenantId) DO UPDATE SET OwnerId=excluded.OwnerId, ExpiresAt=excluded.ExpiresAt
+       WHERE MetaAdsMediaSyncLeases.ExpiresAt < ?`,
+  ).bind(MEDIA_ASSET_TENANT, owner, expiresAt, new Date().toISOString()).run();
+  return { acquired: Number(result?.meta?.changes || 0) > 0, owner };
+}
+
+async function releaseMediaSyncLease(env, owner) {
+  if (!owner || !env?.DB?.prepare) return;
+  await env.DB.prepare(
+    `DELETE FROM MetaAdsMediaSyncLeases WHERE CrmTenantId=? AND OwnerId=?`,
+  ).bind(MEDIA_ASSET_TENANT, owner).run().catch(() => null);
+}
+
+async function leaseIsHeld(env, owner) {
+  if (!owner || !env?.DB?.prepare) return false;
+  const row = await env.DB.prepare(
+    `SELECT OwnerId, ExpiresAt FROM MetaAdsMediaSyncLeases WHERE CrmTenantId=?`,
+  ).bind(MEDIA_ASSET_TENANT).first();
+  return String(row?.OwnerId || "") === owner && Date.parse(String(row?.ExpiresAt || "")) > Date.now();
+}
+
+function knownImageAssetRow(row) {
+  const mediaId = String(row?.MediaId || "");
+  const key = mediaAssetKey(MEDIA_ASSET_KIND_IMAGE, mediaId);
+  return key && String(row?.Kind || "") === MEDIA_ASSET_KIND_IMAGE && String(row?.R2Key || "") === key;
+}
+
+export async function cleanupInactiveMediaAssets(env, adMeta, options = {}) {
+  if (!env?.DB?.prepare || !env?.CRM_CACHE?.delete) return { deleted: 0, complete: false, reason: "storage_unavailable" };
+  if (!(await leaseIsHeld(env, String(options.leaseOwner || "")))) return { deleted: 0, complete: false, reason: "lease_required" };
+  const activeIds = new Set();
+  let unknownStatus = false;
+  for (const ad of Object.values(adMeta || {})) {
+    const active = isActiveMetaAd(ad);
+    if (active === null) unknownStatus = true;
+    if (active === true) {
+      const id = String(ad?.creative?.id || "");
+      if (id) activeIds.add(id);
+    }
+  }
+  if (unknownStatus) return { deleted: 0, complete: false, reason: "status_unknown" };
+  const limit = Number(options.limit || MEDIA_ASSET_CLEANUP_MAX);
+  const rows = await env.DB.prepare(
+    `SELECT CrmTenantId, Kind, MediaId, R2Key, State, UpdatedAt
+       FROM MetaAdsMediaAssets
+      WHERE CrmTenantId=? AND State='ready'
+      ORDER BY UpdatedAt ASC, MediaId ASC
+      LIMIT ?`,
+  ).bind(MEDIA_ASSET_TENANT, MEDIA_ASSET_MAX_ROWS + 1).all();
+  const inventory = rows?.results || [];
+  if (inventory.length > MEDIA_ASSET_MAX_ROWS) return { deleted: 0, complete: false, reason: "inventory_cap" };
+  const candidates = inventory.filter((row) => knownImageAssetRow(row) && !activeIds.has(String(row.MediaId))).slice(0, Math.max(0, Math.min(limit, MEDIA_ASSET_CLEANUP_MAX)));
+  let deleted = 0;
+  const removed = [];
+  for (const row of candidates) {
+    if (!(await leaseIsHeld(env, String(options.leaseOwner || "")))) return { deleted, complete: false, reason: "lease_lost" };
+    const key = String(row.R2Key);
+    try {
+      await env.CRM_CACHE.delete(key);
+      removed.push(String(row.MediaId));
+      deleted++;
+    } catch {}
+  }
+  if (removed.length) {
+    const now = new Date().toISOString();
+    const statements = removed.map((id) => env.DB.prepare(
+      `UPDATE MetaAdsMediaAssets SET State='deleted', UpdatedAt=?
+        WHERE CrmTenantId=? AND Kind=? AND MediaId=?`,
+    ).bind(now, MEDIA_ASSET_TENANT, MEDIA_ASSET_KIND_IMAGE, id));
+    await runBatch(env, statements);
+  }
+  return { deleted, complete: true, reason: "ok" };
 }
 
 async function boundedImageBody(response) {
@@ -1640,12 +1782,9 @@ export async function mirrorFetchedCreativeThumbs(env, adRows, adMeta, log, stat
     return 0;
   }
   const creatives = new Map();
-  for (const row of adRows || []) {
-    const creative = adMeta?.[row.ad_id]?.creative;
-    const id = String(creative?.id || "");
-    if (id && !creatives.has(id)) creatives.set(id, creative);
-  }
-  for (const ad of Object.values(adMeta || {})) {
+  const ads = Object.values(adMeta || {}).sort((a, b) => Number(isActiveMetaAd(b) === true) - Number(isActiveMetaAd(a) === true));
+  for (const ad of ads) {
+    if (isActiveMetaAd(ad) !== true) continue;
     const creative = ad?.creative;
     const id = String(creative?.id || "");
     if (id && !creatives.has(id)) creatives.set(id, creative);
@@ -1653,21 +1792,41 @@ export async function mirrorFetchedCreativeThumbs(env, adRows, adMeta, log, stat
   let attempted = 0;
   let copied = 0;
   let checked = 0;
+  const readyIds = [];
   for (const [id, creative] of creatives) {
-    if (checked >= 100) break;
+    if (checked >= MEDIA_ASSET_MAX_ROWS) break;
     checked++;
     const key = `${THUMB_R2_PREFIX}${id}`;
     const head = await env.CRM_CACHE.head(key).catch(() => null);
-    if (head && String(head?.customMetadata?.previewVersion || "") === PRIVATE_THUMB_PREVIEW_VERSION && validPrivateThumb(head)) continue;
+    if (head && String(head?.customMetadata?.previewVersion || "") === PRIVATE_THUMB_PREVIEW_VERSION && validPrivateThumb(head)) {
+      readyIds.push(id);
+      continue;
+    }
     if (attempted >= PRIVATE_THUMB_MAX_PER_RUN) break;
     attempted++;
     if (stats?.thumbnail) stats.thumbnail.attempted++;
     const outcome = { reason: "unknown" };
     if (await mirrorFetchedCreativeThumb(env, creative, key, log, outcome)) {
       copied++;
+      readyIds.push(id);
       if (stats?.thumbnail) stats.thumbnail.success++;
     } else mediaReason(stats, "thumbnail", outcome.reason);
   }
+  const readySet = new Set(readyIds);
+  let legacyChecked = 0;
+  for (const ad of Object.values(adMeta || {})) {
+    if (legacyChecked >= 100 || readyIds.length >= MEDIA_ASSET_MAX_ROWS) break;
+    const id = String(ad?.creative?.id || "");
+    if (!id || readySet.has(id)) continue;
+    legacyChecked++;
+    const key = `${THUMB_R2_PREFIX}${id}`;
+    const head = await env.CRM_CACHE.head(key).catch(() => null);
+    if (head && validPrivateThumb(head)) {
+      readyIds.push(id);
+      readySet.add(id);
+    }
+  }
+  await registerReadyMediaAssets(env, readyIds);
   return copied;
 }
 
@@ -1800,7 +1959,7 @@ async function fillVideoLengths(env, token, videoIds, log, stats) {
 
   const missing = [];
   for (const id of candidates) {
-    if (!known.has(String(id)) || !(await videoPreviewIsFresh(env, String(id)))) missing.push(String(id));
+    if (!known.has(String(id))) missing.push(String(id));
   }
   if (!missing.length) return 0;
 
@@ -1813,7 +1972,7 @@ async function fillVideoLengths(env, token, videoIds, log, stats) {
     try {
       const url =
         `https://graph.facebook.com/${META_API_VERSION}/${id}` +
-        `?fields=length,title,embed_html,permalink_url&access_token=${encodeURIComponent(token)}`;
+        `?fields=length,title&access_token=${encodeURIComponent(token)}`;
       if (log) log.ApiCallsUsed = Number(log.ApiCallsUsed || 0) + 1;
       if (stats?.video) stats.video.attempted++;
       const controller = new AbortController();
@@ -1829,13 +1988,12 @@ async function fillVideoLengths(env, token, videoIds, log, stats) {
           mediaReason(stats, "video", `graph_http_${res.status}`);
           continue;
         }
-        const outcome = { reason: "unknown" };
-        const cached = await cacheFacebookVideoPreview(env, String(id), data, now, outcome).catch(() => false);
-        if (cached) {
-          if (stats?.video) stats.video.success++;
-        } else mediaReason(stats, "video", outcome.reason);
         const len = Number(data?.length || 0);
-        if (!len) continue;
+        if (!len) {
+          mediaReason(stats, "video", "length_missing");
+          continue;
+        }
+        if (stats?.video) stats.video.success++;
         stmts.push(
           env.DB.prepare(
             `INSERT INTO MetaVideos (VideoId, LengthSec, Title, FetchedAt, CreatedAt)
@@ -1902,6 +2060,11 @@ export async function fetchAdMeta(token, accountId, log) {
         err.metaError = data?.error;
         throw err;
       }
+      if (!Array.isArray(data?.data)) {
+        const err = new Error("Meta ads response missing data");
+        err.code = "meta_ads_invalid_response";
+        throw err;
+      }
       rows.push(...(Array.isArray(data?.data) ? data.data : []));
       if (rows.length > MAX_AD_META_ROWS) {
         const err = new Error("Meta ads catalog row cap reached");
@@ -1962,7 +2125,7 @@ function buildMetaCreativeCatalogStmt(env, ad, snapshotDate) {
     String(creative.id || ""),
     String(creative.object_type || ""),
     String(creative.video_id || ""),
-    String(ad?.status || ""),
+    metaAdStatus(ad),
     now,
   );
 }

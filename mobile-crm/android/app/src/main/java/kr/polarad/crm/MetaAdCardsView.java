@@ -1,8 +1,6 @@
 package kr.polarad.crm;
 
 import android.app.Activity;
-import android.app.Application;
-import android.app.Dialog;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -11,13 +9,9 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.FrameLayout;
@@ -58,6 +52,7 @@ final class MetaAdCardsView {
         }
         JSONArray cards = payload.optJSONArray("cards");
         if (cards == null || cards.length() == 0) return message(activity, "선택 기간의 소재별 광고 기록이 없습니다.");
+        MetricMaxima maxima = MetricMaxima.from(cards);
 
         LinearLayout section = column(activity);
         TextView heading = text(activity, "광고 소재별 성과", 16, true, INK);
@@ -79,11 +74,12 @@ final class MetaAdCardsView {
         scroll.setHorizontalScrollBarEnabled(false);
         scroll.setFillViewport(false);
         LinearLayout track = row(activity);
+        track.setGravity(Gravity.TOP);
         int cardWidth = Math.max(dp(activity, 280), activity.getResources().getDisplayMetrics().widthPixels - dp(activity, 40));
         for (int i = 0; i < cards.length(); i++) {
             JSONObject card = cards.optJSONObject(i);
             if (card == null) continue;
-            View view = card(activity, card, i + 1, api, imageGeneration);
+            View view = card(activity, card, i + 1, api, imageGeneration, maxima);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(cardWidth, -2);
             if (i > 0) params.leftMargin = dp(activity, 10);
             track.addView(view, params);
@@ -162,7 +158,7 @@ final class MetaAdCardsView {
         }
     }
 
-    private static View card(Activity activity, JSONObject card, int number, ApiClient api, int imageGeneration) {
+    private static View card(Activity activity, JSONObject card, int number, ApiClient api, int imageGeneration, MetricMaxima maxima) {
         LinearLayout box = column(activity);
         box.setPadding(dp(activity, 14), dp(activity, 14), dp(activity, 14), dp(activity, 14));
         GradientDrawable background = new GradientDrawable();
@@ -185,7 +181,7 @@ final class MetaAdCardsView {
         if (!hierarchy.isEmpty()) box.addView(text(activity, hierarchy, 12, false, MUTED), top(activity, 4));
         String name = card.optString("adName", "").trim();
         if (!name.isEmpty()) box.addView(text(activity, name, 15, true, INK), top(activity, 4));
-        addMetrics(box, activity, card.optJSONObject("metrics"));
+        addMetrics(box, activity, card.optJSONObject("metrics"), maxima);
         JSONArray daily = card.optJSONArray("daily");
         if (daily != null && daily.length() > 0) {
             box.addView(text(activity, "일별 성과", 13, true, INK), top(activity, 12));
@@ -196,18 +192,38 @@ final class MetaAdCardsView {
         return box;
     }
 
-    private static void addMetrics(LinearLayout box, Activity activity, JSONObject metrics) {
+    private static void addMetrics(LinearLayout box, Activity activity, JSONObject metrics, MetricMaxima maxima) {
         if (metrics == null) metrics = new JSONObject();
         LinearLayout grid = row(activity);
-        grid.addView(metric(activity, "광고비", money(metrics, "spend")), weight(activity));
-        grid.addView(metric(activity, "리드", number(metrics, "leads", "건")), weight(activity));
-        grid.addView(metric(activity, "CPL", ratio(metrics, "cpl")), weight(activity));
+        grid.addView(metricCell(activity, metrics, maxima, "광고비", "spend", money(metrics, "spend")), weight(activity));
+        grid.addView(metricCell(activity, metrics, maxima, "리드", "leads", number(metrics, "leads", "건")), weight(activity));
+        grid.addView(metricCell(activity, metrics, maxima, "CPL", "cpl", ratio(metrics, "cpl")), weight(activity));
         box.addView(grid, top(activity, 12));
         LinearLayout second = row(activity);
-        second.addView(metric(activity, "CPC", ratio(metrics, "cpc")), weight(activity));
-        second.addView(metric(activity, "CPM", ratio(metrics, "cpm")), weight(activity));
-        second.addView(metric(activity, "CTR", percent(metrics, "ctr")), weight(activity));
+        second.addView(metricCell(activity, metrics, maxima, "CPC", "cpc", ratio(metrics, "cpc")), weight(activity));
+        second.addView(metricCell(activity, metrics, maxima, "CPM", "cpm", ratio(metrics, "cpm")), weight(activity));
+        second.addView(metricCell(activity, metrics, maxima, "CTR", "ctr", percent(metrics, "ctr")), weight(activity));
         box.addView(second, top(activity, 6));
+    }
+
+    private static LinearLayout metricCell(Activity activity, JSONObject metrics, MetricMaxima maxima, String label, String key, String display) {
+        LinearLayout cell = column(activity);
+        cell.addView(metric(activity, label, display));
+        Double raw = numeric(metrics, key);
+        if (raw != null && maxima.has(key)) cell.addView(metricBar(activity, label, raw, maxima.max(key)), top(activity, 2));
+        return cell;
+    }
+
+    private static View metricBar(Activity activity, String label, double value, double maximum) {
+        FrameLayout track = new FrameLayout(activity);
+        track.setBackgroundColor(LINE);
+        track.setContentDescription(label + " 상대 비교 " + format(value) + " / " + format(maximum));
+        FrameLayout.LayoutParams fill = new FrameLayout.LayoutParams(-1, dp(activity, 3));
+        fill.width = maximum <= 0 ? 0 : (int) Math.round(dp(activity, 100) * Math.max(0, Math.min(1, value / maximum)));
+        View bar = new View(activity);
+        bar.setBackgroundColor(BRAND);
+        track.addView(bar, fill);
+        return track;
     }
 
     private static View image(Activity activity, JSONObject creative, ApiClient api, int imageGeneration, boolean loadNow) {
@@ -223,7 +239,7 @@ final class MetaAdCardsView {
                     view.setImageBitmap(bitmap);
                     view.setScaleType(ImageView.ScaleType.FIT_CENTER);
                     frame.addView(view, new FrameLayout.LayoutParams(-1, -1));
-                    addVideoOverlay(activity, frame, creative, api, null);
+                    addVideoUnavailableLabel(activity, frame, creative, null);
                     return frame;
                 }
             } catch (IllegalArgumentException ignored) { }
@@ -231,15 +247,17 @@ final class MetaAdCardsView {
         LinearLayout placeholder = column(activity);
         placeholder.setGravity(Gravity.CENTER);
         String type = value(creative, "type");
+        String availability = value(creative, "availability", "assetAvailability", "mediaAvailability", "media_availability");
         placeholder.addView(text(activity, type.isEmpty() ? "소재 이미지" : type + " 소재", 13, true, MUTED));
-        placeholder.addView(text(activity, "인증된 이미지가 준비되면 표시됩니다.", 11, false, MUTED), top(activity, 4));
+        placeholder.addView(text(activity, "inactive".equalsIgnoreCase(availability) || "cleaned".equalsIgnoreCase(availability)
+                ? "광고 중지 · 소재 정리됨" : "인증된 이미지가 준비되면 표시됩니다.", 11, false, MUTED), top(activity, 4));
         frame.addView(placeholder, new FrameLayout.LayoutParams(-1, -1));
         String path = value(creative, "imagePath", "thumbnailPath", "image_path", "thumbnail_path");
         if (path.isEmpty()) path = value(creative.optJSONObject("thumbnailRef"), "path", "imagePath", "thumbnailPath", "image_path", "thumbnail_path");
         final String requestPath = path;
         if (api != null && requestPath.startsWith("/api/mobile/") && !requestPath.contains("//")) {
             final CardImageState state = new CardImageState(frame, placeholder);
-            addVideoOverlay(activity, frame, creative, api, state);
+            addVideoUnavailableLabel(activity, frame, creative, state);
             state.loader = () -> {
                 if (state.requested) return;
                 state.requested = true;
@@ -287,16 +305,37 @@ final class MetaAdCardsView {
         }
     }
 
-    private static void addVideoOverlay(Activity activity, FrameLayout frame, JSONObject creative, ApiClient api, CardImageState state) {
-        String path = value(creative, "videoPreviewPath", "video_preview_path");
-        if (path.isEmpty() || api == null || !validVideoPath(path)) return;
-        TextView play = text(activity, "영상 재생", 12, true, Color.WHITE);
-        play.setGravity(Gravity.CENTER);
-        play.setPadding(dp(activity, 14), dp(activity, 7), dp(activity, 14), dp(activity, 7));
-        play.setBackground(round(activity, Color.rgb(35, 35, 31), 18));
-        play.setOnClickListener(v -> showVideo(activity, api, path));
-        if (state != null) state.overlay = play;
-        frame.addView(play, overlayParams(activity));
+    private static final class MetricMaxima {
+        private final JSONObject values = new JSONObject();
+        static MetricMaxima from(JSONArray cards) {
+            MetricMaxima maxima = new MetricMaxima();
+            for (int i = 0; i < cards.length(); i++) {
+                JSONObject card = cards.optJSONObject(i);
+                JSONObject metrics = card == null ? null : card.optJSONObject("metrics");
+                if (metrics == null) continue;
+                for (String key : new String[]{"spend", "leads", "cpl", "cpc", "cpm", "ctr"}) {
+                    Double value = numeric(metrics, key);
+                    if (value == null) continue;
+                    try { maxima.values.put(key, Math.max(maxima.values.optDouble(key, 0), value)); } catch (Exception ignored) { }
+                }
+            }
+            return maxima;
+        }
+        boolean has(String key) { return values.has(key) && !values.isNull(key); }
+        double max(String key) { return values.optDouble(key, 0); }
+    }
+
+    private static void addVideoUnavailableLabel(Activity activity, FrameLayout frame, JSONObject creative, CardImageState state) {
+        String type = value(creative, "type");
+        String videoId = value(creative, "videoId", "video_id", "videoAssetId", "video_asset_id");
+        String videoPreviewPath = value(creative, "videoPreviewPath", "video_preview_path");
+        if (!"VIDEO".equalsIgnoreCase(type) && videoId.isEmpty() && videoPreviewPath.isEmpty()) return;
+        TextView label = text(activity, "영상 재생 미지원", 11, true, MUTED);
+        label.setGravity(Gravity.CENTER);
+        label.setPadding(dp(activity, 10), dp(activity, 5), dp(activity, 10), dp(activity, 5));
+        label.setBackground(round(activity, UNKNOWN_BG, 14));
+        if (state != null) state.overlay = label;
+        frame.addView(label, overlayParams(activity));
     }
 
     private static FrameLayout.LayoutParams overlayParams(android.content.Context context) {
@@ -304,86 +343,6 @@ final class MetaAdCardsView {
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, Math.round(40 * d), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         params.bottomMargin = Math.round(8 * d);
         return params;
-    }
-
-    private static boolean validVideoPath(String path) {
-        return path.startsWith("/api/mobile/meta/ads/") && path.contains("/video-preview") && !path.contains("//") && !path.contains("\\") && !path.contains("#");
-    }
-
-    private static void showVideo(Activity activity, ApiClient api, String path) {
-        if (!validVideoPath(path)) return;
-        TextView pending = text(activity, "영상 정보를 불러오는 중입니다.", 12, false, MUTED);
-        Dialog dialog = new Dialog(activity);
-        LinearLayout content = column(activity);
-        content.setPadding(dp(activity, 16), dp(activity, 16), dp(activity, 16), dp(activity, 16));
-        content.addView(pending, top(activity, 2));
-        dialog.setContentView(content);
-        dialog.show();
-        final WebView[] web = {null};
-        final Application.ActivityLifecycleCallbacks[] lifecycle = {null};
-        Runnable cleanup = () -> {
-            if (web[0] != null) { web[0].stopLoading(); web[0].onPause(); web[0].destroy(); web[0] = null; }
-            if (lifecycle[0] != null) { activity.getApplication().unregisterActivityLifecycleCallbacks(lifecycle[0]); lifecycle[0] = null; }
-        };
-        dialog.setOnDismissListener(v -> cleanup.run());
-        lifecycle[0] = new Application.ActivityLifecycleCallbacks() {
-            public void onActivityPaused(Activity paused) { if (paused == activity && dialog.isShowing()) dialog.dismiss(); }
-            public void onActivityCreated(Activity a, android.os.Bundle b) { }
-            public void onActivityStarted(Activity a) { }
-            public void onActivityResumed(Activity a) { }
-            public void onActivityStopped(Activity a) { }
-            public void onActivitySaveInstanceState(Activity a, android.os.Bundle b) { }
-            public void onActivityDestroyed(Activity a) { }
-        };
-        activity.getApplication().registerActivityLifecycleCallbacks(lifecycle[0]);
-        api.call("GET", path, null, (payload, status, error) -> activity.runOnUiThread(() -> {
-            if (!dialog.isShowing()) return;
-            String kind = payload == null ? "" : payload.optString("kind", "");
-            String url = payload == null ? "" : payload.optString("url", "");
-            if (status < 200 || status >= 300 || !"facebook_embed".equals(kind) || !validEmbedUrl(url)) {
-                pending.setText("영상을 불러올 수 없습니다.");
-                return;
-            }
-            WebView view = new WebView(activity);
-            web[0] = view;
-            WebSettings settings = view.getSettings();
-            settings.setJavaScriptEnabled(true);
-            settings.setAllowFileAccess(false);
-            settings.setAllowContentAccess(false);
-            settings.setMediaPlaybackRequiresUserGesture(true);
-            if (android.os.Build.VERSION.SDK_INT >= 21) settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-            view.setWebViewClient(new WebViewClient() {
-                @Override public void onPageFinished(WebView webView, String loadedUrl) {
-                    if (dialog.isShowing() && webView.getParent() == content) pending.setVisibility(View.GONE);
-                }
-                @Override public void onReceivedError(WebView webView, android.webkit.WebResourceRequest request, android.webkit.WebResourceError error) {
-                    if (request != null && request.isForMainFrame() && dialog.isShowing()) {
-                        content.removeAllViews();
-                        pending.setVisibility(View.VISIBLE);
-                        pending.setText("영상을 불러올 수 없습니다.");
-                        content.addView(pending, top(activity, 2));
-                    }
-                }
-            });
-            content.removeAllViews();
-            pending.setText("Meta 영상 플레이어를 불러오는 중입니다.");
-            content.addView(pending, top(activity, 2));
-            content.addView(view, new LinearLayout.LayoutParams(-1, dp(activity, 300)));
-            view.loadUrl(url);
-        }));
-    }
-
-    private static boolean validEmbedUrl(String value) {
-        try {
-            Uri uri = Uri.parse(value);
-            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
-            String path = uri.getPath() == null ? "" : uri.getPath();
-            return "https".equalsIgnoreCase(uri.getScheme())
-                    && uri.getUserInfo() == null
-                    && uri.getFragment() == null
-                    && ("facebook.com".equals(host) || "www.facebook.com".equals(host))
-                    && ("/plugins/video.php".equals(path) || "/video/embed".equals(path));
-        } catch (Exception ignored) { return false; }
     }
 
     private static Bitmap decodeImageBytes(byte[] bytes) {
@@ -425,6 +384,12 @@ final class MetaAdCardsView {
             paint.setColor(LINE); paint.setStrokeWidth(1); canvas.drawLine(left, bottom, right, bottom, paint);
             double maxSpend = max("spend"), maxLeads = max("leads");
             paint.setTextSize(10 * density); paint.setColor(BRAND);
+            boolean hasSpendValue = hasValue("spend"), hasLeadsValue = hasValue("leads");
+            if (!hasSpendValue && !hasLeadsValue) {
+                paint.setColor(MUTED);
+                canvas.drawText("일별 성과 데이터 없음", left, (top + bottom) / 2, paint);
+                return;
+            }
             canvas.drawText("광고비 " + format(maxSpend), 4 * density, 12 * density, paint);
             paint.setColor(GOOD); canvas.drawText("리드 " + format(maxLeads) + "건", 4 * density, h - 8 * density, paint);
             Path spend = new Path(), leads = new Path(); boolean hasSpend = false, hasLeads = false;
@@ -433,17 +398,30 @@ final class MetaAdCardsView {
                 float x = points.length() == 1 ? (left + right) / 2 : left + (right - left) * i / (points.length() - 1);
                 Double s = numeric(p, "spend"), l = numeric(p, "leads");
                 if (s != null) { float y = bottom - (float) (s / Math.max(1, maxSpend)) * (bottom - top); if (!hasSpend) { spend.moveTo(x, y); hasSpend = true; } else spend.lineTo(x, y); }
+                else hasSpend = false;
                 if (l != null) { float y = bottom - (float) (l / Math.max(1, maxLeads)) * (bottom - top); if (!hasLeads) { leads.moveTo(x, y); hasLeads = true; } else leads.lineTo(x, y); }
+                else hasLeads = false;
             }
             paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(2.5f);
-            if (hasSpend) { paint.setColor(BRAND); canvas.drawPath(spend, paint); }
-            if (hasLeads) { paint.setColor(GOOD); canvas.drawPath(leads, paint); }
+            if (hasValue("spend")) { paint.setColor(BRAND); canvas.drawPath(spend, paint); drawMarkers(canvas, "spend", BRAND, maxSpend, left, right, top, bottom, density); }
+            if (hasValue("leads")) { paint.setColor(GOOD); canvas.drawPath(leads, paint); drawMarkers(canvas, "leads", GOOD, maxLeads, left, right, top, bottom, density); }
             paint.setStyle(Paint.Style.FILL); paint.setTextSize(10 * density); paint.setColor(MUTED);
             String first = date(0), last = date(points.length() - 1);
             canvas.drawText(first, left, h - 8 * density, paint);
             if (!last.equals(first)) canvas.drawText(last, Math.max(left + 4 * density, right - paint.measureText(last)), h - 8 * density, paint);
         }
         private double max(String key) { double max = 0; for (int i = 0; i < points.length(); i++) { Double n = numeric(points.optJSONObject(i), key); if (n != null) max = Math.max(max, n); } return max; }
+        private boolean hasValue(String key) { for (int i = 0; i < points.length(); i++) if (numeric(points.optJSONObject(i), key) != null) return true; return false; }
+        private void drawMarkers(Canvas canvas, String key, int color, double maximum, float left, float right, float top, float bottom, float density) {
+            paint.setStyle(Paint.Style.FILL); paint.setColor(color);
+            for (int i = 0; i < points.length(); i++) {
+                Double n = numeric(points.optJSONObject(i), key); if (n == null) continue;
+                float x = points.length() == 1 ? (left + right) / 2 : left + (right - left) * i / (points.length() - 1);
+                float y = bottom - (float) (n / Math.max(1, maximum)) * (bottom - top);
+                canvas.drawCircle(x, y, 4 * density, paint);
+            }
+            paint.setStyle(Paint.Style.STROKE);
+        }
         private String date(int index) { JSONObject p = points.optJSONObject(Math.max(0, index)); return p == null ? "" : p.optString("date", ""); }
     }
 
@@ -451,7 +429,13 @@ final class MetaAdCardsView {
     private static String hierarchy(JSONObject card) { String campaign = value(card.optJSONObject("campaign"), "name"); String set = value(card.optJSONObject("adset"), "name"); return join(campaign, set); }
     private static String join(String... values) { StringBuilder b = new StringBuilder(); for (String value : values) if (value != null && !value.trim().isEmpty()) { if (b.length() > 0) b.append(" · "); b.append(value.trim()); } return b.toString(); }
     private static String value(JSONObject o, String... keys) { if (o == null) return ""; for (String key : keys) { String value = o.optString(key, "").trim(); if (!value.isEmpty()) return value; } return ""; }
-    private static Double numeric(JSONObject o, String key) { if (o == null || !o.has(key) || o.isNull(key)) return null; double n = o.optDouble(key, Double.NaN); return Double.isFinite(n) ? n : null; }
+    private static Double numeric(JSONObject o, String key) {
+        if (o == null || !o.has(key) || o.isNull(key)) return null;
+        Object raw = o.opt(key);
+        if (raw instanceof JSONObject) raw = ((JSONObject) raw).opt("value");
+        double n = raw instanceof Number ? ((Number) raw).doubleValue() : o.optDouble(key, Double.NaN);
+        return Double.isFinite(n) ? n : null;
+    }
     private static String number(JSONObject o, String key, String unit) { Double n = numeric(o, key); return n == null ? "확인할 수 없음" : format(n) + unit; }
     private static String money(JSONObject o, String key) { Double n = numeric(o, key); if (n == null) return "확인할 수 없음"; String currency = value(o, "currency", "currencyCode"); return ("KRW".equalsIgnoreCase(currency) || currency.isEmpty() ? "₩" : currency + " ") + format(n); }
     private static String ratio(JSONObject o, String key) { Double n = numeric(o, key); return n == null ? "확인할 수 없음" : format(n); }

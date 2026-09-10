@@ -142,7 +142,21 @@ function adMetrics(row) {
 async function groupedAds(db, table, info, tenantId, range, where, idColumn, nameColumn) {
   const parent = table === "MetaAdsAd" && idColumn === "AdId" ? `, MAX(${identifier("AdsetId")}) AS adsetId, MAX(${identifier("CampaignId")}) AS campaignId` : table === "MetaAdsAd" && idColumn === "AdsetId" ? `, MAX(${identifier("CampaignId")}) AS campaignId` : "";
   const rows = await all(db, `SELECT ${identifier(idColumn)} AS id, MAX(${identifier(nameColumn)}) AS name${parent}, SUM(${identifier("Impressions")}) AS impressions, SUM(${identifier("Clicks")}) AS clicks, SUM(${identifier("LinkClicks")}) AS linkClicks, SUM(${identifier("Spend")}) AS spend, SUM(${identifier("Leads")}) AS leads FROM ${identifier(table)} WHERE ${identifier(info.tenant)}=? AND ${identifier(info.date)}>=? AND ${identifier(info.date)}<=? AND ${where} GROUP BY ${identifier(idColumn)} ORDER BY spend DESC, name ASC LIMIT ${TOP_LIMIT + 1}`, [tenantId, range.startDate, range.endDate]);
-  return { available: true, values: rows.slice(0, TOP_LIMIT).map((row) => ({ id: String(row.id || ""), name: label(row.name), ...(row.adsetId === undefined ? {} : { adsetId: String(row.adsetId || "") }), ...(row.campaignId === undefined ? {} : { campaignId: String(row.campaignId || "") }), ...adMetrics(row) })), hasMore: rows.length > TOP_LIMIT, top: TOP_LIMIT };
+  const values = rows.slice(0, TOP_LIMIT).map((row) => ({ id: String(row.id || ""), name: label(row.name), ...(row.adsetId === undefined ? {} : { adsetId: String(row.adsetId || "") }), ...(row.campaignId === undefined ? {} : { campaignId: String(row.campaignId || "") }), ...adMetrics(row) }));
+  if (table !== "MetaAdsAd" || !values.length) return { available: true, values, hasMore: rows.length > TOP_LIMIT, top: TOP_LIMIT };
+  try {
+    const catalog = await columns(db, "MetaAdsCreativeCatalog");
+    if (!["CrmTenantId", "SnapshotDate", idColumn, "Status"].every((name) => catalog.has(name))) return { available: true, values: values.map((row) => ({ ...row, status: null })), hasMore: rows.length > TOP_LIMIT, top: TOP_LIMIT };
+    const latest = await all(db, `SELECT SnapshotDate AS snapshotDate FROM MetaAdsCreativeCatalog WHERE CrmTenantId=? ORDER BY SnapshotDate DESC LIMIT 1`, [tenantId]);
+    const snapshotDate = String(latest[0]?.snapshotDate || "");
+    if (!snapshotDate) return { available: true, values: values.map((row) => ({ ...row, status: null })), hasMore: rows.length > TOP_LIMIT, top: TOP_LIMIT };
+    const placeholders = values.map(() => "?").join(",");
+    const statusRows = await all(db, `SELECT ${identifier(idColumn)} AS id, MAX(CASE WHEN UPPER(Status) IN ('ACTIVE','ON') THEN 1 ELSE 0 END) AS active, MIN(CASE WHEN TRIM(Status)<>'' THEN 1 ELSE 0 END) AS authoritative FROM MetaAdsCreativeCatalog WHERE CrmTenantId=? AND SnapshotDate=? AND ${identifier(idColumn)} IN (${placeholders}) GROUP BY ${identifier(idColumn)}`, [tenantId, snapshotDate, ...values.map((row) => row.id)]);
+    const statusById = new Map(statusRows.map((row) => [String(row.id), Number(row.active) > 0 ? "ACTIVE" : Number(row.authoritative) === 1 ? "OFF" : null]));
+    return { available: true, values: values.map((row) => ({ ...row, status: statusById.get(row.id) ?? null })), hasMore: rows.length > TOP_LIMIT, top: TOP_LIMIT };
+  } catch (_) {
+    return { available: true, values: values.map((row) => ({ ...row, status: null })), hasMore: rows.length > TOP_LIMIT, top: TOP_LIMIT };
+  }
 }
 
 async function groupedBreakdown(db, info, tenantId, range, dimension) {
