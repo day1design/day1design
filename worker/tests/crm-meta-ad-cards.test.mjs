@@ -6,11 +6,13 @@ import { metaCreativeThumbKey } from "../src/lib/crm-meta-preview.js";
 
 function fixture() {
   const db = new DatabaseSync(":memory:");
-  db.exec(`CREATE TABLE MetaAdsAd (Date TEXT,AdId TEXT,AdName TEXT,AdsetId TEXT,AdsetName TEXT,CampaignId TEXT,CampaignName TEXT,CreativeId TEXT,CreativeType TEXT,ThumbnailUrl TEXT,Status TEXT,CreativeTitle TEXT,CreativeBody TEXT,CreativeCallToAction TEXT,CreativeLinkUrl TEXT,CreativeVariants TEXT,Impressions INTEGER,Clicks INTEGER,LinkClicks INTEGER,Spend REAL,Leads INTEGER); CREATE INDEX idx_meta_ads_ad_date_adid ON MetaAdsAd(Date,AdId); CREATE INDEX idx_meta_ads_ad_adid_date ON MetaAdsAd(AdId,Date);`);
-  const add = db.prepare("INSERT INTO MetaAdsAd VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  db.exec(`CREATE TABLE MetaAdsAd (CrmTenantId TEXT NOT NULL DEFAULT 'day1design',Date TEXT,AdId TEXT,AdName TEXT,AdsetId TEXT,AdsetName TEXT,CampaignId TEXT,CampaignName TEXT,CreativeId TEXT,CreativeType TEXT,ThumbnailUrl TEXT,Status TEXT,CreativeTitle TEXT,CreativeBody TEXT,CreativeCallToAction TEXT,CreativeLinkUrl TEXT,CreativeVariants TEXT,Impressions INTEGER,Clicks INTEGER,LinkClicks INTEGER,Spend REAL,Leads INTEGER); CREATE INDEX idx_meta_ads_ad_date_adid ON MetaAdsAd(Date,AdId); CREATE INDEX idx_meta_ads_ad_adid_date ON MetaAdsAd(AdId,Date); CREATE INDEX idx_meta_ads_ad_tenant_date_adid ON MetaAdsAd(CrmTenantId,Date,AdId); CREATE INDEX idx_meta_ads_ad_tenant_adid_date ON MetaAdsAd(CrmTenantId,AdId,Date);`);
+  db.exec("ALTER TABLE MetaAdsAd ADD COLUMN VideoId TEXT");
+  const add = db.prepare("INSERT INTO MetaAdsAd (Date,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,ThumbnailUrl,Status,CreativeTitle,CreativeBody,CreativeCallToAction,CreativeLinkUrl,CreativeVariants,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   add.run("2026-09-10", "101", "Ad 1", "set-1", "Set", "camp-1", "Campaign", "cr-1", "IMAGE", "https://r2.test/a.webp", "ACTIVE", "제목", "본문", "상담하기", "https://example.test", JSON.stringify([{ title: "제목", body: "본문" }, { title: "대체 제목", body: "대체 본문" }]), 1000, 100, 80, 50, 5);
   add.run("2026-09-09", "101", "Ad 1", "set-1", "Set", "camp-1", "Campaign", "cr-1", "IMAGE", "https://r2.test/a.webp", "ACTIVE", "제목", "본문", "상담하기", "https://example.test", "", 500, 50, 40, 25, 2);
   add.run("2026-09-10", "102", "Ad 2", "set-2", "Set", "camp-2", "Campaign 2", "cr-2", "IMAGE", "https://r2.test/b.webp", "PAUSED", "제목2", "본문2", "자세히", "https://example.test/b", "", 100, 10, 8, 5, 1);
+  db.prepare("UPDATE MetaAdsAd SET VideoId=? WHERE AdId=?").run("video-101", "101");
   return db;
 }
 
@@ -24,6 +26,7 @@ test("returns bounded creative cards with metrics and daily series", async () =>
   assert.equal(result.cards[0].creative.variants.length, 2);
   assert.equal(result.cards[0].creative.thumbnailUrl, null);
   assert.equal(result.cards[0].creative.thumbnailRef.key, "meta-ads/thumbs/cr-1");
+  assert.equal(result.cards[0].creative.videoId, "video-101");
   assert.equal(result.cards[0].metrics.cpc, 0.625);
   assert.equal(result.cards[0].metrics.cpl, 75 / 7);
   assert.equal(result.cards[0].daily.length, 2);
@@ -32,6 +35,14 @@ test("returns bounded creative cards with metrics and daily series", async () =>
 test("rejects other tenants and periods over 31 days", async () => {
   await assert.rejects(() => readCrmMetaAdCards(fixture(), { tenantId: "other", startDate: "2026-09-09", endDate: "2026-09-10" }), /not_authorized/);
   await assert.rejects(() => readCrmMetaAdCards(fixture(), { tenantId: "day1design", startDate: "2026-08-01", endDate: "2026-09-10" }), /period_exceeded/);
+});
+
+test("does not mix rows from another tenant", async () => {
+  const db = fixture();
+  db.prepare("INSERT INTO MetaAdsAd (CrmTenantId,Date,AdId,AdName,CreativeId,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES(?,?,?,?,?,?,?,?,?,?)")
+    .run("other-tenant", "2026-09-10", "099", "foreign", "foreign", 999, 99, 99, 99, 99);
+  const result = await readCrmMetaAdCards(db, { tenantId: "day1design", startDate: "2026-09-10", endDate: "2026-09-10" });
+  assert.equal(result.cards.some((card) => card.adId === "099"), false);
 });
 
 test("uses strict keyset cursors and singleflight cache", async () => {
@@ -53,6 +64,10 @@ test("uses the date and ad index for bounded candidate selection", () => {
   assert.match(plan.map((row) => String(row.detail || "")).join(" "), /idx_meta_ads_ad_date_adid/);
   const reversePlan = db.prepare("EXPLAIN QUERY PLAN SELECT Date,AdId FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_adid_date WHERE AdId IN (?) AND Date BETWEEN ? AND ? ORDER BY AdId,Date LIMIT 621").all("101", "2026-09-09", "2026-09-10");
   assert.match(reversePlan.map((row) => String(row.detail || "")).join(" "), /idx_meta_ads_ad_adid_date/);
+  const tenantDatePlan = db.prepare("EXPLAIN QUERY PLAN SELECT AdId FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_date_adid WHERE CrmTenantId=? AND Date=? AND AdId>? ORDER BY AdId LIMIT 21").all("day1design", "2026-09-10", "");
+  assert.match(tenantDatePlan.map((row) => String(row.detail || "")).join(" "), /idx_meta_ads_ad_tenant_date_adid/);
+  const tenantAdPlan = db.prepare("EXPLAIN QUERY PLAN SELECT Date,AdId FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_adid_date WHERE CrmTenantId=? AND AdId IN (?) AND Date BETWEEN ? AND ? ORDER BY AdId,Date LIMIT 621").all("day1design", "101", "2026-09-09", "2026-09-10");
+  assert.match(tenantAdPlan.map((row) => String(row.detail || "")).join(" "), /idx_meta_ads_ad_tenant_adid_date/);
 });
 
 test("rejects unsafe preview identifiers before constructing an object key", () => {
@@ -62,7 +77,7 @@ test("rejects unsafe preview identifiers before constructing an object key", () 
 
 test("keeps a 1000-ad 31-day source read within the 620-row page cap", async () => {
   const db = fixture();
-  const add = db.prepare("INSERT INTO MetaAdsAd VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  const add = db.prepare("INSERT INTO MetaAdsAd (Date,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,ThumbnailUrl,Status,CreativeTitle,CreativeBody,CreativeCallToAction,CreativeLinkUrl,CreativeVariants,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   for (let day = 0; day < 31; day += 1) {
     const date = new Date(Date.parse("2026-08-11T00:00:00Z") + day * 86400000).toISOString().slice(0, 10);
     for (let ad = 1; ad <= 1000; ad += 1) add.run(date, String(1000 + ad), "bulk", "set", "set", "camp", "camp", "cr", "IMAGE", "", "ACTIVE", "", "", "", "", "", 1, 1, 1, 1, 1);
@@ -89,7 +104,7 @@ test("splits 31-day candidate CTEs into chunks of at most five dates", async () 
 
 test("preserves null metrics while summing known values", async () => {
   const db = fixture();
-  const add = db.prepare("INSERT INTO MetaAdsAd VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  const add = db.prepare("INSERT INTO MetaAdsAd (Date,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,ThumbnailUrl,Status,CreativeTitle,CreativeBody,CreativeCallToAction,CreativeLinkUrl,CreativeVariants,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   add.run("2026-09-09", "103", "mixed", "set", "set", "camp", "camp", "cr", "IMAGE", "", "ACTIVE", "", "", "", "", "", null, 2, 1, 4, null);
   add.run("2026-09-10", "103", "mixed", "set", "set", "camp", "camp", "cr", "IMAGE", "", "ACTIVE", "", "", "", "", "", 5, null, 3, 6, 2);
   const result = await readCrmMetaAdCards(db, { tenantId: "day1design", startDate: "2026-09-09", endDate: "2026-09-10" });
@@ -104,7 +119,7 @@ test("preserves null metrics while summing known values", async () => {
 
 test("returns unavailable when one ad has duplicate rows for a date", async () => {
   const db = fixture();
-  const add = db.prepare("INSERT INTO MetaAdsAd VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  const add = db.prepare("INSERT INTO MetaAdsAd (Date,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,ThumbnailUrl,Status,CreativeTitle,CreativeBody,CreativeCallToAction,CreativeLinkUrl,CreativeVariants,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   add.run("2026-09-10", "104", "duplicate", "set", "set", "camp", "camp", "cr", "IMAGE", "", "ACTIVE", "", "", "", "", "", 1, 1, 1, 1, 1);
   add.run("2026-09-10", "104", "duplicate", "set", "set", "camp", "camp", "cr", "IMAGE", "", "ACTIVE", "", "", "", "", "", 1, 1, 1, 1, 1);
   const result = await readCrmMetaAdCards(db, { tenantId: "day1design", startDate: "2026-09-10", endDate: "2026-09-10" });
@@ -114,7 +129,7 @@ test("returns unavailable when one ad has duplicate rows for a date", async () =
 
 test("keeps lexical AdId keyset pages complete across digit lengths", async () => {
   const db = fixture();
-  const add = db.prepare("INSERT INTO MetaAdsAd VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  const add = db.prepare("INSERT INTO MetaAdsAd (Date,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,ThumbnailUrl,Status,CreativeTitle,CreativeBody,CreativeCallToAction,CreativeLinkUrl,CreativeVariants,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   for (const adId of ["2", "10", "200"]) add.run("2026-09-10", adId, adId, "set", "set", "camp", "camp", "cr", "IMAGE", "", "ACTIVE", "", "", "", "", "", 1, 1, 1, 1, 1);
   const ids = [];
   let cursor = "";
@@ -130,7 +145,7 @@ test("keeps lexical AdId keyset pages complete across digit lengths", async () =
 
 test("retains bounded variant provenance", async () => {
   const db = fixture();
-  const add = db.prepare("INSERT INTO MetaAdsAd VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  const add = db.prepare("INSERT INTO MetaAdsAd (Date,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,ThumbnailUrl,Status,CreativeTitle,CreativeBody,CreativeCallToAction,CreativeLinkUrl,CreativeVariants,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   const sourceVariants = Array.from({ length: 40 }, (_, index) => ({ type: "title", source: `feed-${index}`, title: `제목-${index}` }));
   add.run("2026-09-10", "105", "variants", "set", "set", "camp", "camp", "cr", "IMAGE", "", "ACTIVE", "", "", "", "", JSON.stringify(sourceVariants), 1, 1, 1, 1, 1);
   const result = await readCrmMetaAdCards(db, { tenantId: "day1design", startDate: "2026-09-10", endDate: "2026-09-10" });

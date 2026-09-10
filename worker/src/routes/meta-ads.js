@@ -1158,7 +1158,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     // 5) ad 메타 (status, creative thumbnail)
     const adMeta = await fetchAdMeta(token, accountId);
     log.ApiCallsUsed++;
-    await mirrorFetchedCreativeThumbs(env, adRows, adMeta).catch(() => 0);
+    await mirrorFetchedCreativeThumbs(env, adRows, adMeta, log).catch(() => 0);
 
     // 6-10) breakdown 5종 + 시간대 (각 1회)
     const brkPlatform = await fetchBreakdown(
@@ -1480,6 +1480,11 @@ async function mirrorCreativeThumb(env, creativeId, key) {
 const PRIVATE_THUMB_MAX_BYTES = 2 * 1024 * 1024;
 const PRIVATE_THUMB_MAX_PER_RUN = 15;
 const PRIVATE_THUMB_CACHE_CONTROL = "private, max-age=604800, immutable";
+const PRIVATE_THUMB_PREVIEW_VERSION = "2";
+const VIDEO_PREVIEW_R2_PREFIX = "meta-ads/video-previews/";
+const VIDEO_PREVIEW_VERSION = "2";
+const VIDEO_PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
+const VIDEO_PREVIEW_MAX_PER_RUN = 15;
 
 function trustedCreativeUrl(value) {
   try {
@@ -1495,7 +1500,7 @@ function trustedCreativeUrl(value) {
 
 function imageMetadata(value) {
   const contentType = String(value || "").split(";", 1)[0].trim().toLowerCase();
-  return /^image\/(jpeg|png|webp|gif|avif)$/.test(contentType) ? contentType : "";
+  return /^image\/(jpeg|png|webp)$/.test(contentType) ? contentType : "";
 }
 
 function validPrivateThumb(head) {
@@ -1535,21 +1540,42 @@ async function boundedImageBody(response) {
   return bytes.byteLength ? { bytes, contentType } : null;
 }
 
-async function mirrorFetchedCreativeThumb(env, creative, key) {
+async function mirrorFetchedCreativeThumb(env, creative, key, log) {
   if (!env?.CRM_CACHE) return false;
   const privateHead = await env.CRM_CACHE.head(key).catch(() => null);
-  if (privateHead) return true;
-  let publicHead = null;
-  try { publicHead = env.IMAGES?.head ? await env.IMAGES.head(key) : null; } catch {}
-  if (validPrivateThumb(publicHead)) {
-    const object = await env.IMAGES.get(key).catch(() => null);
-    if (!object) return false;
-    await env.CRM_CACHE.put(key, object.body || await object.arrayBuffer(), {
-      httpMetadata: { contentType: imageMetadata(publicHead.httpMetadata.contentType), cacheControl: PRIVATE_THUMB_CACHE_CONTROL },
-    });
-    return true;
+  const cachedVersion = String(privateHead?.customMetadata?.previewVersion || "");
+  if (privateHead && cachedVersion === PRIVATE_THUMB_PREVIEW_VERSION && validPrivateThumb(privateHead)) return true;
+
+  let source = null;
+  const token = String(env.META_AD_ACCESS_TOKEN || "").trim();
+  const creativeId = String(creative?.id || "").trim();
+  if (token && creativeId) {
+    try {
+      const params = new URLSearchParams({
+        fields: "thumbnail_url,image_url",
+        thumbnail_width: "2048",
+        thumbnail_height: "2048",
+        access_token: token,
+      });
+      if (log) log.ApiCallsUsed = Number(log.ApiCallsUsed || 0) + 1;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/${META_API_VERSION}/${creativeId}?${params}`,
+          { method: "GET", redirect: "error", signal: controller.signal },
+        );
+        const data = await res.json();
+        if (res.ok) source = trustedCreativeUrl(data?.image_url) || trustedCreativeUrl(data?.thumbnail_url);
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {}
   }
-  const source = trustedCreativeUrl(creative?.thumbnail_url) || trustedCreativeUrl(creative?.image_url);
+  if (!source) {
+    source = trustedCreativeUrl(creative?.image_url);
+    if (!source && !token) source = trustedCreativeUrl(creative?.thumbnail_url);
+  }
   if (!source) return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
@@ -1558,7 +1584,11 @@ async function mirrorFetchedCreativeThumb(env, creative, key) {
     const image = await boundedImageBody(response);
     if (!image) return false;
     await env.CRM_CACHE.put(key, image.bytes, {
-      httpMetadata: { contentType: image.contentType, cacheControl: PRIVATE_THUMB_CACHE_CONTROL },
+      httpMetadata: {
+        contentType: image.contentType,
+        cacheControl: PRIVATE_THUMB_CACHE_CONTROL,
+      },
+      customMetadata: { previewVersion: PRIVATE_THUMB_PREVIEW_VERSION },
     });
     return true;
   } catch {
@@ -1568,7 +1598,7 @@ async function mirrorFetchedCreativeThumb(env, creative, key) {
   }
 }
 
-export async function mirrorFetchedCreativeThumbs(env, adRows, adMeta) {
+export async function mirrorFetchedCreativeThumbs(env, adRows, adMeta, log) {
   if (!env?.CRM_CACHE) return 0;
   const creatives = new Map();
   for (const row of adRows || []) {
@@ -1581,12 +1611,64 @@ export async function mirrorFetchedCreativeThumbs(env, adRows, adMeta) {
   for (const [id, creative] of creatives) {
     const key = `${THUMB_R2_PREFIX}${id}`;
     const head = await env.CRM_CACHE.head(key).catch(() => null);
-    if (head) continue;
+    if (head && String(head?.customMetadata?.previewVersion || "") === PRIVATE_THUMB_PREVIEW_VERSION && validPrivateThumb(head)) continue;
     if (attempted >= PRIVATE_THUMB_MAX_PER_RUN) break;
     attempted++;
-    if (await mirrorFetchedCreativeThumb(env, creative, key)) copied++;
+    if (await mirrorFetchedCreativeThumb(env, creative, key, log)) copied++;
   }
   return copied;
+}
+
+function decodeHtmlUrl(value) {
+  return String(value || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&#x27;/gi, "'")
+    .trim();
+}
+
+function validFacebookVideoEmbed(value) {
+  try {
+    const url = new URL(decodeHtmlUrl(value));
+    if (url.protocol !== "https:" || url.username || url.password || url.port || url.hash || !["facebook.com", "www.facebook.com"].includes(url.hostname.toLowerCase())) return null;
+    if (!(url.pathname === "/plugins/video.php" || url.pathname === "/video/embed" || url.pathname.startsWith("/video/embed/"))) return null;
+    for (const key of url.searchParams.keys()) {
+      if (["access_token", "redirect", "redirect_uri", "next", "url", "target"].includes(key.toLowerCase())) return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function extractFacebookVideoEmbedUrl(embedHtml, permalinkUrl) {
+  const html = String(embedHtml || "");
+  const match = html.match(/<iframe\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1/i);
+  return validFacebookVideoEmbed(match?.[2]) || validFacebookVideoEmbed(permalinkUrl);
+}
+
+async function videoPreviewIsFresh(env, videoId) {
+  if (!env?.CRM_CACHE) return true;
+  const head = await env.CRM_CACHE.head(`${VIDEO_PREVIEW_R2_PREFIX}${videoId}.json`).catch(() => null);
+  if (!head || String(head?.customMetadata?.previewVersion || "") !== VIDEO_PREVIEW_VERSION) return false;
+  const updatedAt = Date.parse(String(head?.customMetadata?.updatedAt || ""));
+  return Number.isFinite(updatedAt) && Date.now() - updatedAt < VIDEO_PREVIEW_TTL_MS;
+}
+
+export async function cacheFacebookVideoPreview(env, videoId, data, now) {
+  if (!env?.CRM_CACHE) return false;
+  const url = extractFacebookVideoEmbedUrl(data?.embed_html, data?.permalink_url);
+  if (!url) return false;
+  const body = JSON.stringify({ kind: "facebook_embed", url, updatedAt: now });
+  if (new TextEncoder().encode(body).byteLength > 8192) return false;
+  await env.CRM_CACHE.put(`${VIDEO_PREVIEW_R2_PREFIX}${videoId}.json`, body, {
+    httpMetadata: {
+      contentType: "application/json",
+      cacheControl: "private, max-age=86400",
+    },
+    customMetadata: { previewVersion: VIDEO_PREVIEW_VERSION, updatedAt: now },
+  });
+  return true;
 }
 
 async function getAdThumbUrls(request, env) {
@@ -1638,21 +1720,26 @@ async function fillVideoLengths(env, token, videoIds, log) {
   const wanted = [...new Set((videoIds || []).filter(Boolean))];
   if (!wanted.length) return 0;
 
+  const candidates = wanted.slice(0, 100);
   let known = new Set();
   try {
+    const placeholders = candidates.map(() => "?").join(",");
     const rows = await env.DB.prepare(
-      `SELECT VideoId FROM MetaVideos WHERE LengthSec > 0`,
-    ).all();
+      `SELECT VideoId FROM MetaVideos WHERE LengthSec > 0 AND VideoId IN (${placeholders})`,
+    ).bind(...candidates).all();
     known = new Set((rows?.results || []).map((r) => String(r.VideoId)));
   } catch (_) {
     // 테이블이 아직 없으면 전부 새로 받는다
   }
 
-  const missing = wanted.filter((id) => !known.has(String(id)));
+  const missing = [];
+  for (const id of candidates) {
+    if (!known.has(String(id)) || !(await videoPreviewIsFresh(env, String(id)))) missing.push(String(id));
+  }
   if (!missing.length) return 0;
 
   // 한 번에 너무 많이 부르면 subrequest 한도에 걸린다. 남은 것은 다음 동기화가 채운다
-  const batch = missing.slice(0, 20);
+  const batch = missing.slice(0, VIDEO_PREVIEW_MAX_PER_RUN);
   const now = new Date().toISOString();
   const stmts = [];
 
@@ -1660,23 +1747,30 @@ async function fillVideoLengths(env, token, videoIds, log) {
     try {
       const url =
         `https://graph.facebook.com/${META_API_VERSION}/${id}` +
-        `?fields=length,title&access_token=${encodeURIComponent(token)}`;
-      const res = await fetch(url);
+        `?fields=length,title,embed_html,permalink_url&access_token=${encodeURIComponent(token)}`;
       if (log) log.ApiCallsUsed = Number(log.ApiCallsUsed || 0) + 1;
-      const data = await res.json();
-      if (!res.ok) continue;
-      const len = Number(data?.length || 0);
-      if (!len) continue;
-      stmts.push(
-        env.DB.prepare(
-          `INSERT INTO MetaVideos (VideoId, LengthSec, Title, FetchedAt, CreatedAt)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(VideoId) DO UPDATE SET
-             LengthSec=excluded.LengthSec,
-             Title=excluded.Title,
-             FetchedAt=excluded.FetchedAt`,
-        ).bind(String(id), len, String(data?.title || ""), now, now),
-      );
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(url, { method: "GET", redirect: "error", signal: controller.signal });
+        const data = await res.json();
+        if (!res.ok) continue;
+        await cacheFacebookVideoPreview(env, String(id), data, now).catch(() => false);
+        const len = Number(data?.length || 0);
+        if (!len) continue;
+        stmts.push(
+          env.DB.prepare(
+            `INSERT INTO MetaVideos (VideoId, LengthSec, Title, FetchedAt, CreatedAt)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(VideoId) DO UPDATE SET
+               LengthSec=excluded.LengthSec,
+               Title=excluded.Title,
+               FetchedAt=excluded.FetchedAt`,
+          ).bind(String(id), len, String(data?.title || ""), now, now),
+        );
+      } finally {
+        clearTimeout(timer);
+      }
     } catch (_) {
       // 영상 하나를 못 받아도 동기화 전체를 멈추지 않는다
     }

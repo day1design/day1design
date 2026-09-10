@@ -11,6 +11,7 @@ const CREATIVE_COLUMNS = Object.freeze({
   callToAction: ["CreativeCallToAction", "CallToAction"],
   linkUrl: ["CreativeLinkUrl", "LinkUrl"],
   variants: ["CreativeVariants"],
+  videoId: ["VideoId", "CreativeVideoId"],
 });
 const CACHE_TTL_MS = 300_000;
 const CACHE_MAX_ENTRIES = 16;
@@ -77,6 +78,7 @@ function card(row, daily, currency) {
       id: text(row.creativeId), type: text(row.creativeType), thumbnailUrl: null,
       thumbnailRef: row.creativeId ? { creativeId: text(row.creativeId), key: metaCreativeThumbKey(row.creativeId) } : null,
       title: text(row.creativeTitle), body: text(row.creativeBody), callToAction: text(row.creativeCallToAction), linkUrl: text(row.creativeLinkUrl),
+      videoId: text(row.creativeVideoId),
       variants: creativeVariants,
       contentAvailability: row.creativeTitle || row.creativeBody || row.creativeCallToAction || row.creativeLinkUrl || creativeVariants.length ? "stored" : "unavailable",
     },
@@ -88,8 +90,9 @@ function card(row, daily, currency) {
 export async function readCrmMetaAdCards(db, options = {}) {
   if (!db?.prepare) throw new Error("meta_ad_cards_db_required");
   const { range, limit, cursor, currency } = validate(options);
+  const tenantId = String(options.tenantId);
   const columns = await tableColumns(db);
-  const required = ["Date", "AdId", "AdName", "AdsetId", "AdsetName", "CampaignId", "CampaignName", "CreativeId", "CreativeType", "ThumbnailUrl", "Status", "Impressions", "Clicks", "LinkClicks", "Spend", "Leads"];
+  const required = ["CrmTenantId", "Date", "AdId", "AdName", "AdsetId", "AdsetName", "CampaignId", "CampaignName", "CreativeId", "CreativeType", "ThumbnailUrl", "Status", "Impressions", "Clicks", "LinkClicks", "Spend", "Leads"];
   const missing = required.filter((name) => !columns.has(name));
   if (missing.length) return { available: false, reason: "meta_ad_columns_missing", missing, cards: [], nextCursor: null };
   const creative = selectedCreativeColumns(columns);
@@ -97,9 +100,9 @@ export async function readCrmMetaAdCards(db, options = {}) {
   const candidateIds = new Set();
   for (let offset = 0; offset < dates.length; offset += 5) {
     const chunk = dates.slice(offset, offset + 5);
-    const candidateCtes = chunk.map((_, index) => `d${index} AS (SELECT AdId AS adId FROM MetaAdsAd WHERE Date=? AND AdId>? ORDER BY AdId ASC LIMIT ${limit + 1})`).join(",");
+    const candidateCtes = chunk.map((_, index) => `d${index} AS (SELECT AdId AS adId FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_date_adid WHERE CrmTenantId=? AND Date=? AND AdId>? ORDER BY AdId ASC LIMIT ${limit + 1})`).join(",");
     const candidateUnion = chunk.map((_, index) => `SELECT adId FROM d${index}`).join(" UNION ALL ");
-    const rows = rowsOf(await queryAll(db, `WITH ${candidateCtes} SELECT DISTINCT adId FROM (${candidateUnion}) ORDER BY adId ASC LIMIT ${limit + 1}`, chunk.flatMap((date) => [date, cursor || ""])));
+    const rows = rowsOf(await queryAll(db, `WITH ${candidateCtes} SELECT DISTINCT adId FROM (${candidateUnion}) ORDER BY adId ASC LIMIT ${limit + 1}`, chunk.flatMap((date) => [tenantId, date, cursor || ""])));
     for (const row of rows) { const adId = String(row.adId || ""); if (adId) candidateIds.add(adId); }
   }
   const idRows = [...candidateIds].sort().slice(0, limit + 1).map((adId) => ({ adId }));
@@ -107,7 +110,7 @@ export async function readCrmMetaAdCards(db, options = {}) {
   const nextCursor = idRows.length > limit ? ids[ids.length - 1] : null;
   if (!ids.length) return { available: true, period: { start: range.startDate, end: range.endDate, timezone: "Asia/Seoul" }, limit, cards: [], nextCursor: null, creativeColumns: creative, currency };
   const selected = ids.map(() => "?").join(",");
-  const sourceRows = rowsOf(await queryAll(db, `SELECT Date AS date,AdId AS adId,AdName AS adName,AdsetId AS adsetId,AdsetName AS adsetName,CampaignId AS campaignId,CampaignName AS campaignName,CreativeId AS creativeId,CreativeType AS creativeType,ThumbnailUrl AS thumbnailUrl,Status AS status,${Object.entries(creative).map(([key, column]) => column ? `${id(column)} AS creative_${key}` : `NULL AS creative_${key}`).join(",")},Impressions AS impressions,Clicks AS clicks,LinkClicks AS linkClicks,Spend AS spend,Leads AS leads FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_adid_date WHERE Date BETWEEN ? AND ? AND AdId IN (${selected}) ORDER BY AdId ASC,Date ASC LIMIT ${MAX_SOURCE_ROWS + 1}`, [range.startDate, range.endDate, ...ids]));
+  const sourceRows = rowsOf(await queryAll(db, `SELECT Date AS date,AdId AS adId,AdName AS adName,AdsetId AS adsetId,AdsetName AS adsetName,CampaignId AS campaignId,CampaignName AS campaignName,CreativeId AS creativeId,CreativeType AS creativeType,ThumbnailUrl AS thumbnailUrl,Status AS status,${Object.entries(creative).map(([key, column]) => column ? `${id(column)} AS creative_${key}` : `NULL AS creative_${key}`).join(",")},Impressions AS impressions,Clicks AS clicks,LinkClicks AS linkClicks,Spend AS spend,Leads AS leads FROM MetaAdsAd INDEXED BY idx_meta_ads_ad_tenant_adid_date WHERE CrmTenantId=? AND Date BETWEEN ? AND ? AND AdId IN (${selected}) ORDER BY AdId ASC,Date ASC LIMIT ${MAX_SOURCE_ROWS + 1}`, [tenantId, range.startDate, range.endDate, ...ids]));
   if (sourceRows.length > MAX_SOURCE_ROWS) return { available: false, reason: "meta_ad_source_cap_exceeded", period: { start: range.startDate, end: range.endDate, timezone: "Asia/Seoul" }, cards: [], nextCursor: null };
   const aggregates = new Map(ids.map((adId) => [adId, { adId, impressions: null, clicks: null, linkClicks: null, spend: null, leads: null, latest: null, daily: new Map(), missing: new Set() }]));
   for (const row of sourceRows) {
@@ -125,7 +128,7 @@ export async function readCrmMetaAdCards(db, options = {}) {
   }
   const page = ids.map((adId) => { const aggregate = aggregates.get(adId); for (const field of aggregate.missing) aggregate[field] = null; const latest = aggregate.latest || {}; return { ...latest, adId, ...aggregate }; });
   const dailyByAd = new Map(ids.map((adId) => [adId, [...aggregates.get(adId).daily.values()].map((row) => ({ ...row, impressions: finite(row.impressions), clicks: finite(row.clicks), linkClicks: finite(row.linkClicks), spend: finite(row.spend), leads: finite(row.leads) }))]));
-  return { available: true, period: { start: range.startDate, end: range.endDate, timezone: "Asia/Seoul" }, limit, cards: page.map((row) => card({ ...row, creativeTitle: row.creative_title, creativeBody: row.creative_body, creativeCallToAction: row.creative_callToAction, creativeLinkUrl: row.creative_linkUrl, creativeVariants: row.creative_variants }, dailyByAd.get(String(row.adId)) || [], currency)), nextCursor, creativeColumns: creative, currency };
+  return { available: true, period: { start: range.startDate, end: range.endDate, timezone: "Asia/Seoul" }, limit, cards: page.map((row) => card({ ...row, creativeTitle: row.creative_title, creativeBody: row.creative_body, creativeCallToAction: row.creative_callToAction, creativeLinkUrl: row.creative_linkUrl, creativeVariants: row.creative_variants, creativeVideoId: row.creative_videoId }, dailyByAd.get(String(row.adId)) || [], currency)), nextCursor, creativeColumns: creative, currency };
 }
 
 export async function readCachedCrmMetaAdCards(db, options = {}) {

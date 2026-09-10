@@ -24,15 +24,18 @@ function database() {
     CREATE TABLE MetaAdsAd (
       Date TEXT, AdId TEXT, AdName TEXT, AdsetId TEXT, AdsetName TEXT, CampaignId TEXT,
       CampaignName TEXT, CreativeId TEXT, CreativeType TEXT, ThumbnailUrl TEXT, Status TEXT,
+      CrmTenantId TEXT NOT NULL DEFAULT 'day1design',
       Impressions INTEGER, Clicks INTEGER, LinkClicks INTEGER, Spend REAL, Leads INTEGER
     );
     CREATE INDEX idx_meta_ads_ad_adid_date ON MetaAdsAd(AdId, Date);
+    CREATE INDEX idx_meta_ads_ad_tenant_date_adid ON MetaAdsAd(CrmTenantId, Date, AdId);
+    CREATE INDEX idx_meta_ads_ad_tenant_adid_date ON MetaAdsAd(CrmTenantId, AdId, Date);
     CREATE TABLE HeatmapEvents (id TEXT PRIMARY KEY, CrmTenantId TEXT, SessionId TEXT, Page TEXT, EventType TEXT, IsBot INTEGER, Device TEXT NOT NULL DEFAULT '', Referrer TEXT NOT NULL DEFAULT '', UtmSource TEXT, UtmMedium TEXT, UtmCampaign TEXT NOT NULL DEFAULT '', CreatedAt TEXT);
     CREATE INDEX heatmap_tenant_date ON HeatmapEvents(CrmTenantId, CreatedAt);
   `);
   sqlite.exec("ALTER TABLE Estimates ADD COLUMN SessionId TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstSource TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstPlatform TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstReferrer TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstInflowApp TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN MetaFieldData TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN MetaLeadId TEXT NOT NULL DEFAULT ''; CREATE INDEX IF NOT EXISTS idx_heatmap_crm_tenant_session_event_bot_created_id ON HeatmapEvents(CrmTenantId,SessionId,EventType,IsBot,CreatedAt,id);");
   sqlite.exec(readFileSync(new URL("../migrations/0083_crm_customer_source_channels.sql", import.meta.url), "utf8"));
-  sqlite.prepare("INSERT INTO MetaAdsAd VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
+  sqlite.prepare("INSERT INTO MetaAdsAd (Date,AdId,AdName,AdsetId,AdsetName,CampaignId,CampaignName,CreativeId,CreativeType,ThumbnailUrl,Status,Impressions,Clicks,LinkClicks,Spend,Leads) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
     "2026-09-10", "1001", "실내광고", "set-1", "세트", "campaign-1", "캠페인", "creative-1", "image", "", "ACTIVE", 1000, 80, 70, 35, 5,
   );
   sqlite.prepare("INSERT INTO CrmUsers(id,tenant_id,email,role,active) VALUES(?,?,?,?,?)").run("staff-route", "day1design", "staff-route@example.test", "staff", 1);
@@ -118,7 +121,9 @@ test("owner can read update and Meta routes, while POST and traversal are reject
     assert.equal((await handleMobileCrm(request("/api/mobile/app-update/latest", "POST", owner, {}), e)).status, 405);
     const cards = await handleMobileCrm(request("/api/mobile/meta/ads?start=2026-09-10&end=2026-09-10", "GET", owner), e);
     assert.equal(cards.status, 200);
-    assert.equal((await cards.json()).cards[0].metrics.cpl, 7);
+    const cardPayload = await cards.json();
+    assert.equal(cardPayload.cards[0].metrics.cpl, 7);
+    assert.equal(cardPayload.cards[0].creative.body, undefined);
     assert.equal((await handleMobileCrm(request("/api/mobile/meta/ads?start=2026-09-10&end=2026-09-10&cursor=../../secret", "GET", owner), e)).status, 400);
     assert.equal((await handleMobileCrm(request("/api/mobile/app-update/artifacts/unsafe%2Fsecret.apk", "GET", owner), e)).status, 404);
   } finally { sqlite.close(); }
