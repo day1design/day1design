@@ -4,6 +4,7 @@ const ALLOWED_TENANT = "day1design";
 const TENANT_COLUMNS = ["tenant_id", "TenantId", "TenantID", "CrmTenantId"];
 const DATE_COLUMN = "CreatedAt";
 const GA4_SOURCE_KIND = "ga4";
+const MAX_LEGACY_PAYLOAD_BYTES = 512 * 1024;
 
 function safeIdentifier(value) {
   return `"${String(value).replaceAll('"', '""')}"`;
@@ -83,6 +84,19 @@ async function readGa4Snapshot(db, { tenantId, propertyId, startDate, endDate } 
   } catch (error) {
     if (/no such table/i.test(String(error?.message || error))) return { available: false, reason: "ga4_tenant_snapshot_table_missing" };
     return { available: false, reason: "ga4_snapshot_read_failed" };
+  }
+}
+
+async function readLegacySelfSnapshot(db, { propertyId, startDate, endDate } = {}) {
+  if (!validPropertyId(propertyId)) return null;
+  try {
+    const rangeKey = startDate === endDate ? "today" : "custom";
+    const row = await queryOne(db.prepare(`SELECT Payload,CreatedAt FROM AnalyticsSnapshots WHERE RangeKey=? AND StartDate=? AND EndDate=? AND Source='self' AND length(Payload)<=? ORDER BY CreatedAt DESC LIMIT 1`), rangeKey, startDate, endDate, MAX_LEGACY_PAYLOAD_BYTES);
+    const payload = parsePayload(row?.Payload);
+    if (!payload || String(payload.propertyId || '') !== String(propertyId)) return null;
+    return { returningVisitors: payload.self?.returningVisitors, createdAt: row.CreatedAt || '' };
+  } catch {
+    return null;
   }
 }
 
@@ -171,13 +185,24 @@ export async function readCrmTrafficSummary(db, { tenantId, propertyId = null, s
     const avgDuration = numberOrNull(aggregate?.avg_duration);
     const ga4 = await readGa4Snapshot(db, { tenantId, propertyId, startDate, endDate });
     const ga4Summary = ga4.available ? ga4.summary : {};
+    const legacySelf = ga4Summary.returningVisitors == null
+      ? await readLegacySelfSnapshot(db, { propertyId, startDate, endDate })
+      : null;
+    const returningVisitors = ga4Summary.returningVisitors ?? legacySelf?.returningVisitors;
     return {
       ...base,
       available: true,
       traffic: {
         visitors: metric(ga4Summary.visitors, ga4.reason || "traffic_visitors_ga4_unavailable"),
         touches: metric(touches, touches === null ? "traffic_touches_read_failed" : null),
-        returningVisitors: metric(null, "traffic_returning_visitors_tenant_history_unavailable"),
+        returningVisitors: metric(
+          returningVisitors,
+          returningVisitors !== null && returningVisitors !== undefined
+            ? null
+            : (ga4.reason === "ga4_property_binding_missing"
+            ? "traffic_returning_visitors_tenant_history_unavailable"
+            : (ga4.reason || "traffic_returning_visitors_ga4_unavailable")),
+        ),
         pageviews: metric(ga4Summary.pageviews, ga4.reason || "traffic_pageviews_ga4_unavailable"),
         avgDurationSec: metric(ga4Summary.avgDurationSec, ga4.reason || "traffic_avg_duration_ga4_unavailable"),
         bounceRate: metric(ga4Summary.bounceRate, ga4.reason || "traffic_bounce_rate_ga4_unavailable"),

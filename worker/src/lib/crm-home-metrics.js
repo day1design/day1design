@@ -52,9 +52,15 @@ function savedMetric(analytics, missingReason) {
   return metric(value, value === null || value === undefined ? missingReason : null);
 }
 
-function scopedPayload(payload, tenantId) {
+function scopedPayload(payload, tenantId, expectedPeriod = null) {
   if (!payload || !tenantId) return payload;
-  return String(payload.tenant_id || "") === String(tenantId) ? payload : null;
+  if (String(payload.tenant_id || "") !== String(tenantId)) return null;
+  if (!expectedPeriod) return payload;
+  const period = payload.period || payload.range;
+  if (!period) return payload;
+  const start = period.start ?? period.startDate;
+  const end = period.end ?? period.endDate;
+  return (start && start !== expectedPeriod.start) || (end && end !== expectedPeriod.end) ? null : payload;
 }
 
 function trafficMetrics(analytics) {
@@ -72,24 +78,37 @@ function trafficMetrics(analytics) {
   };
 }
 
+function mergeTrafficMetrics(primary, fallback) {
+  const keys = ["visitors", "touches", "returningVisitors", "pageviews", "avgDurationSec", "bounceRate"];
+  return Object.fromEntries(keys.map((key) => {
+    const preferred = primary[key];
+    const backup = fallback[key];
+    if (preferred?.value !== null && preferred?.value !== undefined) return [key, preferred];
+    if (backup?.value !== null && backup?.value !== undefined) return [key, backup];
+    return [key, preferred || backup];
+  }));
+}
+
 export function buildCrmHomeMetrics({ tenantId, todayAnalytics, recent30Analytics, trafficAnalytics = todayAnalytics, trafficSummary = null, todayDate } = {}) {
+  const periods = homeMetricPeriods(todayDate);
   const scopedToday = scopedPayload(todayAnalytics, tenantId);
   const scopedRecent30 = scopedPayload(recent30Analytics, tenantId);
-  const scopedTraffic = scopedPayload(trafficAnalytics, tenantId);
-  const scopedTrafficSummary = scopedPayload(trafficSummary, tenantId);
+  const scopedTraffic = scopedPayload(trafficAnalytics, tenantId, periods.today);
   const scopedSubmission = (payload, scoped, missingReason) => {
     if (payload == null) return metric(null, missingReason);
     if (!scoped) return metric(null, "tenant_mismatch");
     return savedMetric(scoped, missingReason);
   };
-  const periods = homeMetricPeriods(todayDate);
+  const scopedTrafficSummary = scopedPayload(trafficSummary, tenantId, periods.today);
   return {
     periods,
     submissions: {
       today: scopedSubmission(todayAnalytics, scopedToday, "today_submissions_missing"),
       recent30: scopedSubmission(recent30Analytics, scopedRecent30, "recent30_submissions_missing"),
     },
-    traffic: scopedTrafficSummary?.traffic ? { ...trafficMetrics(null), ...scopedTrafficSummary.traffic } : (scopedTraffic ? trafficMetrics(scopedTraffic) : trafficMetrics(null)),
+    traffic: scopedTrafficSummary?.traffic
+      ? mergeTrafficMetrics(scopedTrafficSummary.traffic, trafficMetrics(scopedTraffic))
+      : (scopedTraffic ? trafficMetrics(scopedTraffic) : trafficMetrics(null)),
     source: "cached_crm_analytics",
   };
 }

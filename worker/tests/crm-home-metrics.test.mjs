@@ -94,3 +94,31 @@ test("tenant-scoped traffic summary takes precedence over absent analytics summa
   assert.deepEqual(result.traffic.touches, { value: 2, reason: null });
   assert.deepEqual(result.traffic.pageviews, { value: null, reason: "traffic_pageviews_missing" });
 });
+
+test("tenant-scoped traffic summary falls back to cached analytics when a field is unavailable", () => {
+  const result = buildCrmHomeMetrics({
+    tenantId: "day1design",
+    todayDate: "2026-09-09",
+    todayAnalytics: { ...analytics("day1design", 2), summary: undefined, self: { returningVisitors: 2 } },
+    recent30Analytics: null,
+    trafficSummary: {
+      tenant_id: "day1design",
+      traffic: {
+        touches: { value: 4, reason: null },
+        returningVisitors: { value: null, reason: "traffic_returning_visitors_ga4_unavailable" },
+      },
+    },
+  });
+  assert.deepEqual(result.traffic.touches, { value: 4, reason: null });
+  assert.deepEqual(result.traffic.returningVisitors, { value: 2, reason: null });
+});
+
+test("traffic summary with a different period cannot supply today's home metrics", () => {
+  const result = buildCrmHomeMetrics({
+    tenantId: "day1design",
+    todayDate: "2026-09-09",
+    todayAnalytics: { tenant_id: "day1design", range: { startDate: "2026-09-08", endDate: "2026-09-08" }, summary: { returningVisitors: 3 } },
+    trafficSummary: { tenant_id: "day1design", period: { start: "2026-09-08", end: "2026-09-08" }, traffic: { returningVisitors: { value: 99, reason: null } } },
+  });
+  assert.deepEqual(result.traffic.returningVisitors, { value: null, reason: "traffic_returning_visitors_missing" });
+});
