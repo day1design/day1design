@@ -1,0 +1,2 @@
+ALTER TABLE CrmAppointments ADD COLUMN assignee_id TEXT REFERENCES CrmUsers(id);
+ALTER TABLE CrmAppointments ADD COLUMN memo TEXT NOT NULL DEFAULT '';

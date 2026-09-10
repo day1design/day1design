@@ -15,7 +15,6 @@ import { notifyTelegram } from "../lib/telegram.js";
 import { generateId, d1Create, d1Update } from "../lib/d1.js";
 
 const META_API_VERSION = "v18.0";
-const SOURCE_TENANT_ID = "day1design";
 const CAMPAIGN_FIELDS = "campaign_id,campaign_name";
 const AD_FIELDS = "ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name";
 const INSIGHT_METRICS = [
@@ -44,6 +43,8 @@ const INSIGHT_METRICS = [
 const CAMPAIGN_META_FIELDS =
   "id,name,status,objective,daily_budget,lifetime_budget";
 const AD_META_FIELDS =
+  "id,name,status,creative{id,thumbnail_url,object_type,video_id,image_url,asset_feed_spec{bodies,titles,call_to_action_types,link_urls},object_story_spec{link_data{message,name,link,call_to_action},video_data{message,title,call_to_action}}}";
+const AD_META_FIELDS_FALLBACK =
   "id,name,status,creative{id,thumbnail_url,object_type,video_id,image_url}";
 
 // ─── 어드민 라우터 ────────────────────────────────────────
@@ -1157,6 +1158,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     // 5) ad 메타 (status, creative thumbnail)
     const adMeta = await fetchAdMeta(token, accountId);
     log.ApiCallsUsed++;
+    await mirrorFetchedCreativeThumbs(env, adRows, adMeta).catch(() => 0);
 
     // 6-10) breakdown 5종 + 시간대 (각 1회)
     const brkPlatform = await fetchBreakdown(
@@ -1246,6 +1248,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     for (const row of adRows) {
       const meta = adMeta[row.ad_id] || {};
       const creative = meta.creative || {};
+      const copy = normalizeCreativeCopy(creative);
       stmts.push(
         buildAdStmt(env, {
           Date: row.date_start,
@@ -1261,6 +1264,11 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
           ThumbnailUrl: String(
             creative.thumbnail_url || creative.image_url || "",
           ),
+          CreativeTitle: copy.title,
+          CreativeBody: copy.body,
+          CreativeCallToAction: copy.callToAction,
+          CreativeLinkUrl: copy.linkUrl,
+          CreativeVariants: copy.variants.length ? JSON.stringify(copy.variants) : "",
           Status: String(meta.status || ""),
           ...mapInsight(row),
           FetchedAt: fetchedAt,
@@ -1469,6 +1477,118 @@ async function mirrorCreativeThumb(env, creativeId, key) {
   }
 }
 
+const PRIVATE_THUMB_MAX_BYTES = 2 * 1024 * 1024;
+const PRIVATE_THUMB_MAX_PER_RUN = 15;
+const PRIVATE_THUMB_CACHE_CONTROL = "private, max-age=604800, immutable";
+
+function trustedCreativeUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    if (!(host === "fbcdn.net" || host.endsWith(".fbcdn.net") || host === "facebookcdn.net" || host.endsWith(".facebookcdn.net"))) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function imageMetadata(value) {
+  const contentType = String(value || "").split(";", 1)[0].trim().toLowerCase();
+  return /^image\/(jpeg|png|webp|gif|avif)$/.test(contentType) ? contentType : "";
+}
+
+function validPrivateThumb(head) {
+  const size = Number(head?.size);
+  return Number.isFinite(size) && size > 0 && size <= PRIVATE_THUMB_MAX_BYTES && !!imageMetadata(head?.httpMetadata?.contentType);
+}
+
+async function boundedImageBody(response) {
+  if (!response?.ok) return null;
+  const contentType = imageMetadata(response.headers?.get("content-type"));
+  const declared = Number(response.headers?.get("content-length"));
+  if (!contentType || (Number.isFinite(declared) && declared > PRIVATE_THUMB_MAX_BYTES)) return null;
+  if (!response.body?.getReader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return bytes.byteLength > 0 && bytes.byteLength <= PRIVATE_THUMB_MAX_BYTES ? { bytes, contentType } : null;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) break;
+      total += part.value?.byteLength || 0;
+      if (!total || total > PRIVATE_THUMB_MAX_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(part.value);
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes.byteLength ? { bytes, contentType } : null;
+}
+
+async function mirrorFetchedCreativeThumb(env, creative, key) {
+  if (!env?.CRM_CACHE) return false;
+  const privateHead = await env.CRM_CACHE.head(key).catch(() => null);
+  if (privateHead) return true;
+  let publicHead = null;
+  try { publicHead = env.IMAGES?.head ? await env.IMAGES.head(key) : null; } catch {}
+  if (validPrivateThumb(publicHead)) {
+    const object = await env.IMAGES.get(key).catch(() => null);
+    if (!object) return false;
+    await env.CRM_CACHE.put(key, object.body || await object.arrayBuffer(), {
+      httpMetadata: { contentType: imageMetadata(publicHead.httpMetadata.contentType), cacheControl: PRIVATE_THUMB_CACHE_CONTROL },
+    });
+    return true;
+  }
+  const source = trustedCreativeUrl(creative?.thumbnail_url) || trustedCreativeUrl(creative?.image_url);
+  if (!source) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(source, { method: "GET", redirect: "error", signal: controller.signal });
+    const image = await boundedImageBody(response);
+    if (!image) return false;
+    await env.CRM_CACHE.put(key, image.bytes, {
+      httpMetadata: { contentType: image.contentType, cacheControl: PRIVATE_THUMB_CACHE_CONTROL },
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function mirrorFetchedCreativeThumbs(env, adRows, adMeta) {
+  if (!env?.CRM_CACHE) return 0;
+  const creatives = new Map();
+  for (const row of adRows || []) {
+    const creative = adMeta?.[row.ad_id]?.creative;
+    const id = String(creative?.id || "");
+    if (id && !creatives.has(id)) creatives.set(id, creative);
+  }
+  let attempted = 0;
+  let copied = 0;
+  for (const [id, creative] of creatives) {
+    const key = `${THUMB_R2_PREFIX}${id}`;
+    const head = await env.CRM_CACHE.head(key).catch(() => null);
+    if (head) continue;
+    if (attempted >= PRIVATE_THUMB_MAX_PER_RUN) break;
+    attempted++;
+    if (await mirrorFetchedCreativeThumb(env, creative, key)) copied++;
+  }
+  return copied;
+}
+
 async function getAdThumbUrls(request, env) {
   const base = String(env.R2_PUBLIC_BASE || "").replace(/\/$/, "");
   if (!env?.IMAGES || !base) return jsonError(500, "Server misconfigured");
@@ -1567,26 +1687,71 @@ async function fillVideoLengths(env, token, videoIds, log) {
 }
 
 async function fetchAdMeta(token, accountId) {
-  const params = new URLSearchParams({
-    fields: AD_META_FIELDS,
-    limit: "500",
-    access_token: token,
-  });
-  const url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/ads?${params}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(
-      `Meta ads ${res.status}: ${data?.error?.message || "unknown"}`,
-    );
-    err.metaError = data?.error;
-    throw err;
+  async function fetchFields(fields) {
+    const params = new URLSearchParams({ fields, limit: "500", access_token: token });
+    const url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/ads?${params}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) {
+      const err = new Error(`Meta ads ${res.status}: ${data?.error?.message || "unknown"}`);
+      err.metaError = data?.error;
+      throw err;
+    }
+    return data;
+  }
+  let data;
+  try {
+    data = await fetchFields(AD_META_FIELDS);
+  } catch (expandedError) {
+    data = await fetchFields(AD_META_FIELDS_FALLBACK).catch(() => { throw expandedError; });
   }
   const map = {};
   for (const a of data.data || []) {
     map[a.id] = a;
   }
   return map;
+}
+
+function creativeAssetValue(value, key) {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  if (key === "linkUrl") return String(value.website_url || value.url || "").trim();
+  return String(value.text || value.type || "").trim();
+}
+
+export function normalizeCreativeCopy(creative = {}) {
+  const feed = creative?.asset_feed_spec && typeof creative.asset_feed_spec === "object"
+    ? creative.asset_feed_spec
+    : {};
+  const fields = [
+    ["titles", "title"],
+    ["bodies", "body"],
+    ["call_to_action_types", "callToAction"],
+    ["link_urls", "linkUrl"],
+  ];
+  const variants = [];
+  let feedCount = 0;
+  for (const [source, target] of fields) {
+    const values = Array.isArray(feed[source]) ? feed[source].slice(0, 8) : [];
+    feedCount += values.length;
+    values.forEach((value, index) => {
+      const text = creativeAssetValue(value, target);
+      if (!text || variants.length >= 32) return;
+      variants.push({ type: "asset_feed_spec", provenance: `asset_feed_spec.${source}[${index}]`, [target]: text });
+    });
+  }
+  if (feedCount > 0) {
+    return { title: "", body: "", callToAction: "", linkUrl: "", variants };
+  }
+  const linkData = creative?.object_story_spec?.link_data || {};
+  const videoData = creative?.object_story_spec?.video_data || {};
+  return {
+    title: String(linkData.name || videoData.title || "").trim(),
+    body: String(linkData.message || videoData.message || "").trim(),
+    callToAction: String(linkData.call_to_action?.type || videoData.call_to_action?.type || "").trim(),
+    linkUrl: String(linkData.link || linkData.call_to_action?.value?.link || videoData.call_to_action?.value?.link || "").trim(),
+    variants: [],
+  };
 }
 
 async function fetchBreakdown(
@@ -1733,12 +1898,11 @@ const DAILY_COLS = [
   "CostPerLinkClick",
   "FetchedAt",
 ];
-export function buildDailyStmt(env, fields) {
+function buildDailyStmt(env, fields) {
   const id = generateId();
   const now = new Date().toISOString();
-  const setClause = ["CrmTenantId=excluded.CrmTenantId", ...DAILY_COLS.map((c) => `${c}=excluded.${c}`)].join(", ");
+  const setClause = DAILY_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
   const placeholders = [
-    "?",
     "?",
     "?",
     "?",
@@ -1747,11 +1911,10 @@ export function buildDailyStmt(env, fields) {
     "?",
   ].join(",");
   const sql = `INSERT INTO MetaAdsDaily
-      (id, CrmTenantId, Date, Level, EntityId, ${DAILY_COLS.join(",")}, CreatedAt)
+      (id, Date, Level, EntityId, ${DAILY_COLS.join(",")}, CreatedAt)
      VALUES (${placeholders})
-     ON CONFLICT(Date, Level, EntityId) DO UPDATE SET ${setClause}
-       WHERE MetaAdsDaily.CrmTenantId IS NULL OR MetaAdsDaily.CrmTenantId=excluded.CrmTenantId`;
-  const values = [id, SOURCE_TENANT_ID, fields.Date, fields.Level, fields.EntityId];
+     ON CONFLICT(Date, Level, EntityId) DO UPDATE SET ${setClause}`;
+  const values = [id, fields.Date, fields.Level, fields.EntityId];
   for (const c of DAILY_COLS)
     values.push(fields[c] ?? (typeof fields[c] === "number" ? 0 : ""));
   values.push(now);
@@ -1768,6 +1931,11 @@ const AD_COLS = [
   "CreativeType",
   "VideoId",
   "ThumbnailUrl",
+  "CreativeTitle",
+  "CreativeBody",
+  "CreativeCallToAction",
+  "CreativeLinkUrl",
+  "CreativeVariants",
   "Status",
   "Impressions",
   "Clicks",
@@ -1790,16 +1958,18 @@ const AD_COLS = [
 export function buildAdStmt(env, fields) {
   const id = generateId();
   const now = new Date().toISOString();
-  const setClause = ["CrmTenantId=excluded.CrmTenantId", ...AD_COLS.map((c) => `${c}=excluded.${c}`)].join(", ");
-  const placeholders = ["?", "?", "?", "?", ...AD_COLS.map(() => "?"), "?"].join(
+  const copyCols = new Set(["CreativeTitle", "CreativeBody", "CreativeCallToAction", "CreativeLinkUrl", "CreativeVariants"]);
+  const setClause = AD_COLS.map((c) => copyCols.has(c)
+    ? `${c}=CASE WHEN NULLIF(excluded.CreativeId,'') IS NOT NULL AND excluded.CreativeId<>MetaAdsAd.CreativeId THEN excluded.${c} ELSE COALESCE(NULLIF(excluded.${c},''),MetaAdsAd.${c}) END`
+    : `${c}=excluded.${c}`).join(", ");
+  const placeholders = ["?", "?", "?", ...AD_COLS.map(() => "?"), "?"].join(
     ",",
   );
   const sql = `INSERT INTO MetaAdsAd
-      (id, CrmTenantId, Date, AdId, ${AD_COLS.join(",")}, CreatedAt)
+      (id, Date, AdId, ${AD_COLS.join(",")}, CreatedAt)
      VALUES (${placeholders})
-     ON CONFLICT(Date, AdId) DO UPDATE SET ${setClause}
-       WHERE MetaAdsAd.CrmTenantId IS NULL OR MetaAdsAd.CrmTenantId=excluded.CrmTenantId`;
-  const values = [id, SOURCE_TENANT_ID, fields.Date, fields.AdId];
+     ON CONFLICT(Date, AdId) DO UPDATE SET ${setClause}`;
+  const values = [id, fields.Date, fields.AdId];
   for (const c of AD_COLS) values.push(fields[c] ?? "");
   values.push(now);
   return env.DB.prepare(sql).bind(...values);
@@ -1816,12 +1986,11 @@ const BRK_COLS = [
   "Leads",
   "FetchedAt",
 ];
-export function buildBreakdownStmt(env, fields) {
+function buildBreakdownStmt(env, fields) {
   const id = generateId();
   const now = new Date().toISOString();
-  const setClause = ["CrmTenantId=excluded.CrmTenantId", ...BRK_COLS.map((c) => `${c}=excluded.${c}`)].join(", ");
+  const setClause = BRK_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
   const placeholders = [
-    "?",
     "?",
     "?",
     "?",
@@ -1831,13 +2000,11 @@ export function buildBreakdownStmt(env, fields) {
     "?",
   ].join(",");
   const sql = `INSERT INTO MetaAdsBreakdown
-      (id, CrmTenantId, Date, Dimension, DimensionValue, DimensionSub, ${BRK_COLS.join(",")}, CreatedAt)
+      (id, Date, Dimension, DimensionValue, DimensionSub, ${BRK_COLS.join(",")}, CreatedAt)
      VALUES (${placeholders})
-     ON CONFLICT(Date, Dimension, DimensionValue, DimensionSub) DO UPDATE SET ${setClause}
-       WHERE MetaAdsBreakdown.CrmTenantId IS NULL OR MetaAdsBreakdown.CrmTenantId=excluded.CrmTenantId`;
+     ON CONFLICT(Date, Dimension, DimensionValue, DimensionSub) DO UPDATE SET ${setClause}`;
   const values = [
     id,
-    SOURCE_TENANT_ID,
     fields.Date,
     fields.Dimension,
     fields.DimensionValue,

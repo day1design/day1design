@@ -1,4 +1,5 @@
 import { jsonOk, jsonError } from "../lib/response.js";
+import { serializeHomepageAnswers } from '../lib/crm-original-answers.js';
 import {
   botSignals,
   clientIP,
@@ -962,6 +963,7 @@ async function submitEstimate(request, env, ctx, services) {
     PrivacyAgreed: true,
     ConceptFiles: JSON.stringify(conceptUrls),
     FloorPlans: JSON.stringify(planUrls),
+    MetaFieldData: JSON.stringify(serializeHomepageAnswers(fields).map(({question,answer,field})=>({q:question,a:answer,f:field}))),
     SubmittedAt: submittedAt,
     // 팝업 접수는 아직 완성된 문의가 아니다. '작성중' 으로 두어 접수관리 기본
     // 목록에서 빠지게 하고, 견적 폼을 마치면 같은 레코드가 '접수대기' 로 승격된다.

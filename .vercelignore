@@ -25,3 +25,13 @@ mobile-crm
 .env
 .env.*
 worker/.dev.vars
+.tools
+**/.gradle
+**/*.local.properties
+**/*.apk
+**/*.aab
+**/*.jks
+**/*.keystore
+**/signingkey*
+
+**/*.pem

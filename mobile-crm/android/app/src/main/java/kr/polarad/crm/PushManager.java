@@ -56,7 +56,7 @@ final class PushManager {
             payload.put("id", deviceId(context));
             payload.put("push_token", token);
             payload.put("notifications_enabled", notificationsEnabled);
-            payload.put("preview_mode", "generic");
+            payload.put("preview_mode", NotificationSettings.previewMode(context));
         } catch (Exception ignored) {
             return;
         }

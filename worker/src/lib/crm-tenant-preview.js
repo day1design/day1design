@@ -26,9 +26,15 @@ export function isTenantPreview(auth) { return auth?.preview_readonly === true &
 export function previewBlocksWrite(auth) { return isTenantPreview(auth); }
 
 export function previewReadAllowed(method, path) {
-  return method === 'GET' && (['/me', '/home', '/customers', '/appointments', '/analytics', '/members', '/notifications', '/message-templates'].includes(path)
+  return method === 'GET' && (
+    ['/me', '/home', '/customers', '/appointments', '/analytics', '/members', '/sync', '/notifications', '/message-templates', '/meta/ads', '/app-update/latest'].includes(path)
     || /^\/customers\/[A-Za-z0-9_-]+$/.test(path)
-    || path === '/sync' || path === '/briefings/latest' || /^\/briefings\/[A-Za-z0-9_-]{1,120}\/image$/.test(path));
+    || /^\/customers\/[A-Za-z0-9_-]{1,120}\/visit-history$/.test(path)
+    || path === '/briefings/latest'
+    || /^\/briefings\/[A-Za-z0-9_-]{1,120}\/image$/.test(path)
+    || /^\/meta\/ads\/[0-9]{1,30}\/image$/.test(path)
+    || /^\/app-update\/artifacts\/[A-Za-z0-9_-]{1,120}\.apk$/.test(path)
+  );
 }
 
 export async function startTenantPreview(request, env, auth, tenantId) {

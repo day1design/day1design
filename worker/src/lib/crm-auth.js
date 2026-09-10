@@ -58,6 +58,15 @@ export async function deliverOtp(env, payload, ctx) {
   if (ctx?.waitUntil && env.CRM_OTP_DELIVER_PROMISE) ctx.waitUntil(env.CRM_OTP_DELIVER_PROMISE);
 }
 
+async function onboardingStatus(db, tenantId) {
+  try {
+    const row = await db.prepare("SELECT onboarding_status FROM CrmTenants WHERE id=?").bind(tenantId).first();
+    return row?.onboarding_status || "active";
+  } catch {
+    return "active";
+  }
+}
+
 export async function authenticate(db, request) {
   const token = bearer(request);
   if (!token) return null;
@@ -70,8 +79,31 @@ export async function authenticate(db, request) {
     WHERE s.token_hash = ? AND s.revoked_at IS NULL
       AND (s.persistent = 1 OR s.expires_at > ?)
   `).bind(await hashToken(token), nowIso()).first();
-  if (!row || !row.user_active || row.suspended) return null;
-  return { ...row, id: row.user_id, token };
+  const status = row ? await onboardingStatus(db, row.tenant_id) : "active";
+  if (!row || !row.user_active || (row.suspended && !(status === "pending" && row.role === "owner"))) return null;
+  if (status === "pending" && row.role !== "owner") return null;
+  return { ...row, onboarding_status: status, id: row.user_id, token };
+}
+
+export async function findTenantSuspendedSession(db, request) {
+  const token = bearer(request);
+  if (!token) return false;
+  try {
+    const row = await db.prepare(`
+      SELECT 1
+      FROM CrmSessions s
+      JOIN CrmUsers u ON u.id = s.user_id
+      JOIN CrmTenants t ON t.id = u.tenant_id
+      WHERE s.token_hash = ?
+        AND s.revoked_reason = 'tenant_suspended'
+        AND t.suspended = 1
+        AND s.expires_at > ?
+      LIMIT 1
+    `).bind(await hashToken(token), nowIso()).first();
+    return Boolean(row);
+  } catch {
+    return false;
+  }
 }
 
 export async function createSession(db, userId) {

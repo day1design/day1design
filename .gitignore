@@ -51,3 +51,15 @@ _fav_tmp/
 # Local agent runtime state
 .omx/
 .omo/
+
+# Release and Android local artifacts
+.tools/
+**/.gradle/
+**/*.local.properties
+**/*.apk
+**/*.aab
+**/*.jks
+**/*.keystore
+**/signingkey*
+
+**/*.pem

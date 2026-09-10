@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">데이원디자인 CRM</string>
+    <string name="app_name">인테리어 CRM</string>
     <string name="contract_status">상태: %1$s</string>
     <string name="template_kind">유형: %1$s</string>
     <string name="preview_channel">미리보기 채널: %1$s (화면 확인용)</string>

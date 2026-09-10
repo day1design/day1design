@@ -1,3 +1,5 @@
+import { crmOriginalAnswers } from '../lib/crm-original-answers.js';
+import { readCrmCustomerVisitHistory } from '../lib/crm-customer-history.js';
 import { authenticateTenantPreview, endTenantPreview, isTenantPreview, previewReadAllowed } from '../lib/crm-tenant-preview.js';
 import { readThroughCrmHome } from '../lib/crm-home-cache.js';
 import { readCrmTrafficSummary } from '../lib/crm-traffic-summary.js';
@@ -7,13 +9,15 @@ import { readCrmFlowAnalysis } from '../lib/crm-flow-analysis.js';
 import { readCrmAnalyticsDimensions } from '../lib/crm-analytics-dimensions.js';
 import { readThroughCrmAnalytics } from '../lib/crm-read-cache.js';
 import { jsonError as baseJsonError, jsonOk as baseJsonOk } from "../lib/response.js";
-import { authenticate, nowIso, revokeSession, requestMobileOtp, verifyMobileOtp } from '../lib/crm-auth.js';
+import { authenticate, findTenantSuspendedSession, nowIso, revokeSession, requestMobileOtp, verifyMobileOtp } from '../lib/crm-auth.js';
 import { authenticateSupport, endSupportSession, isSupportAdmin, isSupportReadonly, platformAllowed, renewSupportSession, supportReadAllowed } from '../lib/crm-support.js';
 import { handleMobileNotifications } from './mobile-notifications.js';
 import { handleMobileDevices } from './mobile-devices.js';
 import { handleMobileManagement } from './mobile-management.js';
 import { readCrmAnalytics, dateRange } from '../lib/crm-analytics.js';
 import { readCrmJson } from '../lib/crm-request.js';
+import { handleMobileAppUpdate } from '../lib/mobile-app-update.js';
+import { handleMobileMetaAdCards } from './mobile-meta-ads.js';
 
 const logo = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-192.png";
 const allowedCustomerFields = { name: "Name", phone: "Phone", email: "Email", region: "Address", budget: "EstimateAmount", status: "Status", assignee_id: "Assignee" };
@@ -154,6 +158,17 @@ function customer(row, assignee) {
     source: row.Source || "",
     platform: row.Platform || "",
     first_source: row.FirstSource || "",
+    schedule: row.Schedule || "",
+    space_size: row.SpaceSize || "",
+    space_type: row.SpaceType || "",
+    address_detail: row.AddressDetail || "",
+    referral: row.Referral || "",
+    campaign: row.Campaign || "",
+    first_utm_campaign: row.FirstUtmCampaign || "",
+    first_utm_medium: row.FirstUtmMedium || "",
+    first_utm_source: row.FirstUtmSource || "",
+    first_campaign: row.FirstCampaign || "",
+    first_platform: row.FirstPlatform || "",
     first_referrer: row.FirstReferrer || "",
     first_inflow_app: row.FirstInflowApp || "",
     budget: Number(row.EstimateAmount || 0),
@@ -271,9 +286,22 @@ async function listCustomers(request, env, auth) {
   return jsonOk({customers:items.map((row) => customer(row, assignees.get(row.Assignee) || null)),next_cursor});
 }
 
+function safeAttachments(value) {
+  let parsed;
+  try { parsed=JSON.parse(value || '[]'); } catch { return []; }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.map((item) => {
+    const url = typeof item === 'string' ? item : item?.url || item?.href || '';
+    try { if (new URL(url).protocol !== "https:") return null; } catch { return null; }
+    return { url: url.slice(0, 2000), name: text(typeof item === 'object' ? item?.name : '', 200) };
+  }).filter(Boolean).slice(0, 20);
+}
+
+
 async function detail(env, auth, customerId) {
   const row = await findCustomer(env.DB, auth.tenant_id, customerId);
   if (!row) return jsonError(404, "customer not found");
+  if(auth.role==='staff' && ![auth.id,auth.email].filter(Boolean).map(String).some(value=>value.toLowerCase()===String(row.Assignee||'').toLowerCase()))return jsonError(403,'assigned customer required');
   const [base, appointments, consultations, contracts] = await Promise.all([
     customerPayload(env.DB, row, auth.tenant_id),
     env.DB.prepare("SELECT id,kind,starts_at,location,address,status,CrmVersion AS version FROM CrmAppointments WHERE tenant_id=? AND estimate_id=? ORDER BY starts_at,id LIMIT 101").bind(auth.tenant_id, customerId).all(),
@@ -288,7 +316,8 @@ async function detail(env, auth, customerId) {
   if(row.ConsultAt && !visits.some(x=>x.kind==='visit' && new Date(x.starts_at).getTime()===new Date(row.ConsultAt).getTime())) visits.unshift({id:'legacy-visit-'+row.id,kind:'visit',starts_at:row.ConsultAt,location:row.ConsultBranch || '',address:'',status:row.ConsultCancelledAt?'cancelled':'scheduled'});
   const agreements=(contracts.results || []).slice(0,100);
   if(row.ContractAt && !agreements.length) agreements.push({id:'legacy-contract-'+row.id,amount:row.ContractAmount,status:'signed',signed_at:row.ContractAt});
-  return jsonOk({...base,appointments:visits.slice(0,100),consultations:(consultations.results || []).slice(0,100),contracts:agreements,history_has_more:{appointments:(appointments.results || []).length>100,consultations:(consultations.results || []).length>100,contracts:(contracts.results || []).length>100}});
+  const original=crmOriginalAnswers(row);
+  return jsonOk({...base,attachments:[...safeAttachments(row.ConceptFiles),...safeAttachments(row.FloorPlans)].slice(0,20),form_answers:original.answers,form_answers_source:original.source,appointments:visits.slice(0,100),consultations:(consultations.results || []).slice(0,100),contracts:agreements,history_has_more:{appointments:(appointments.results || []).length>100,consultations:(consultations.results || []).length>100,contracts:(contracts.results || []).length>100}});
 }
 
 async function mutateCustomer(env, auth, customerId, version, columns, values, records, action) {
@@ -403,9 +432,19 @@ async function routeMobileCrm(request, env, ctx) {
   if (path === "/auth/logout" && request.method === "POST") { await revokeSession(env.DB, request); return jsonOk({ loggedIn: false }); }
   if (path === '/support/renew' && request.method === 'POST') return renewSupport(request, env);
   const auth = await authenticateTenantPreview(env.DB, request) || await authenticateSupport(env.DB, request) || await authenticate(env.DB, request);
-  if (!auth) return jsonError(401, "authentication required");
+  if (!auth) {
+    if (await findTenantSuspendedSession(env.DB, request)) return jsonError(403, "tenant suspended", { code: "tenant_suspended" });
+    return jsonError(401, "authentication required");
+  }
+  if (auth.onboarding_status === "pending" && !(path === "/me" && request.method === "GET") && !(path === "/devices" && request.method === "POST")) {
+    return jsonError(403, "onboarding pending", { code: "onboarding_pending" });
+  }
   if (path === '/platform/preview-session/end' && request.method === 'POST') return endTenantPreview(request, env, auth);
   if (isTenantPreview(auth) && !previewReadAllowed(request.method, path)) return jsonError(403, 'tenant preview is read-only');
+  const appUpdate = await handleMobileAppUpdate(request, env, auth, path);
+  if (appUpdate) return noStore(appUpdate);
+  const metaAdCards = await handleMobileMetaAdCards(request, env, auth, path);
+  if (metaAdCards) return noStore(metaAdCards);
   if (path === '/support/end' && request.method === 'POST') return endSupportSession(request, env, auth);
   if (isSupportReadonly(auth) && !isSupportAdmin(auth)) {
     if(path==='/sync' && request.method==='GET')return jsonOk({readonly:true});
@@ -443,6 +482,14 @@ async function routeMobileCrm(request, env, ctx) {
   if (path === "/members" && request.method === "GET") return listMembers(request, env, auth);
   if (path === "/customers" && request.method === "GET") return listCustomers(request, env, auth);
   const customerMatch = path.match(/^\/customers\/([A-Za-z0-9_-]+)$/);
+  const historyMatch = path.match(/^\/customers\/([A-Za-z0-9_-]{1,120})\/visit-history$/);
+  if (historyMatch && request.method === 'GET') {
+    const row=await findCustomer(env.DB,auth.tenant_id,historyMatch[1]);
+    if(!row)return jsonError(404,'customer not found');
+    if(auth.role==='staff' && ![auth.id,auth.email].filter(Boolean).map(String).some(value=>value.toLowerCase()===String(row.Assignee||'').toLowerCase()))return jsonError(403,'assigned customer required');
+    try{return jsonOk(await readCrmCustomerVisitHistory(env.DB,{tenantId:auth.tenant_id,customerId:historyMatch[1],cursor:new URL(request.url).searchParams.get('cursor')||''}));}
+    catch(error){return jsonError(error.message==='crm_customer_history_cursor_invalid'?400:503,'visit_history_unavailable');}
+  }
   if (customerMatch && request.method === "GET") return detail(env, auth, customerMatch[1]);
   if (customerMatch && request.method === "PATCH") return updateCustomer(request, env, auth, customerMatch[1]);
   if (path === "/appointments" && request.method === "POST") return createRecord(request, env, auth, 'appointments');
