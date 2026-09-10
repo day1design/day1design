@@ -1,0 +1,62 @@
+{
+  "name": "day1design-api",
+  "main": "entry.js",
+  "compatibility_date": "2026-04-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "keep_vars": true,
+  "unsafe": {
+    "metadata": {
+      "keep_assets": true,
+      "keep_bindings": [
+        "secret_text",
+        "plain_text",
+        "assets"
+      ]
+    }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "day1design",
+      "database_id": "60c293bc-5359-4a94-bc18-c3cda0829366"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "CRM_CACHE",
+      "bucket_name": "day1design-crm-cache"
+    },
+    {
+      "binding": "IMAGES",
+      "bucket_name": "day1design-r2"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "0 * * * *",
+      "0 19 * * *",
+      "*/15 * * * *"
+    ]
+  },
+  "routes": [
+    {
+      "pattern": "admin.day1design.co.kr/*",
+      "zone_name": "day1design.co.kr"
+    },
+    {
+      "pattern": "api.day1design.co.kr/*",
+      "zone_name": "day1design.co.kr"
+    },
+    {
+      "pattern": "www.day1design.co.kr/*",
+      "zone_name": "day1design.co.kr"
+    },
+    {
+      "pattern": "day1design.co.kr/*",
+      "zone_name": "day1design.co.kr"
+    }
+  ]
+}

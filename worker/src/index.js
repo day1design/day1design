@@ -1,3 +1,4 @@
+import { routeWorkflow } from "./routes/workflow-router.js";
 import { handleEstimates, runConsultReminders } from "./routes/estimates.js";
 import { handleHero } from "./routes/hero.js";
 import { handlePopups } from "./routes/popups.js";
@@ -140,6 +141,7 @@ async function handleStatic(request, env, host, path) {
 async function handleApi(request, env, ctx, path) {
   let res;
   const services = createServices(env);
+  if (path.startsWith("/api/workflow/")) return routeWorkflow(request, env, ctx);
   const access = authorizeRequest(request, env);
   if (!access.ok) {
     // ★보강A: 공개 견적폼 POST 가 origin 가드(인앱 웹뷰 등)에서 막히면 흔적 보존.
