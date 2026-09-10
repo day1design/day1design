@@ -13,7 +13,8 @@ function actualAggregate(snapshot,date,previous=false){
  const traffic=!previous&&day.traffic?.summary&&typeof day.traffic.summary==='object'?day.traffic.summary:null;
  const spend=finite(source.spend),impressions=finite(source.impressions),clicks=finite(source.clicks),leads=finite(source.leads);
  if([spend,impressions,clicks,leads].every(value=>value===null))return null;
- return {hasData:true,spend,impressions,clicks,leads,saved:leadRow?finite(leadRow.n):null,sessions:traffic?finite(traffic.sessions):null,ctr:finite(source.ctr),cpc:finite(source.cpc),cpm:finite(source.cpm),cpl:finite(source.cpl)};
+ const cpm=finite(source.cpm) ?? (spend!==null && impressions!==null && impressions>0 ? spend/impressions*1000 : null);
+ return {hasData:true,spend,impressions,clicks,leads,saved:leadRow?finite(leadRow.n):null,sessions:traffic?finite(traffic.sessions):null,ctr:finite(source.ctr),cpc:finite(source.cpc),cpm,cpl:finite(source.cpl)};
 }
 function label(value){const text=String(value??'').replace(/[^\p{L}\p{N} _-]/gu,'').trim().slice(0,80);return text&& !/@|\d{4,}/.test(text)?text:null;}
 function priorityActions(snapshot,reportDate){
