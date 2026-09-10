@@ -60,18 +60,42 @@ async function accessToken(config, fetchImpl, now) {
   return body.access_token;
 }
 
-export function genericPushMessage(token, notificationId) {
+function dataValue(value) {
+  if (value == null) return '';
+  return String(value);
+}
+
+export function genericPushMessage(token, notificationId, { notificationType = '', payload = {}, previewMode = 'generic' } = {}) {
+  const source = String(payload?.source || '');
+  const generatedTitle = notificationType === 'new_customer' ? `신규고객 ${source === 'meta' ? '메타' : '홈페이지'} 접수` : notificationType === 'measurement_reminder' ? '실측 일정 알림' : notificationType === 'visit_reminder' ? '방문 일정 알림' : '폴라애드 알림';
+  const intakeDetails = [
+    payload?.name ? `이름 ${payload.name}` : '',
+    payload?.phone ? `연락처 ${payload.phone}` : '',
+    (payload?.region || payload?.address) ? `지역 ${payload.region || payload.address}` : '',
+    (payload?.available_budget || payload?.budget) ? `가용예산 ${payload.available_budget || payload.budget}` : '',
+  ].filter(Boolean).join(' · ');
+  const generatedBody = String(notificationType === 'new_customer' ? (intakeDetails || '새 상담신청이 접수되었습니다. 앱에서 확인해 주세요.') : (payload?.message || '새 알림이 도착했습니다.'));
+  const data = {
+    notification_id: String(notificationId),
+    kind: String(payload?.kind || 'crm_notification'),
+    notification_type: String(notificationType || ''),
+    preview_masked: String(previewMode !== 'full'),
+    title: generatedTitle,
+    body: generatedBody,
+  };
+  for (const key of ['customer_id', 'estimate_id', 'appointment_id', 'action', 'source', 'source_tenant_id', 'source_notification_id', 'name', 'phone', 'budget', 'available_budget', 'region', 'address', 'branch', 'message', 'detail', 'meta_lead_id']) {
+    if (payload && Object.prototype.hasOwnProperty.call(payload, key)) data[key] = dataValue(payload[key]);
+  }
   return {
     message: {
       token,
-      notification: { title: '폴라애드 알림', body: '새 알림이 도착했습니다.' },
-      data: { notification_id: String(notificationId), kind: 'crm_notification' },
-      android: { priority: 'high', notification: { channel_id: 'crm_default' } },
+      data,
+      android: { priority: 'high' },
     },
   };
 }
 
-export async function sendFcmMessage(env, { tenantId, token, notificationId, fetchImpl = globalThis.fetch, now = Date.now(), beforeSend } = {}) {
+export async function sendFcmMessage(env, { tenantId, token, notificationId, notificationType, payload, previewMode, fetchImpl = globalThis.fetch, now = Date.now(), beforeSend } = {}) {
   const config = fcmConfig(env, tenantId);
   if (!config) return { enabled: false, accepted: false, reason: 'push_disabled' };
   if (typeof fetchImpl !== 'function') throw new Error('fcm_fetch_missing');
@@ -80,7 +104,7 @@ export async function sendFcmMessage(env, { tenantId, token, notificationId, fet
   const response = await fetchWithPolicy(fetchImpl, `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(config.projectId)}/messages:send`, {
     method: 'POST',
     headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
-    body: JSON.stringify(genericPushMessage(token, notificationId)),
+    body: JSON.stringify(genericPushMessage(token, notificationId, { notificationType, payload, previewMode })),
   });
   let body = null;
   try { body = await response.json(); } catch {}

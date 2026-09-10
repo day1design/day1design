@@ -1,6 +1,6 @@
 import { readCrmJson } from '../lib/crm-request.js';
 import {
-  createInternalNotification, listMyNotifications, markNotificationRead,
+  createInternalNotification, listMyNotifications, getMyNotification, markNotificationRead, markAllNotificationsRead,
   listNotificationTemplates, upsertNotificationTemplate, previewNotificationTemplate,
 } from '../lib/crm-notification-store.js';
 import { buildCustomerSms } from '../lib/sens.js';
@@ -33,7 +33,8 @@ export async function handleMobileNotifications(request, env, auth) {
   const url = new URL(request.url);
   const path = url.pathname.slice('/api/mobile'.length);
   const readMatch = path.match(/^\/notifications\/([A-Za-z0-9_-]{1,100})\/read$/);
-  if (!['/notifications','/message-templates','/message-preview'].includes(path) && !readMatch) return null;
+  const detailMatch = path.match(/^\/notifications\/([A-Za-z0-9_-]{1,100})$/);
+  if (!['/notifications','/notifications/read-all','/message-templates','/message-preview'].includes(path) && !readMatch && !detailMatch) return null;
   const actor = {
     id: auth.id || auth.user_id,
     tenant_id: auth.tenant_id,
@@ -47,9 +48,11 @@ export async function handleMobileNotifications(request, env, auth) {
     if (path === '/notifications' && request.method === 'GET') {
       const cursor = url.searchParams.get('cursor');
       if (cursor && !/^[A-Za-z0-9_-]{1,100}$/.test(cursor)) return jsonError(400,'invalid_cursor');
-      return json(await listMyNotifications(env.DB,{actor,cursor}));
+      return json(await listMyNotifications(env.DB,{actor,env,cursor}));
     }
-    if (readMatch && request.method === 'POST') return json(await markNotificationRead(env.DB,{actor,notificationId:readMatch[1]}));
+    if (detailMatch && request.method === 'GET') return json(await getMyNotification(env.DB,{actor,env,notificationId:detailMatch[1]}));
+    if (path === '/notifications/read-all' && request.method === 'POST') return json(await markAllNotificationsRead(env.DB,{actor,env}));
+    if (readMatch && request.method === 'POST') return json(await markNotificationRead(env.DB,{actor,env,notificationId:readMatch[1]}));
     if (path === '/message-templates' && request.method === 'GET') {
       if (actor.role !== 'owner') return jsonError(403,'owner_required');
       return json({templates:await listMobileMessageTemplates(env.DB, actor)});
@@ -74,7 +77,7 @@ export async function handleMobileNotifications(request, env, auth) {
     return jsonError(405,'Method Not Allowed');
   } catch(error) {
     if(error.message==='notification_not_found') return jsonError(404,'not_found');
-    if(['owner_required','tenant_suspended','actor_inactive','tenant_mismatch'].includes(error.message)) return jsonError(403,'access_denied');
+    if(['owner_required','tenant_suspended','actor_inactive','tenant_mismatch','platform_access_required'].includes(error.message)) return jsonError(403,'access_denied');
     if(error instanceof TypeError || error instanceof SyntaxError || ['notification_audience_empty','notification_audience_too_large'].includes(error.message)) return jsonError(400,error.message);
     return jsonError(503,'notification_storage_unavailable');
   }

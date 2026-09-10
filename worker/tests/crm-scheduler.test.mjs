@@ -74,6 +74,24 @@ test('push allowlist remains fail closed at scheduler boundary',async()=>{
  }finally{DB.sqlite.close();}
 });
 
+test('allowlisted push tenant receives the daily briefing with automation disabled',async()=>{
+ const DB=setup();try{
+  const env={DB,CRM_ENABLED:'true',CRM_AUTOMATION_ENABLED:'false',CRM_PUSH_ENABLED:'true',CRM_PUSH_TENANTS:'day1design',CRM_FCM_PROJECT_ID:'test',CRM_FCM_CLIENT_EMAIL:'test',CRM_FCM_PRIVATE_KEY:'test'};
+  const result=await runCrmScheduled(env,{now:new Date('2026-09-09T01:00:00Z'),pushSend:async()=>({accepted:true,messageName:'projects/test/messages/briefing'})});
+  assert.equal(result.tenants[0].tenant_id,'day1design');
+  assert.equal(DB.sqlite.prepare('SELECT COUNT(*) n FROM CrmDailyBriefings').get().n,1);
+  assert.equal(DB.sqlite.prepare("SELECT json_extract(payload_json,'$.kind') kind FROM CrmNotifications WHERE type='staff_message'").get().kind,'daily_briefing');
+ }finally{DB.sqlite.close();}
+});
+
+test('daily briefing stays off when push tenant is not allowlisted',async()=>{
+ const DB=setup();try{
+  const env={DB,CRM_ENABLED:'true',CRM_AUTOMATION_ENABLED:'false',CRM_PUSH_ENABLED:'true',CRM_FCM_PROJECT_ID:'test',CRM_FCM_CLIENT_EMAIL:'test',CRM_FCM_PRIVATE_KEY:'test'};
+  await runCrmScheduled(env,{now:new Date('2026-09-09T01:00:00Z'),pushSend:async()=>({accepted:true,messageName:'projects/test/messages/no-briefing'})});
+  assert.equal(DB.sqlite.prepare('SELECT COUNT(*) n FROM CrmDailyBriefings').get().n,0);
+ }finally{DB.sqlite.close();}
+});
+
 test('configured tenant delivery runs when global automation switch is off', async () => {
  const DB=setup(); try {
   const key='AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';

@@ -23,7 +23,7 @@ async function ensureCursor(db, tenantId, at) {
 }
 
 async function liveCandidate(db, row, at) {
-  return db.prepare(`SELECT r.notification_id,r.recipient_id,r.created_at,n.payload_json,d.id device_id,d.push_token
+  return db.prepare(`SELECT r.notification_id,r.recipient_id,r.created_at,n.type notification_type,n.payload_json,d.id device_id,d.push_token,d.preview_mode
     FROM CrmNotificationRecipients r
     JOIN CrmNotifications n ON n.id=r.notification_id AND n.tenant_id=r.tenant_id
     JOIN CrmDevices d ON d.tenant_id=r.tenant_id AND d.user_id=r.recipient_id AND d.notifications_enabled=1
@@ -32,6 +32,13 @@ async function liveCandidate(db, row, at) {
     JOIN CrmUsers u ON u.id=r.recipient_id AND u.id=d.user_id AND u.tenant_id=r.tenant_id AND u.active=1
     JOIN CrmTenants t ON t.id=r.tenant_id AND t.suspended=0
     WHERE r.tenant_id=? AND r.notification_id=? AND r.recipient_id=? AND r.created_at=?
+      AND (n.type NOT IN ('visit_reminder','measurement_reminder') OR EXISTS (
+        SELECT 1 FROM CrmAppointments a
+         WHERE a.id=json_extract(n.payload_json,'$.appointment_id')
+           AND a.tenant_id=n.tenant_id
+           AND a.CrmVersion=CAST(json_extract(n.payload_json,'$.appointment_version') AS INTEGER)
+           AND a.status IN ('scheduled','confirmed','booked')
+      ))
     ORDER BY d.id LIMIT 5`).bind(at, row.tenant_id, row.notification_id, row.recipient_id, row.created_at).all();
 }
 
@@ -65,8 +72,11 @@ export async function processPushBatch(db, { env, tenantId, cursor = null, limit
       summary.processed += 1;
       let result;
       try {
+        let payload = {};
+        try { payload = JSON.parse(device.payload_json || '{}'); } catch { payload = {}; }
         result = await send(env, {
-          tenantId, token: device.push_token, notificationId: row.notification_id, fetchImpl, now: new Date(now).getTime(),
+          tenantId, token: device.push_token, notificationId: row.notification_id, notificationType: device.notification_type,
+          payload, previewMode: device.preview_mode, fetchImpl, now: new Date(now).getTime(),
           beforeSend: async () => (await liveCandidate(db, row, at)).results.some((candidate) => candidate.device_id === device.device_id && candidate.push_token === device.push_token),
         });
       } catch { result = { accepted: false, unknown: true, errorCode: 'delivery_unknown' }; }

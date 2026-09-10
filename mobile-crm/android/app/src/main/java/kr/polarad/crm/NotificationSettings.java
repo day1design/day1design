@@ -16,6 +16,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 final class NotificationSettings {
+    interface PlatformSubscriptionChanged { void accept(Switch toggle, boolean enabled, boolean previous); }
     private static final String PREFS = "crm_notification_settings";
     private static final String NEW_CUSTOMER = "new_customer";
     private static final String NEW_CUSTOMER_HOME = "new_customer_homepage";
@@ -115,15 +116,20 @@ final class NotificationSettings {
     }
 
     static View settings(Activity activity, boolean osPermissionEnabled, Runnable privacyChanged, Runnable customerMessages) {
+        return settings(activity, osPermissionEnabled, privacyChanged, customerMessages, false, false, null);
+    }
+
+    static View settings(Activity activity, boolean osPermissionEnabled, Runnable privacyChanged, Runnable customerMessages,
+                         boolean platformAdmin, boolean platformSubscribed, PlatformSubscriptionChanged platformChanged) {
         LinearLayout root = column(activity, 0, 0, 0, 20);
         root.addView(text(activity, "알림 설정", 23, true, INK));
         root.addView(text(activity, "내부 앱 알림과 고객 발송", 14, false, MUTED), topParams(7));
 
         root.addView(text(activity, "내가 받는 앱 알림", 17, true, INK), topParams(18));
         LinearLayout work = flatRows(activity);
-        work.addView(toggleRow(activity, "신규 고객 홈페이지 접수", "이름·연락처·예산·희망지점", NEW_CUSTOMER_HOME, isNewCustomerHomepageEnabled(activity), null));
+        work.addView(toggleRow(activity, "신규 고객 홈페이지 접수", "이름·연락처·지역·가용예산", NEW_CUSTOMER_HOME, isNewCustomerHomepageEnabled(activity), null));
         work.addView(divider(activity), topParams(1));
-        work.addView(toggleRow(activity, "신규 고객 Meta 접수", "이름·연락처·예산·희망지점", NEW_CUSTOMER_META, isNewCustomerMetaEnabled(activity), null));
+        work.addView(toggleRow(activity, "신규 고객 Meta 접수", "이름·연락처·지역·가용예산", NEW_CUSTOMER_META, isNewCustomerMetaEnabled(activity), null));
         work.addView(divider(activity), topParams(1));
         work.addView(toggleRow(activity, "예약캘린더 일정 알림", "일정 등록·변경 시 고객카드로 연결", APPOINTMENT_EVENT, isAppointmentEventEnabled(activity), null));
         work.addView(divider(activity), topParams(1));
@@ -131,6 +137,11 @@ final class NotificationSettings {
         work.addView(divider(activity), topParams(1));
         work.addView(toggleRow(activity, "실측예약 일정 알림", "일정 등록 후 · 하루 전 · 당일 2시간 전", MEASUREMENT_REMINDER, isMeasurementReminderEnabled(activity), null));
         root.addView(work, topParams(18));
+
+        if (platformAdmin) {
+            root.addView(text(activity, "플랫폼 관리자 구독", 17, true, INK), topParams(18));
+            root.addView(platformToggleRow(activity, "데이원디자인 신규접수 알림", "현재 플랫폼 관리자 기기로 수신", platformSubscribed, platformChanged), topParams(12));
+        }
 
         root.addView(text(activity, "고객에게 보내는 안내", 17, true, INK), topParams(18));
         android.widget.Button customer = new android.widget.Button(activity);
@@ -168,6 +179,31 @@ final class NotificationSettings {
         toggle.setOnCheckedChangeListener((button, value) -> {
             preferences(activity).edit().putBoolean(key, value).apply();
             if (changed != null) changed.run();
+        });
+        row.addView(toggle, new LinearLayout.LayoutParams(dp(activity, 52), dp(activity, 52)));
+        return row;
+    }
+
+    private static View platformToggleRow(Activity activity, String title, String subtitle, boolean checked, PlatformSubscriptionChanged changed) {
+        LinearLayout row = row(activity);
+        LinearLayout copy = column(activity, 0, 0, 8, 0);
+        copy.addView(text(activity, title, 15, true, INK));
+        copy.addView(text(activity, subtitle, 12, false, MUTED), topParams(4));
+        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+        Switch toggle = new Switch(activity);
+        toggle.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{Color.WHITE,Color.rgb(150,148,141)}));
+        toggle.setTrackTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{Color.rgb(53,99,78),Color.rgb(184,190,181)}));
+        toggle.setChecked(checked);
+        toggle.setContentDescription(title);
+        toggle.setMinHeight(dp(activity, 48));
+        toggle.setTag(Boolean.FALSE);
+        toggle.setOnCheckedChangeListener((button, value) -> {
+            if (changed != null) {
+                if (Boolean.TRUE.equals(button.getTag())) return;
+                button.setTag(Boolean.TRUE);
+                button.setEnabled(false);
+                changed.accept(toggle, value, !value);
+            }
         });
         row.addView(toggle, new LinearLayout.LayoutParams(dp(activity, 52), dp(activity, 52)));
         return row;

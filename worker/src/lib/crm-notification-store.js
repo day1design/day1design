@@ -51,6 +51,9 @@ async function liveOwner(db, actor) { const a = await liveActor(db, actor); if (
 function pageSize(limit) { return Math.max(1, Math.min(MAX_PAGE, Number.isInteger(limit) ? limit : 50)); }
 function json(value) { return JSON.stringify(value && typeof value === "object" ? value : {}); }
 
+function allowlisted(env, email) { return String(env?.CRM_PLATFORM_EMAILS || '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean).includes(String(email || '').trim().toLowerCase()); }
+async function requirePlatformAllowlist(db, actor, env) { if (actor.tenant_id !== 'platform') return; const row = await db.prepare("SELECT email FROM CrmUsers WHERE id=? AND tenant_id='platform' AND role='owner' AND active=1").bind(actor.id).first(); if (!row || !allowlisted(env, row.email)) throw new Error('platform_access_required'); }
+
 export async function createInternalNotification(db, { actor, type, mode = "all", recipientIds = [], payload = {}, createdAt } = {}) {
   const a = await liveOwner(db, actor);
   const members = (await db.prepare("SELECT id, tenant_id AS tenantId, email, role, active FROM CrmUsers WHERE tenant_id = ? AND active = 1 ORDER BY id LIMIT 101").bind(a.tenant_id).all()).results ?? [];
@@ -66,25 +69,55 @@ export async function createInternalNotification(db, { actor, type, mode = "all"
   return { id: notificationId, tenant_id: a.tenant_id, type: notification.type, actor_id: a.id, audience: audience.map((x) => x.id), payload: notification.payload, created_at: created };
 }
 
-export async function listMyNotifications(db, { actor, cursor = null, limit = 50 } = {}) {
+export async function listMyNotifications(db, { actor, env, cursor = null, limit = 50 } = {}) {
   const a = await liveActor(db, actor); const size = pageSize(limit);
-  const args = [a.tenant_id, a.id]; let where = "r.tenant_id = ? AND r.recipient_id = ?";
+  await requirePlatformAllowlist(db, a, env);
+  const relayAccess = a.tenant_id === 'platform' ? `AND (NOT EXISTS (SELECT 1 FROM CrmPlatformNotificationRelays pr WHERE pr.relay_notification_id=n.id) OR EXISTS (SELECT 1 FROM CrmPlatformNotificationRelays pr JOIN CrmPlatformNotificationSubscriptions ps ON ps.id=pr.subscription_id JOIN CrmTenants st ON st.id=pr.source_tenant_id WHERE pr.relay_notification_id=n.id AND ps.platform_user_id=? AND ps.enabled=1 AND st.suspended=0))` : '';
+  const inbox = await db.prepare("SELECT i.last_read_notification_id,n.created_at AS last_read_created_at FROM CrmNotificationReadAll i LEFT JOIN CrmNotifications n ON n.id=i.last_read_notification_id AND n.tenant_id=i.tenant_id WHERE i.tenant_id=? AND i.user_id=?").bind(a.tenant_id, a.id).first();
+  const args = [a.tenant_id, a.id]; if (a.tenant_id === 'platform') args.push(a.id); let where = `r.tenant_id = ? AND r.recipient_id = ? ${relayAccess}`;
   if (cursor) {
-    const cursorRow = await db.prepare("SELECT r.created_at FROM CrmNotifications n JOIN CrmNotificationRecipients r ON r.notification_id=n.id WHERE n.id=? AND r.tenant_id=? AND r.recipient_id=?").bind(cursor, a.tenant_id, a.id).first();
+    const cursorArgs = [cursor, a.tenant_id, a.id]; if (a.tenant_id === 'platform') cursorArgs.push(a.id);
+    const cursorRow = await db.prepare(`SELECT r.created_at FROM CrmNotifications n JOIN CrmNotificationRecipients r ON r.notification_id=n.id WHERE n.id=? AND r.tenant_id=? AND r.recipient_id=? ${relayAccess}`).bind(...cursorArgs).first();
     if (!cursorRow) throw new Error("notification_cursor_invalid");
     where += " AND (r.created_at < ? OR (r.created_at = ? AND r.notification_id < ?))"; args.push(cursorRow.created_at, cursorRow.created_at, cursor);
   }
   const result = await db.prepare(`SELECT n.id,n.type,n.actor_id,n.payload_json,n.created_at,r.read_at FROM CrmNotifications n JOIN CrmNotificationRecipients r ON r.notification_id=n.id WHERE ${where} ORDER BY r.created_at DESC,r.notification_id DESC LIMIT ?`).bind(...args, size + 1).all();
   const rows = result.results ?? []; const next = rows.length > size ? rows[size - 1].id : null;
-  return { notifications: rows.slice(0, size).map((r) => ({ ...r, payload: JSON.parse(r.payload_json || "{}"), unread: r.read_at == null })), next_cursor: next };
+  return { notifications: rows.slice(0, size).map((r) => ({ ...r, payload: JSON.parse(r.payload_json || "{}"), unread: r.read_at == null && !(inbox?.last_read_created_at && (r.created_at < inbox.last_read_created_at || (r.created_at === inbox.last_read_created_at && r.id <= inbox.last_read_notification_id))) })), next_cursor: next };
 }
 
-export async function markNotificationRead(db, { actor, notificationId, readAt } = {}) {
-  const a = await liveActor(db, actor); if (typeof notificationId !== "string" || !notificationId) throw new TypeError("notificationId required");
-  const at = nowIso(readAt); const result = await db.prepare("UPDATE CrmNotificationRecipients SET read_at = ? WHERE notification_id = ? AND tenant_id = ? AND recipient_id = ?").bind(at, notificationId, a.tenant_id, a.id).run();
+export async function getMyNotification(db, { actor, env, notificationId } = {}) {
+  const a = await liveActor(db, actor);
+  await requirePlatformAllowlist(db, a, env);
+  if (typeof notificationId !== "string" || !notificationId) throw new TypeError("notificationId required");
+  const relayAccess = a.tenant_id === 'platform' ? `AND (NOT EXISTS (SELECT 1 FROM CrmPlatformNotificationRelays pr WHERE pr.relay_notification_id=n.id) OR EXISTS (SELECT 1 FROM CrmPlatformNotificationRelays pr JOIN CrmPlatformNotificationSubscriptions ps ON ps.id=pr.subscription_id JOIN CrmTenants st ON st.id=pr.source_tenant_id WHERE pr.relay_notification_id=n.id AND ps.platform_user_id=? AND ps.enabled=1 AND st.suspended=0))` : '';
+  const rowArgs = [notificationId, a.tenant_id, a.id]; if (a.tenant_id === 'platform') rowArgs.push(a.id);
+  const row = await db.prepare(`SELECT n.id,n.type,n.actor_id,n.payload_json,n.created_at,r.read_at FROM CrmNotifications n JOIN CrmNotificationRecipients r ON r.notification_id=n.id WHERE n.id=? AND r.tenant_id=? AND r.recipient_id=? ${relayAccess}`).bind(...rowArgs).first();
+  if (!row) throw new Error("notification_not_found");
+  const inbox = await db.prepare("SELECT i.last_read_notification_id,n.created_at AS last_read_created_at FROM CrmNotificationReadAll i LEFT JOIN CrmNotifications n ON n.id=i.last_read_notification_id AND n.tenant_id=i.tenant_id WHERE i.tenant_id=? AND i.user_id=?").bind(a.tenant_id, a.id).first();
+  const watermarked = inbox?.last_read_created_at && (row.created_at < inbox.last_read_created_at || (row.created_at === inbox.last_read_created_at && row.id <= inbox.last_read_notification_id));
+  return { ...row, payload: JSON.parse(row.payload_json || "{}"), unread: row.read_at == null && !watermarked };
+}
+
+export async function markNotificationRead(db, { actor, env, notificationId, readAt } = {}) {
+  const a = await liveActor(db, actor); await requirePlatformAllowlist(db, a, env); if (typeof notificationId !== "string" || !notificationId) throw new TypeError("notificationId required");
+  const at = nowIso(readAt); const relayAccess = a.tenant_id === 'platform' ? `AND (NOT EXISTS (SELECT 1 FROM CrmPlatformNotificationRelays pr WHERE pr.relay_notification_id=CrmNotificationRecipients.notification_id) OR EXISTS (SELECT 1 FROM CrmPlatformNotificationRelays pr JOIN CrmPlatformNotificationSubscriptions ps ON ps.id=pr.subscription_id JOIN CrmTenants st ON st.id=pr.source_tenant_id WHERE pr.relay_notification_id=CrmNotificationRecipients.notification_id AND ps.platform_user_id=? AND ps.enabled=1 AND st.suspended=0))` : '';
+  const readArgs = [at, notificationId, a.tenant_id, a.id]; if (a.tenant_id === 'platform') readArgs.push(a.id);
+  const result = await db.prepare(`UPDATE CrmNotificationRecipients SET read_at = ? WHERE notification_id = ? AND tenant_id = ? AND recipient_id = ? ${relayAccess}`).bind(...readArgs).run();
   if (!result.meta?.changes) throw new Error("notification_not_found");
-  await db.prepare("INSERT INTO CrmNotificationInbox(tenant_id,user_id,last_read_notification_id,updated_at) VALUES(?,?,?,?) ON CONFLICT(tenant_id,user_id) DO UPDATE SET last_read_notification_id=excluded.last_read_notification_id,updated_at=excluded.updated_at").bind(a.tenant_id, a.id, notificationId, at).run();
   return { notification_id: notificationId, read_at: at };
+}
+
+export async function markAllNotificationsRead(db, { actor, env, readAt } = {}) {
+  const a = await liveActor(db, actor);
+  await requirePlatformAllowlist(db,a,env);
+  const at = nowIso(readAt);
+  const latest = await db.prepare("SELECT n.id,n.created_at FROM CrmNotifications n JOIN CrmNotificationRecipients r ON r.notification_id=n.id AND r.tenant_id=n.tenant_id WHERE r.tenant_id=? AND r.recipient_id=? ORDER BY r.created_at DESC,r.notification_id DESC LIMIT 1").bind(a.tenant_id, a.id).first();
+  const current = await db.prepare("SELECT i.last_read_notification_id,n.created_at FROM CrmNotificationReadAll i LEFT JOIN CrmNotifications n ON n.id=i.last_read_notification_id AND n.tenant_id=i.tenant_id WHERE i.tenant_id=? AND i.user_id=?").bind(a.tenant_id, a.id).first();
+  const latestIsNewer = latest && (!current?.created_at || latest.created_at > current.created_at || (latest.created_at === current.created_at && latest.id > current.last_read_notification_id));
+  const watermarkId = latestIsNewer ? latest.id : (current?.last_read_notification_id ?? null);
+  await db.prepare("INSERT INTO CrmNotificationReadAll(tenant_id,user_id,last_read_notification_id,updated_at) VALUES(?,?,?,?) ON CONFLICT(tenant_id,user_id) DO UPDATE SET last_read_notification_id=excluded.last_read_notification_id,updated_at=excluded.updated_at").bind(a.tenant_id, a.id, watermarkId, at).run();
+  return { notification_id: watermarkId, read_at: at };
 }
 
 export async function upsertNotificationTemplate(db, { actor, kind, state = "draft", body, enabled = false, updatedAt } = {}) {

@@ -7,7 +7,7 @@ import {hashToken} from '../src/lib/crm-auth.js';
 
 function fixture() {
   const DB=openLocalD1(':memory:');
-  for(const name of ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0047_crm_auth.sql','0070_crm_support_sessions.sql']) DB.sqlite.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  for(const name of ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql','0045_mobile_crm.sql','0046_crm_notifications.sql','0064_crm_notification_read_all.sql','0064_crm_notification_read_all.sql','0047_crm_auth.sql','0070_crm_support_sessions.sql']) DB.sqlite.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
   DB.sqlite.prepare("INSERT INTO CrmUsers(id,tenant_id,email,role) VALUES('test-staff','day1design','staff@test.local','staff')").run();
   DB.sqlite.prepare("INSERT INTO CrmTenants(id,name,brand,logo_url,suspended,created_at) VALUES('other-tenant','Other','other','',0,'2026-09-09T00:00:00Z')").run();
   DB.sqlite.prepare("INSERT INTO CrmUsers(id,tenant_id,email,role) VALUES('foreign-owner','other-tenant','owner@other.test','owner')").run();

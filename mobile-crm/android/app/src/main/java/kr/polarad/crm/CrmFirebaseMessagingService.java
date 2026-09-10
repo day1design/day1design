@@ -1,5 +1,6 @@
 package kr.polarad.crm;
 
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -49,21 +50,31 @@ public final class CrmFirebaseMessagingService extends FirebaseMessagingService 
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String title = "CRM 업무 알림";
         String text = "새 업무 알림이 도착했습니다.";
-        if (!NotificationSettings.isPreviewMasked(this)) {
-            String detailTitle = data.get("title");
-            String detailText = data.get("body");
-            if (detailTitle != null && !detailTitle.trim().isEmpty()) title = detailTitle;
-            if (detailText != null && !detailText.trim().isEmpty()) text = detailText;
-            if ("new_customer".equals(type)) {
-                if (detailTitle == null || detailTitle.trim().isEmpty()) title = newCustomerTitle(data);
-                if (detailText == null || detailText.trim().isEmpty()) text = newCustomerText(data);
-            }
+        String detailTitle = data.get("title");
+        String detailText = data.get("body");
+        if (detailTitle != null && !detailTitle.trim().isEmpty()) title = detailTitle;
+        if (detailText != null && !detailText.trim().isEmpty()) text = detailText;
+        if ("new_customer".equals(type)) {
+            if (detailTitle == null || detailTitle.trim().isEmpty()) title = newCustomerTitle(data);
+            String customerText = newCustomerText(data);
+            if (!customerText.isEmpty()) text = customerText;
         }
+        boolean maskLockscreen = NotificationSettings.isPreviewMasked(this);
+        String publicTitle = maskLockscreen ? maskedTitle(type, data) : title;
+        String publicBody = maskLockscreen ? maskedBody(type) : text;
         NotificationCompat.Builder notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.polarad_launcher)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setPublicVersion(new NotificationCompat.Builder(this, CHANNEL_ID)
+                        .setSmallIcon(R.drawable.polarad_launcher)
+                        .setContentTitle(publicTitle)
+                        .setContentText(publicBody)
+                        .setStyle(new NotificationCompat.BigTextStyle().bigText(publicBody))
+                        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                        .build())
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setAutoCancel(true)
                 .setContentIntent(pending);
@@ -75,19 +86,37 @@ public final class CrmFirebaseMessagingService extends FirebaseMessagingService 
         return isMetaSource(data) ? "신규 고객 Meta 접수" : "신규 고객 홈페이지 접수";
     }
 
+    private static String maskedTitle(String type, Map<String, String> data) {
+        if ("new_customer".equals(type)) return newCustomerTitle(data);
+        if ("visit_reminder".equals(type)) return "방문 일정 알림";
+        if ("measurement_reminder".equals(type)) return "실측 일정 알림";
+        if ("daily_briefing".equals(type)) return "마케팅 효율 브리핑";
+        return "CRM 업무 알림";
+    }
+
+    private static String maskedBody(String type) {
+        if ("new_customer".equals(type)) return "새 상담신청이 접수되었습니다. 앱에서 확인해 주세요.";
+        if ("visit_reminder".equals(type) || "measurement_reminder".equals(type)) {
+            return "예정된 일정을 앱에서 확인해 주세요.";
+        }
+        if ("daily_briefing".equals(type)) return "마케팅 효율 브리핑을 앱에서 확인해 주세요.";
+        return "새 업무 알림이 도착했습니다. 앱에서 확인해 주세요.";
+    }
+
     private static String newCustomerText(Map<String, String> data) {
         StringBuilder text = new StringBuilder();
         append(text, "이름", first(data, "name", "customer_name"));
         append(text, "연락처", first(data, "phone", "customer_phone"));
-        String budget = first(data, "budget", "estimate_amount");
+        append(text, "지역", first(data, "region", "location", "address"));
+        String budget = first(data, "available_budget", "budget", "estimate_amount", "budget_text");
         if (!budget.isEmpty()) {
             try {
                 budget = String.format(Locale.KOREA, "%,d", Long.parseLong(budget));
             } catch (NumberFormatException ignored) { }
         }
-        append(text, "예산", budget);
-        append(text, "희망지점", first(data, "desired_branch", "preferred_branch", "branch", "location"));
-        return text.length() == 0 ? "새 상담신청이 접수되었습니다. 앱에서 확인해 주세요." : text.toString();
+        append(text, "가용예산", budget);
+        append(text, "희망지점", first(data, "desired_branch", "preferred_branch", "branch"));
+        return text.toString();
     }
 
     private static String first(Map<String, String> data, String... keys) {
@@ -120,7 +149,9 @@ public final class CrmFirebaseMessagingService extends FirebaseMessagingService 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) {
-            manager.createNotificationChannel(new NotificationChannel(CHANNEL_ID, getString(R.string.default_notification_channel_name), NotificationManager.IMPORTANCE_DEFAULT));
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, getString(R.string.default_notification_channel_name), NotificationManager.IMPORTANCE_DEFAULT);
+            channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+            manager.createNotificationChannel(channel);
         }
     }
 }

@@ -89,20 +89,46 @@ export async function runAppointmentAutomation(db, { now = new Date(), deliveryA
 }
 export async function createNewCustomerNotification(db, { tenantId, actorId, estimateId, payload = {}, createdAt = new Date() } = {}) {
   requireDb(db); if (!tenantId || !actorId || !estimateId) throw new TypeError('new_customer_input_required');
-  const source = await db.prepare('SELECT id,Name,Phone,Email,Address,EstimateAmount,CrmTenantId FROM Estimates WHERE id=? AND CrmTenantId=?').bind(estimateId, tenantId).first();
+  let source;
+  try {
+    source = await db.prepare('SELECT id,Name,Phone,Email,Address,Branch,EstimateAmount,Detail,Source,MetaLeadId,CrmTenantId FROM Estimates WHERE id=? AND CrmTenantId=?').bind(estimateId, tenantId).first();
+  } catch {
+    source = await db.prepare('SELECT id,Name,Phone,Email,Address,EstimateAmount,CrmTenantId FROM Estimates WHERE id=? AND CrmTenantId=?').bind(estimateId, tenantId).first();
+  }
   if (!source) return { created: false, reason: 'estimate_not_found' };
   const actor = await db.prepare("SELECT id FROM CrmUsers WHERE id=? AND tenant_id=? AND role='owner' AND active=1").bind(actorId, tenantId).first();
   const tenant = await db.prepare('SELECT id FROM CrmTenants WHERE id=? AND suspended=0').bind(tenantId).first();
   if (!actor || !tenant) return { created: false, reason: 'tenant_or_actor_inactive' };
   const eventKey = `new_customer:${tenantId}:${estimateId}`;
   const existing = await db.prepare('SELECT id FROM CrmNotifications WHERE event_key=?').bind(eventKey).first();
-  if (existing) return { created: false, reason: 'already_created', id: existing.id };
+  if (existing) {
+    const current = await db.prepare('SELECT payload_json FROM CrmNotifications WHERE id=? AND tenant_id=?').bind(existing.id, tenantId).first();
+    let currentPayload = {};
+    try { currentPayload = JSON.parse(current?.payload_json || '{}'); } catch {}
+    const enriched = { ...currentPayload };
+    for (const [key, value] of Object.entries(payload)) {
+      if (value !== undefined && value !== null && String(value).trim() !== '') enriched[key] = value;
+    }
+    if (JSON.stringify(enriched) !== JSON.stringify(currentPayload)) {
+      await db.prepare('UPDATE CrmNotifications SET payload_json=? WHERE id=? AND tenant_id=? AND event_key=?').bind(json(enriched), existing.id, tenantId, eventKey).run();
+      return { created: false, updated: true, reason: 'already_created', id: existing.id };
+    }
+    return { created: false, reason: 'already_created', id: existing.id };
+  }
   const members = (await db.prepare(`SELECT id,tenant_id,email,role,active FROM CrmUsers WHERE tenant_id=? AND active=1 AND role IN ('owner','staff') ORDER BY id LIMIT 101`).bind(tenantId).all()).results || [];
-  const audience = members.slice(0, 100); if (!audience.length) return { created: false, reason: 'no_active_recipients' };
-  const notificationId = id('crm_ntf'); const at = iso(createdAt); const notification = buildInternalNotification({ tenantId, type: 'new_customer', actorId, audience, payload: { estimate_id: estimateId, name: source.Name || '', phone: source.Phone || '', email: source.Email || '', address: source.Address || '', budget: source.EstimateAmount || 0, ...payload }, createdAt: at });
+  if (members.length > 100) throw new Error('notification_audience_too_large');
+  const audience = members; if (!audience.length) return { created: false, reason: 'no_active_recipients' };
+  const sourceLabel = source.Source || (source.MetaLeadId ? 'meta' : 'homepage'); const amount = Number(source.EstimateAmount || 0); const detailBudget = String(source.Detail || '').match(/예산\s*[:：]?\s*([0-9][0-9,]*(?:\s*[만천억]?원)?)/i)?.[1]?.replace(/\s+/g, '') || ''; const notificationId = id('crm_ntf'); const at = iso(createdAt); const notification = buildInternalNotification({ tenantId, type: 'new_customer', actorId, audience, payload: { estimate_id: estimateId, source: sourceLabel, meta_lead_id: source.MetaLeadId || '', name: source.Name || '', phone: source.Phone || '', email: source.Email || '', address: source.Address || '', branch: source.Branch || '', detail: source.Detail || '', budget: amount > 0 ? String(amount) : detailBudget, ...payload }, createdAt: at });
   const statements = [db.prepare('INSERT OR IGNORE INTO CrmNotifications(id,tenant_id,type,actor_id,payload_json,created_at,event_key) VALUES(?,?,?,?,?,?,?)').bind(notificationId, tenantId, notification.type, actorId, json(notification.payload), at, eventKey)];
-  for (const member of audience) statements.push(db.prepare('INSERT OR IGNORE INTO CrmNotificationRecipients(notification_id,tenant_id,recipient_id,created_at) SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmNotifications WHERE id=?)').bind(notificationId, tenantId, member.id, at, notificationId)); await db.batch(statements);
+  statements.push(db.prepare('INSERT OR IGNORE INTO CrmNotificationRecipients(notification_id,tenant_id,recipient_id,created_at) SELECT ?,?,value,? FROM json_each(?) WHERE EXISTS (SELECT 1 FROM CrmNotifications WHERE id=? AND tenant_id=?)').bind(notificationId, tenantId, at, json(audience.map(member => member.id)), notificationId, tenantId)); await db.batch(statements);
   return { created: true, id: notificationId, recipients: audience.length };
+}
+export async function ensureNewCustomerNotification(db, { tenantId, estimateId, payload = {}, createdAt = new Date() } = {}) {
+  requireDb(db);
+  const owner = await db.prepare("SELECT id FROM CrmUsers WHERE tenant_id=? AND role='owner' AND active=1 ORDER BY id LIMIT 1").bind(tenantId).first();
+  if (!owner) return { created: false, reason: 'no_active_owner' };
+  const result = await createNewCustomerNotification(db, { tenantId, actorId: owner.id, estimateId, payload, createdAt });
+  return result;
 }
 export async function createDailyBriefing(db, { tenantId, recipientId, date, startDate = date, endDate = date, createdAt, now = new Date() } = {}) {
   requireDb(db); const briefingDate = dateOnly(date); if (!tenantId || !recipientId) throw new TypeError('daily_briefing_input_required');
@@ -110,10 +136,10 @@ export async function createDailyBriefing(db, { tenantId, recipientId, date, sta
   if (!recipient) throw new Error('briefing_recipient_inactive');
   const due = dailyBriefingDueAt(briefingDate); const atDate = new Date(createdAt ?? now); const nowDate = new Date(now);
   if (!Number.isFinite(atDate.getTime()) || !Number.isFinite(nowDate.getTime()) || nowDate < due) throw new Error('briefing_not_due');
-  const facts = await readCrmAnalytics(db, { tenantId, startDate: dateOnly(startDate), endDate: dateOnly(endDate) }); const content = composeBriefing(facts, { runDate: briefingDate }); const notificationId = id('crm_ntf'); const at = iso(atDate);
-  const notification = buildInternalNotification({ tenantId, type: 'staff_message', actorId: recipientId, audience: [{ id: recipientId, tenantId }], payload: { kind: 'daily_briefing', date: briefingDate, content }, createdAt: at });
   const existing = await db.prepare('SELECT * FROM CrmDailyBriefings WHERE tenant_id=? AND recipient_id=? AND briefing_date=?').bind(tenantId, recipientId, briefingDate).first();
   if (existing) return existing;
+  const facts = await readCrmAnalytics(db, { tenantId, startDate: dateOnly(startDate), endDate: dateOnly(endDate) }); const content = composeBriefing(facts, { runDate: briefingDate }); const notificationId = id('crm_ntf'); const at = iso(atDate);
+  const notification = buildInternalNotification({ tenantId, type: 'staff_message', actorId: recipientId, audience: [{ id: recipientId, tenantId }], payload: { kind: 'daily_briefing', date: briefingDate, content }, createdAt: at });
   const markerId = `crm_brief_${tenantId}_${recipientId}_${briefingDate}`;
   const eventKey = `daily_briefing:${tenantId}:${recipientId}:${briefingDate}`;
   await db.batch([

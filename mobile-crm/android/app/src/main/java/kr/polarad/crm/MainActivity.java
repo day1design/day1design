@@ -98,6 +98,7 @@ public class MainActivity extends Activity {
     private int requestGeneration = 0;
     private boolean loggingOut = false;
     private boolean openNotificationsAfterLogin;
+    private String pendingPreviewCustomerId = "";
     private boolean supportMode;
     private boolean previewMode;
     private String previewExpiresAt;
@@ -237,6 +238,12 @@ public class MainActivity extends Activity {
             if (!sameGeneration(generation)) return;
             if (status >= 200 && status < 300) {
                 me = body;
+                if (previewMode && !pendingPreviewCustomerId.isEmpty()) {
+                    String customerId = pendingPreviewCustomerId;
+                    pendingPreviewCustomerId = "";
+                    showDetail(customerId);
+                    return;
+                }
                 if (loadingOverlay != null) loadingOverlay.setBranding(loadingLogoResource(), tenantName());
                 dataRevision = -1; checkDataRevision(false);
                 if (!supportMode && !previewMode) {
@@ -640,6 +647,7 @@ public class MainActivity extends Activity {
         root.addView(text("설정", 23, true));
         menu("계정·보안·기기", this::showSecurity);
         menu("앱 업데이트", this::showUpdate);
+        menu("알림·리마인드 설정", this::showNotificationSettings);
     }
 
     private void showMore() {
@@ -718,12 +726,66 @@ public class MainActivity extends Activity {
     }
     private void showNotificationSettings() {
         activeTab="more";base();addHeader();
+        if (isPlatform()) {
+            root.addView(body("플랫폼 관리자 구독 상태를 확인하는 중입니다."));
+            final int generation = requestGeneration;
+            api.call("GET", "/api/mobile/platform/notification-subscriptions", null, (payload, status, error) -> runOnUiThread(() -> {
+                if (!sameGeneration(generation)) return;
+                if (status < 200 || status >= 300) {
+                    toast(message(payload, error, "플랫폼 관리자 구독 상태를 확인하지 못했습니다."));
+                    return;
+                }
+                boolean subscribed = false;
+                JSONArray subscriptions = payload == null ? null : payload.optJSONArray("subscriptions");
+                if (subscriptions != null) for (int i = 0; i < subscriptions.length(); i++) {
+                    JSONObject subscription = subscriptions.optJSONObject(i);
+                    if (subscription != null && "day1design".equals(subscription.optString("source_tenant_id"))
+                            && "new_customer".equals(subscription.optString("notification_type"))) {
+                        subscribed = subscription.optBoolean("enabled", false);
+                        break;
+                    }
+                }
+                root.removeAllViews();
+                root.addView(NotificationSettings.settings(this,notificationsEnabled(),()->PushManager.registerCurrentDevice(this,api,notificationsEnabled()),this::showTemplates,
+                        true, subscribed, (toggle, enabled, previous) -> updatePlatformNotificationSubscription(toggle, enabled, previous)));
+                menu("휴대폰 알림 권한 설정",()->{
+                    Intent intent=new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                    intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName());startActivity(intent);
+                });
+                menu("알림 종류별 미리보기",this::showNotificationPreview);
+            }));
+            return;
+        }
         root.addView(NotificationSettings.settings(this,notificationsEnabled(),()->PushManager.registerCurrentDevice(this,api,notificationsEnabled()),this::showTemplates));
         menu("휴대폰 알림 권한 설정",()->{
             Intent intent=new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
             intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName());startActivity(intent);
         });
         menu("알림 종류별 미리보기",this::showNotificationPreview);
+    }
+
+    private void updatePlatformNotificationSubscription(android.widget.Switch toggle, boolean enabled, boolean previous) {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("tenant_id", "day1design");
+            payload.put("notification_type", "new_customer");
+            payload.put("enabled", enabled);
+        } catch (Exception ignored) { return; }
+        String path = enabled ? "/api/mobile/platform/notification-subscriptions" : "/api/mobile/platform/notification-subscriptions/day1design";
+        final int generation = requestGeneration;
+        api.call(enabled ? "POST" : "DELETE", path, enabled ? payload : null, (body, status, error) -> runOnUiThread(() -> {
+            if (!sameGeneration(generation)) return;
+            if (status < 200 || status >= 300) {
+                toggle.setChecked(previous);
+                toggle.setTag(Boolean.FALSE);
+                toggle.setEnabled(true);
+                toast(message(body, error, "플랫폼 관리자 구독을 변경하지 못했습니다."));
+            } else {
+                toggle.setTag(Boolean.FALSE);
+                toggle.setEnabled(true);
+                toast(enabled ? "데이원디자인 신규접수 알림을 구독했습니다." : "데이원디자인 신규접수 알림을 해제했습니다.");
+            }
+        }));
     }
     private void fidelityKeyValue(LinearLayout parent,String title,String value) {
         TextView content=text(value,12,false);content.setGravity(Gravity.START);content.setPadding(0,0,0,0);
@@ -1573,6 +1635,36 @@ public class MainActivity extends Activity {
             }));
     }
 
+    private void beginTenantPreviewForNotification(String tenantId, String customerId) {
+        if (previewMode || supportMode || !"day1design".equals(tenantId)) return;
+        JSONObject payload = new JSONObject();
+        tryPut(payload, "mode", "readonly");
+        final int generation = requestGeneration;
+        api.call("POST", "/api/mobile/platform/tenants/" + Uri.encode(tenantId) + "/preview-session", payload,
+            (body, status, error) -> runOnUiThread(() -> {
+                if (!sameGeneration(generation)) return;
+                JSONObject session = body.optJSONObject("preview_session");
+                String token = body.optString("preview_token", session == null ? "" : session.optString("token", ""));
+                if (token.isEmpty()) token = body.optString("token", "");
+                if (status < 200 || status >= 300 || token.isEmpty()) {
+                    toast(message(body, error, "업체 알림을 열지 못했습니다."));
+                    return;
+                }
+                adminToken = api.currentToken();
+                adminMe = me;
+                previewMode = true;
+                previewExpiresAt = session == null ? body.optString("expires_at", "") : session.optString("expires_at", body.optString("expires_at", ""));
+                pendingPreviewCustomerId = customerId;
+                api.setSupportReadOnly(true);
+                api.setToken(token);
+                api.invalidateData();
+                me = null;
+                current = null;
+                members.clear();
+                fetchMe(false);
+            }));
+    }
+
     private void endPreviewSession() {
         if (!previewMode) return;
         api.call("POST", "/api/mobile/platform/preview-session/end", new JSONObject(),
@@ -1768,6 +1860,19 @@ public class MainActivity extends Activity {
         JSONObject payload=item.optJSONObject("payload");String kind=notificationKind(item);
         String customerId=payload==null?"":payload.optString("customer_id",payload.optString("estimate_id",""));
         if("daily_briefing".equals(kind)){showAnalytics("brief");return;}
+        if (isPlatform() && payload != null && "platform_subscription".equals(payload.optString("kind"))) {
+            String sourceTenantId = payload.optString("source_tenant_id", "");
+            String sourceNotificationId = payload.optString("source_notification_id", "");
+            if ("day1design".equals(sourceTenantId)
+                    && sourceNotificationId.matches("[A-Za-z0-9_-]{1,100}")
+                    && customerId.matches("[A-Za-z0-9_-]{1,120}")) {
+                beginTenantPreviewForNotification(sourceTenantId, customerId);
+                return;
+            }
+            showNotifications();
+            toast("업체 접근 정보를 확인할 수 없습니다.");
+            return;
+        }
         if(customerId.matches("[A-Za-z0-9_-]{1,120}")){showDetail(customerId);return;}
         if("visit_reminder".equals(kind)||"measurement_reminder".equals(kind)||"appointment_created".equals(kind)||"appointment_updated".equals(kind)){showSchedule();return;}
         Dialog dialog=sheet();LinearLayout box=sheetBox();box.addView(text(notificationDisplayTitle(item),22,true));

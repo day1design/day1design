@@ -1,3 +1,4 @@
+import { ensureNewCustomerNotification } from "../lib/crm-automation.js";
 // ─── Meta Lead 수신 엔드포인트 ───
 // 두 갈래 입력을 같은 라우트가 받는다(전환기 동안 공존):
 //   1) Make → HTTP Make a request → 정규화된 필드({name, phone, location, ...})
@@ -561,6 +562,12 @@ export async function handleMetaLead(
         capiStep = "fail";
       }
       if (recordId) {
+        await ensureNewCustomerNotification(env.DB, {
+          tenantId: 'day1design',
+          estimateId: recordId,
+          payload: { region: location, available_budget: budget },
+          createdAt: timestamp || new Date(),
+        }).catch(() => null);
         await edgeCacheDeleteMany(
           ["estimates:list:all", "estimates:list:접수대기"],
           ctx,

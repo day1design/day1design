@@ -1,3 +1,4 @@
+import { listPlatformNotificationSubscriptions, upsertPlatformNotificationSubscription, disablePlatformNotificationSubscription } from '../lib/crm-platform-notifications.js';
 import { startTenantPreview } from '../lib/crm-tenant-preview.js';
 import { isSupportAdmin, startSupportSession } from '../lib/crm-support.js';
 import { readCrmJson } from '../lib/crm-request.js';
@@ -227,6 +228,17 @@ async function platformTenantDetail(request, env, auth, tenantId) {
   });
 }
 
+async function platformNotificationSubscriptions(request, env, auth, sourceTenantId = '') {
+  if (!platformAllowed(env, auth)) return error(403, 'platform access required');
+  if (request.method === 'GET' && !sourceTenantId) return ok({ subscriptions: await listPlatformNotificationSubscriptions(env.DB, { actor: auth, env }) });
+  if (sourceTenantId && sourceTenantId !== 'day1design') return error(404, 'subscription not found');
+  if (request.method === 'DELETE') return ok({ subscription: await disablePlatformNotificationSubscription(env.DB, { actor: auth, env }) });
+  if (request.method !== 'POST') return error(405, 'Method Not Allowed');
+  const value = await jsonBody(request);
+  if (value?.tenant_id !== 'day1design' || value?.notification_type !== 'new_customer' || value?.enabled !== true) return error(400, 'invalid subscription');
+  return ok({ subscription: await upsertPlatformNotificationSubscription(env.DB, { actor: auth, env, enabled: true }) });
+}
+
 async function optionalFirst(db, sql, ...args) {
   try { return { available: true, row: await db.prepare(sql).bind(...args).first() }; } catch { return { available: false, row: null }; }
 }
@@ -440,6 +452,9 @@ export async function handleMobileManagement(request, env, auth) {
     if (path === "/platform/overview" && request.method === "GET") return platformOverview(request, env, auth);
     if (path === "/platform/tenants" && request.method === "GET") return platformTenants(request, env, auth);
     if (path === "/platform/tenants" && request.method === "POST") return registerTenant(request, env, auth);
+    if (path === '/platform/notification-subscriptions' && ['GET', 'POST'].includes(request.method)) return platformNotificationSubscriptions(request, env, auth);
+    const notificationSubscription = path.match(/^\/platform\/notification-subscriptions\/([a-z0-9][a-z0-9_-]{1,79})$/);
+    if (notificationSubscription && request.method === 'DELETE') return platformNotificationSubscriptions(request, env, auth, notificationSubscription[1]);
     const preview=path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/preview-session$/);
     if(preview && request.method==='POST')return startTenantPreview(request,env,auth,preview[1]);
     const support=path.match(/^\/platform\/tenants\/([a-z0-9][a-z0-9_-]{1,79})\/support-sessions$/);

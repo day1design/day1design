@@ -8,7 +8,7 @@ import { fcmConfig, genericPushMessage, sendFcmMessage } from '../src/lib/crm-fc
 
 function fixture() {
   const sqlite = new DatabaseSync(':memory:');
-  for (const file of ['0001_init.sql', '0041_consult_booking.sql', '0042_contract_fields.sql', '0043_consult_cancel.sql', '0044_consult_reminders.sql', '0045_mobile_crm.sql', '0046_crm_notifications.sql', '0052_crm_devices.sql', '0053_crm_push.sql', '0054_crm_persistent_sessions.sql']) {
+  for (const file of ['0001_init.sql', '0041_consult_booking.sql', '0042_contract_fields.sql', '0043_consult_cancel.sql', '0044_consult_reminders.sql', '0045_mobile_crm.sql', '0062_crm_appointment_details.sql', '0046_crm_notifications.sql', '0052_crm_devices.sql', '0053_crm_push.sql', '0054_crm_persistent_sessions.sql']) {
     sqlite.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
   }
   class Statement {
@@ -126,7 +126,24 @@ test('FCM message is generic and HTTP v1 sender validates OAuth and provider acc
   const privateKey = pair.privateKey.export({ type: 'pkcs8', format: 'pem' });
   const config = { CRM_PUSH_ENABLED: 'true', CRM_FCM_PROJECT_ID: 'project-1', CRM_FCM_CLIENT_EMAIL: 'sender@test', CRM_FCM_PRIVATE_KEY: privateKey, CRM_PUSH_TENANTS: 'day1design' };
   assert.equal(fcmConfig({}, 'day1design'), null);
-  assert.deepEqual(genericPushMessage('token', 'notification-1').message.notification, { title: '폴라애드 알림', body: '새 알림이 도착했습니다.' });
+  const push = genericPushMessage('token', 'notification-1', {
+    notificationType: 'new_customer',
+    payload: { customer_id: 'customer-1', estimate_id: 'estimate-1', action: 'notifications', name: '고객', phone: '010-0000-0000', region: '성남 분당구', available_budget: '5천만~7천만원' },
+    previewMode: 'details',
+  });
+  assert.equal(push.message.notification, undefined);
+  assert.equal(push.message.android.notification, undefined);
+  assert.equal(push.message.data.notification_type, 'new_customer');
+  assert.equal(push.message.data.action, 'notifications');
+  assert.equal(push.message.data.customer_id, 'customer-1');
+  assert.equal(push.message.data.estimate_id, 'estimate-1');
+  assert.equal(push.message.data.name, '고객');
+  assert.equal(push.message.data.title, '신규고객 홈페이지 접수');
+  assert.match(push.message.data.body, /이름 고객/);
+  assert.match(push.message.data.body, /연락처 010-0000-0000/);
+  assert.match(push.message.data.body, /지역 성남 분당구/);
+  assert.match(push.message.data.body, /가용예산 5천만~7천만원/);
+  assert.equal(push.message.data.kind, 'crm_notification');
   const requests = [];
   const fetchImpl = async (url, options) => {
     requests.push({ url, options });
@@ -139,7 +156,7 @@ test('FCM message is generic and HTTP v1 sender validates OAuth and provider acc
   assert.equal(requests[0].options.redirect, 'manual');
   assert.equal(requests[1].options.redirect, 'manual');
   assert.match(requests[1].options.headers.authorization, /^Bearer access$/);
-  assert.equal(JSON.parse(requests[1].options.body).message.notification.body, '새 알림이 도착했습니다.');
+  assert.equal(JSON.parse(requests[1].options.body).message.data.body, '새 알림이 도착했습니다.');
   const denied = await sendFcmMessage(config, { tenantId: 'day1design', token: 'token', notificationId: 'n2', fetchImpl, beforeSend: () => false });
   assert.equal(denied.errorCode, 'push_authorization_changed');
   assert.equal(requests.length, 3);

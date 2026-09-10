@@ -189,3 +189,105 @@ export function dailyBriefingDueAt(date) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new TypeError("date must be YYYY-MM-DD");
   return new Date(`${day}T01:00:00.000Z`);
 }
+
+function appointmentReminderType(kind) {
+  return kind === "measurement" ? NOTIFICATION_TYPES.MEASUREMENT_REMINDER : NOTIFICATION_TYPES.VISIT_REMINDER;
+}
+
+function kstAppointmentLabel(value) {
+  const date = isoDate(value, "appointmentAt");
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function appointmentReminderMessage({ kind, startsAt, offsetHours, location }) {
+  const label = kind === "measurement" ? "실측" : "방문";
+  const when = offsetHours === 24 ? "내일" : "오늘 2시간 전";
+  const place = location ? ` · ${location}` : "";
+  return `${when} ${label} 일정 알림 · ${kstAppointmentLabel(startsAt)}${place}`;
+}
+
+function notificationBudget(amount, detail) {
+  if (Number(amount) > 0) return String(amount);
+  const match = String(detail || "").match(/예산\s*[:：]?\s*([0-9][0-9,]*(?:\s*[만천억]?원)?)/i);
+  return match ? match[1].replace(/\s+/g, "") : "";
+}
+
+export const APPOINTMENT_APP_REMINDER_OFFSETS_HOURS = Object.freeze([24, 2]);
+
+export async function createDueAppointmentNotifications(db, { tenantId, now = new Date(), limit = 50 } = {}) {
+  if (!db?.prepare) throw new TypeError("notification_db_required");
+  if (typeof tenantId !== "string" || !tenantId.trim()) throw new TypeError("notification_tenant_required");
+  const current = isoDate(now, "now");
+  const reminderWindowMs = 15 * 60 * 1000;
+  const horizon = new Date(current.getTime() + 24 * 60 * 60 * 1000);
+  const due24Start = new Date(current.getTime() + 24 * 60 * 60 * 1000 - reminderWindowMs);
+  const due2Start = new Date(current.getTime() + 2 * 60 * 60 * 1000 - reminderWindowMs);
+  const size = Math.max(1, Math.min(50, Number(limit) || 50));
+  const appointments = (await db.prepare(`
+    WITH due24 AS (
+      SELECT id FROM CrmAppointments WHERE tenant_id=? AND status IN ('scheduled','confirmed','booked')
+        AND starts_at>? AND starts_at<=? ORDER BY starts_at,id LIMIT ?
+    ), due2 AS (
+      SELECT id FROM CrmAppointments WHERE tenant_id=? AND status IN ('scheduled','confirmed','booked')
+        AND starts_at>? AND starts_at<=? ORDER BY starts_at,id LIMIT ?
+    ), due AS (SELECT id FROM due24 UNION ALL SELECT id FROM due2)
+    SELECT a.id,a.tenant_id,a.estimate_id,a.kind,a.starts_at,a.location,a.address,a.status,a.CrmVersion AS version,a.created_by,
+           e.Name AS name,e.Phone AS phone,e.Branch AS branch,e.EstimateAmount AS budget,e.Detail AS detail,e.Source AS source
+      FROM due JOIN CrmAppointments a ON a.id=due.id
+      JOIN CrmTenants t ON t.id=a.tenant_id AND t.suspended=0
+      LEFT JOIN Estimates e ON e.id=a.estimate_id AND e.CrmTenantId=a.tenant_id
+     ORDER BY a.starts_at,a.id
+     LIMIT ?`).bind(tenantId, due24Start.toISOString(), horizon.toISOString(), size, tenantId, due2Start.toISOString(), new Date(current.getTime() + 2 * 60 * 60 * 1000).toISOString(), size, size).all()).results ?? [];
+  const recipients = (await db.prepare("SELECT id FROM CrmUsers WHERE tenant_id=? AND active=1 ORDER BY id LIMIT 101").bind(tenantId).all()).results ?? [];
+  if (recipients.length > 100) throw new Error("notification_audience_too_large");
+  let created = 0;
+  for (const appointment of appointments) {
+    const startsAt = isoDate(appointment.starts_at, "startsAt");
+    const offsetCandidates = APPOINTMENT_APP_REMINDER_OFFSETS_HOURS.filter((hours) => {
+      const dueAt = startsAt.getTime() - hours * 60 * 60 * 1000;
+      return current.getTime() >= dueAt && current.getTime() < dueAt + reminderWindowMs;
+    });
+    for (const offsetHours of offsetCandidates) {
+      const type = appointmentReminderType(appointment.kind);
+      const eventKey = `appointment_app_reminder:${tenantId}:${appointment.id}:${appointment.version}:${offsetHours}`;
+      const notificationId = `crm_app_reminder_${appointment.id}_${appointment.version}_${offsetHours}`;
+      const payload = {
+        kind: "appointment_reminder",
+        appointment_id: appointment.id,
+        appointment_version: appointment.version,
+        estimate_id: appointment.estimate_id,
+        appointment_kind: appointment.kind,
+        starts_at: appointment.starts_at,
+        location: appointment.location || "",
+        address: appointment.address || "",
+        name: appointment.name || "",
+        phone: appointment.phone || "",
+        branch: appointment.branch || "",
+        source: appointment.source || (appointment.meta_lead_id ? "meta" : "homepage"),
+        meta_lead_id: "",
+        detail: appointment.detail || "",
+        budget: notificationBudget(appointment.budget, appointment.detail),
+        offset_hours: offsetHours,
+        message: appointmentReminderMessage({ kind: appointment.kind, startsAt: appointment.starts_at, offsetHours, location: appointment.location }),
+      };
+      if (!recipients.length) continue;
+      const existing = await db.prepare("SELECT id FROM CrmNotifications WHERE event_key=?").bind(eventKey).first();
+      if (existing) continue;
+      const statements = [db.prepare("INSERT OR IGNORE INTO CrmNotifications(id,tenant_id,type,actor_id,payload_json,created_at,event_key) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM CrmUsers WHERE id=? AND tenant_id=? AND active=1)")
+        .bind(notificationId, tenantId, type, appointment.created_by || "", JSON.stringify(payload), current.toISOString(), eventKey, appointment.created_by || "", tenantId)];
+      statements.push(db.prepare("INSERT OR IGNORE INTO CrmNotificationRecipients(notification_id,tenant_id,recipient_id,created_at) SELECT ?,?,value,? FROM json_each(?) WHERE EXISTS (SELECT 1 FROM CrmNotifications WHERE id=? AND tenant_id=?)").bind(notificationId, tenantId, current.toISOString(), JSON.stringify(recipients.map(recipient => recipient.id)), notificationId, tenantId));
+      const results = await db.batch(statements);
+      if (results?.[0]?.meta?.changes) created += 1;
+    }
+  }
+  return { scanned: appointments.length, created };
+}

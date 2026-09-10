@@ -41,6 +41,7 @@ import {
   notifyBlockedAttempt,
   recordRejectToD1,
 } from "../lib/estimate-archive.js";
+import { ensureNewCustomerNotification } from "../lib/crm-automation.js";
 
 const CACHE_TTL = 30;
 const ESTIMATE_RATE_LIMIT_PER_HOUR = 60;
@@ -1073,6 +1074,12 @@ async function submitEstimate(request, env, ctx, services) {
   }
 
   const addressLine = compactJoin([fields.address, fields.address_detail]);
+  const appNotification = ensureNewCustomerNotification(env.DB, {
+    tenantId: 'day1design',
+    estimateId: record.id,
+    payload: { region: addressLine, available_budget: fields.budget || '' },
+    createdAt: submittedAt,
+  }).catch(() => null);
   const notificationLines = [
     `[day1design/estimates] 새 상담신청${promoteId ? " (이탈팝업 경유)" : ""}`,
     `이름: ${escapeHtml(fields.name)}`,
@@ -1235,7 +1242,7 @@ async function submitEstimate(request, env, ctx, services) {
   );
 
   ctx.waitUntil(
-    Promise.allSettled(notifyTasks).then(() =>
+    Promise.allSettled([...notifyTasks, appNotification]).then(() =>
       logIntakeEvent(services, {
         channel: "homepage",
         source: "homepage",

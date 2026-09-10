@@ -19,6 +19,7 @@ function db() {
   for(const file of ['0001_init.sql','0041_consult_booking.sql','0042_contract_fields.sql','0043_consult_cancel.sql','0044_consult_reminders.sql']) sqlite.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL("../migrations/0045_mobile_crm.sql", import.meta.url), "utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0046_crm_notifications.sql", import.meta.url), "utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0064_crm_notification_read_all.sql", import.meta.url), "utf8"));
   class Statement {
     constructor(statement) { this.statement = statement; this.args = []; }
     bind(...args) { this.args = args; return this; }
