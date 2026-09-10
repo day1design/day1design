@@ -239,7 +239,6 @@ final class MetaAdCardsView {
                     view.setImageBitmap(bitmap);
                     view.setScaleType(ImageView.ScaleType.FIT_CENTER);
                     frame.addView(view, new FrameLayout.LayoutParams(-1, -1));
-                    addVideoUnavailableLabel(activity, frame, creative, null);
                     return frame;
                 }
             } catch (IllegalArgumentException ignored) { }
@@ -257,7 +256,6 @@ final class MetaAdCardsView {
         final String requestPath = path;
         if (api != null && requestPath.startsWith("/api/mobile/") && !requestPath.contains("//")) {
             final CardImageState state = new CardImageState(frame, placeholder);
-            addVideoUnavailableLabel(activity, frame, creative, state);
             state.loader = () -> {
                 if (state.requested) return;
                 state.requested = true;
@@ -273,7 +271,6 @@ final class MetaAdCardsView {
                 state.image = view;
                 frame.removeAllViews();
                 frame.addView(view, new FrameLayout.LayoutParams(-1, -1));
-                if (state.overlay != null) frame.addView(state.overlay, overlayParams(state.overlay.getContext()));
                 }));
             };
             frame.setTag(state);
@@ -287,8 +284,7 @@ final class MetaAdCardsView {
         final View placeholder;
         Runnable loader;
         ImageView image;
-        View overlay;
-        Bitmap bitmap;
+            Bitmap bitmap;
         boolean requested;
         int requestGeneration;
         CardImageState(FrameLayout frame, View placeholder) { this.frame = frame; this.placeholder = placeholder; }
@@ -301,7 +297,6 @@ final class MetaAdCardsView {
             requested = false;
             frame.removeAllViews();
             frame.addView(placeholder, new FrameLayout.LayoutParams(-1, -1));
-            if (overlay != null) frame.addView(overlay, overlayParams(overlay.getContext()));
         }
     }
 
@@ -323,26 +318,6 @@ final class MetaAdCardsView {
         }
         boolean has(String key) { return values.has(key) && !values.isNull(key); }
         double max(String key) { return values.optDouble(key, 0); }
-    }
-
-    private static void addVideoUnavailableLabel(Activity activity, FrameLayout frame, JSONObject creative, CardImageState state) {
-        String type = value(creative, "type");
-        String videoId = value(creative, "videoId", "video_id", "videoAssetId", "video_asset_id");
-        String videoPreviewPath = value(creative, "videoPreviewPath", "video_preview_path");
-        if (!"VIDEO".equalsIgnoreCase(type) && videoId.isEmpty() && videoPreviewPath.isEmpty()) return;
-        TextView label = text(activity, "영상 재생 미지원", 11, true, MUTED);
-        label.setGravity(Gravity.CENTER);
-        label.setPadding(dp(activity, 10), dp(activity, 5), dp(activity, 10), dp(activity, 5));
-        label.setBackground(round(activity, UNKNOWN_BG, 14));
-        if (state != null) state.overlay = label;
-        frame.addView(label, overlayParams(activity));
-    }
-
-    private static FrameLayout.LayoutParams overlayParams(android.content.Context context) {
-        int d = Math.round(context.getResources().getDisplayMetrics().density);
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, Math.round(40 * d), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        params.bottomMargin = Math.round(8 * d);
-        return params;
     }
 
     private static Bitmap decodeImageBytes(byte[] bytes) {

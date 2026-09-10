@@ -136,3 +136,38 @@ test("Meta breakdowns are tenant scoped and ads retain campaign and adset parent
   assert.equal(result.meta.dimensions.ads.values[0].adsetId, "set1");
   sqlite.close();
 });
+
+test("video platform and age distributions use complete tenant-scoped play counts", async () => {
+  const { sqlite, db } = dbWith(`
+    CREATE TABLE MetaAdsBreakdown (Date TEXT, CrmTenantId TEXT, Dimension TEXT, DimensionValue TEXT, DimensionSub TEXT, Impressions INTEGER, Clicks INTEGER, LinkClicks INTEGER, Spend REAL, Leads INTEGER, VideoPlays INTEGER);
+    CREATE INDEX meta_video_breakdown_tenant_date ON MetaAdsBreakdown(CrmTenantId, Date);
+    INSERT INTO MetaAdsBreakdown VALUES ('2026-09-01','t1','platform','instagram','',100,10,8,20,2,70);
+    INSERT INTO MetaAdsBreakdown VALUES ('2026-09-01','t1','platform','facebook','',100,10,8,20,2,30);
+    INSERT INTO MetaAdsBreakdown VALUES ('2026-09-01','t1','platform','threads','',100,10,8,20,2,0);
+    INSERT INTO MetaAdsBreakdown VALUES ('2026-09-01','t1','age_gender','25-34_female','',100,10,8,20,2,40);
+    INSERT INTO MetaAdsBreakdown VALUES ('2026-09-01','t1','age_gender','35-44_male','',100,10,8,20,2,60);
+    INSERT INTO MetaAdsBreakdown VALUES ('2026-09-01','t2','platform','instagram','',9000,900,800,900,90,9000);
+  `);
+  const result = await readCrmAnalyticsDimensions(db, { tenantId: "t1", startDate: "2026-09-01", endDate: "2026-09-01" });
+  assert.equal(result.meta.dimensions.video_platform.available, true);
+  assert.equal(result.meta.dimensions.video_platform.basis, "VideoPlays");
+  assert.equal(result.meta.dimensions.video_platform.totalVideoPlays, 100);
+  assert.deepEqual(result.meta.dimensions.video_platform.values.slice(0, 2).map((row) => [row.value, row.videoPlays, row.share]), [["instagram", 70, 0.7], ["facebook", 30, 0.3]]);
+  assert.equal(Object.hasOwn(result.meta.dimensions.video_platform.values[0], "sub"), false);
+  assert.equal(result.meta.dimensions.video_platform.values.find((row) => row.value === "threads").videoPlays, 0);
+  assert.deepEqual(result.meta.dimensions.video_age_gender.values.map((row) => [row.value, row.videoPlays]), [["35-44", 60], ["25-34", 40]]);
+  sqlite.close();
+});
+
+test("video distributions distinguish uncollected and partial play counts", async () => {
+  const { sqlite, db } = dbWith(`
+    CREATE TABLE MetaAdsBreakdown (Date TEXT, CrmTenantId TEXT, Dimension TEXT, DimensionValue TEXT, DimensionSub TEXT, Impressions INTEGER, Clicks INTEGER, LinkClicks INTEGER, Spend REAL, Leads INTEGER, VideoPlays INTEGER);
+    CREATE INDEX meta_video_partial_tenant_date ON MetaAdsBreakdown(CrmTenantId, Date);
+    INSERT INTO MetaAdsBreakdown VALUES ('2026-09-01','t1','platform','instagram','',100,10,8,20,2,NULL);
+    INSERT INTO MetaAdsBreakdown VALUES ('2026-09-01','t1','platform','facebook','',100,10,8,20,2,30);
+  `);
+  const result = await readCrmAnalyticsDimensions(db, { tenantId: "t1", startDate: "2026-09-01", endDate: "2026-09-01" });
+  assert.equal(result.meta.dimensions.video_platform.available, false);
+  assert.equal(result.meta.dimensions.video_platform.reason, "partial_video_breakdown");
+  sqlite.close();
+});

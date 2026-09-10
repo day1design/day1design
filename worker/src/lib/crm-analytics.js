@@ -17,6 +17,7 @@ const SOURCE_DEFINITIONS = {
     date: ["Date"],
     refreshed: ["FetchedAt", "CreatedAt"],
     required: ["Level", "Impressions", "Clicks", "LinkClicks", "Spend", "Leads"],
+    optional: ["VideoAvgWatchSec", "VideoPlays"],
   },
   pixel_events: {
     label: "Pixel/CAPI 이벤트",
@@ -166,6 +167,7 @@ export function calculateAdMetrics(row = {}) {
     leads,
     account_currency: currency,
     currency,
+    ...(row.videoViewing ? { videoViewing: row.videoViewing } : {}),
     ctr: metric(clicks, impressions, "clicks / impressions"),
     ctrLink: metric(linkClicks, impressions, "link_clicks / impressions"),
     cpc: metric(spend, clicks, "spend / clicks"),
@@ -310,6 +312,8 @@ async function readIntakeDetails(db, availability, range, tenantId, saved) {
   if (optional.has("EstimateAmount") || optional.has("Detail")) {
     const amountColumn = optional.has("EstimateAmount") ? safeIdentifier("EstimateAmount") : "NULL";
     const detailColumn = safeIdentifier("Detail");
+    // Historical intake paths used both `가용예산 :` and `가용 예산:`.
+    // Normalize those label variants before extracting the stored answer.
     const normalizedDetail = `replace(replace(replace(${detailColumn}, '가용 예산', '가용예산'), '가용예산 :', '가용예산:'), '가용예산：', '가용예산:')`;
     const afterLabel = `substr(${normalizedDetail}, instr(${normalizedDetail}, '가용예산:') + length('가용예산:'))`;
     const budgetText = optional.has("Detail")
@@ -317,17 +321,24 @@ async function readIntakeDetails(db, availability, range, tenantId, saved) {
       : "''";
     const budgetLabel = optional.has("Detail") ? `CASE WHEN instr(${normalizedDetail}, '가용예산:') > 0 THEN 1 ELSE 0 END` : "0";
     const budgetRows = await queryMany(db, `SELECT ${amountColumn} AS EstimateAmount, ${budgetText} AS budget_text, ${budgetLabel} AS budget_has_label, COUNT(*) AS count FROM ${table} WHERE ${tenant} = ? AND ${date} >= ? AND ${date} < ? GROUP BY ${amountColumn}, ${budgetText} LIMIT 501`, [tenantId, range.startUtc, range.endExclusiveUtc]);
-    if (budgetRows.length > 500) detail.dimensions.budget = { available: false, reason: "budget_group_limit_exceeded", max_groups: 500 };
-    else {
+    if (budgetRows.length > 500) {
+      detail.dimensions.budget = { available: false, reason: "budget_group_limit_exceeded", max_groups: 500 };
+    } else {
       const counts = budgetCounts(budgetRows);
       const known = counts.below_30m + counts.from_30m_to_50m + counts.from_50m_to_70m + counts.from_70m;
-      detail.dimensions.budget = { available: true, known, unknown: counts.unknown, values: [
-        { label: "3천만 미만", count: counts.below_30m },
-        { label: "3~5천만", count: counts.from_30m_to_50m },
-        { label: "5~7천만", count: counts.from_50m_to_70m },
-        { label: "7천만 이상", count: counts.from_70m },
-        { label: "미확인", count: counts.unknown },
-      ], hasMore: false };
+      detail.dimensions.budget = {
+        available: true,
+        known,
+        unknown: counts.unknown,
+        values: [
+          { label: "3천만 미만", count: counts.below_30m },
+          { label: "3~5천만", count: counts.from_30m_to_50m },
+          { label: "5~7천만", count: counts.from_50m_to_70m },
+          { label: "7천만 이상", count: counts.from_70m },
+          { label: "미확인", count: counts.unknown },
+        ],
+        hasMore: false,
+      };
     }
   } else {
     detail.dimensions.budget = { available: false, reason: "column_missing" };
@@ -414,9 +425,27 @@ async function readSource(db, key, range, tenantId) {
     }, row.refreshed || null);
   }
   if (key === "meta_ads") {
-    const row = await queryOne(db, `SELECT SUM(Impressions) AS impressions, SUM(Clicks) AS clicks, SUM(LinkClicks) AS link_clicks, SUM(Spend) AS spend, SUM(Leads) AS leads, MAX(${refreshed}) AS refreshed FROM ${table} WHERE ${tenant} = ? AND ${date} >= ? AND ${date} <= ? AND Level = 'account'`, dailyBinds);
+    const hasVideoAvg = availability.optional.includes("VideoAvgWatchSec");
+    const hasVideoPlays = availability.optional.includes("VideoPlays");
+    const videoSelect = hasVideoAvg && hasVideoPlays
+      ? `, COUNT(*) AS video_rows, COUNT(VideoPlays) AS video_observed_play_rows, SUM(CASE WHEN VideoPlays IS NULL THEN 1 ELSE 0 END) AS video_missing_play_rows, SUM(CASE WHEN VideoPlays > 0 THEN VideoAvgWatchSec * VideoPlays ELSE 0 END) AS video_watch_numerator, SUM(VideoPlays) AS video_plays, SUM(CASE WHEN VideoPlays > 0 AND VideoAvgWatchSec IS NULL THEN VideoPlays ELSE 0 END) AS video_missing_avg_plays`
+      : "";
+    const row = await queryOne(db, `SELECT SUM(Impressions) AS impressions, SUM(Clicks) AS clicks, SUM(LinkClicks) AS link_clicks, SUM(Spend) AS spend, SUM(Leads) AS leads${videoSelect}, MAX(${refreshed}) AS refreshed FROM ${table} WHERE ${tenant} = ? AND ${date} >= ? AND ${date} <= ? AND Level = 'account'`, dailyBinds);
     const accountCurrency = tenantId === "day1design" ? "USD" : null;
     const ads = calculateAdMetrics({ impressions: row.impressions, clicks: row.clicks, linkClicks: row.link_clicks, spend: row.spend, leads: row.leads, account_currency: accountCurrency });
+    ads.videoViewing = !hasVideoAvg || !hasVideoPlays
+      ? { available: false, reason: "column_missing", missing: [hasVideoAvg ? null : "VideoAvgWatchSec", hasVideoPlays ? null : "VideoPlays"].filter(Boolean), basis: "video plays" }
+      : Number(row.video_rows) === 0
+        ? { available: false, reason: "video_not_collected", avgWatchSec: null, videoPlays: null, denominator: "VideoPlays", basis: "video plays" }
+      : Number(row.video_observed_play_rows) === 0
+        ? { available: false, reason: "video_not_collected", avgWatchSec: null, videoPlays: null, denominator: "VideoPlays", basis: "video plays" }
+      : Number(row.video_missing_play_rows) > 0
+        ? { available: false, reason: "partial_video_metrics", missingVideoRows: integer(row.video_missing_play_rows), denominator: "VideoPlays", basis: "video plays" }
+      : Number(row.video_missing_avg_plays) > 0
+        ? { available: false, reason: "partial_video_metrics", missingVideoPlays: integer(row.video_missing_avg_plays), denominator: "VideoPlays", basis: "video plays" }
+      : Number(row.video_plays) > 0
+        ? { available: true, avgWatchSec: Number(row.video_watch_numerator) / Number(row.video_plays), videoPlays: integer(row.video_plays), denominator: "VideoPlays", basis: "video plays" }
+        : { available: false, reason: "no_video_plays", avgWatchSec: null, videoPlays: 0, denominator: "VideoPlays", basis: "video plays" };
     return sourceEnvelope(key, definition, range, availability, { ...ads, denominator: "account-level daily rows" }, row.refreshed || null);
   }
   if (key === "pixel_events") {
@@ -474,12 +503,14 @@ export function composeBriefing(analytics, { requestedAt = new Date().toISOStrin
       cpl: ads.cpl?.value ?? null,
       cpc: ads.cpcLink?.value ?? null,
       cpm: ads.cpm?.value ?? null,
+      ...(ads.videoViewing?.available ? { videoAvgWatchSec: ads.videoViewing.avgWatchSec, videoPlays: ads.videoViewing.videoPlays } : {}),
       ctr: ads.ctrLink?.value ?? null,
       methods: {
         cpl: ads.cpl?.method ?? null,
         cpc: ads.cpcLink?.method ?? null,
         cpm: ads.cpm?.method ?? null,
         ctr: ads.ctrLink?.method ?? null,
+        ...(ads.videoViewing?.available ? { videoAvgWatchSec: "SUM(VideoAvgWatchSec * VideoPlays) / SUM(VideoPlays)" } : {}),
       },
     },
     flow: flow || null,

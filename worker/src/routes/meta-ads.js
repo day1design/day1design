@@ -1318,13 +1318,14 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
             DimensionValue: val,
             DimensionSub: sub,
             ...mapInsight(row),
+            VideoPlays: nullableVideoPlays(row),
             FetchedAt: fetchedAt,
           }),
         );
       }
     }
 
-    await runBatch(env, stmts);
+    await runBatch(env, stmts, "day1design");
     const updated = stmts.length;
 
     // 영상 길이는 지표와 함께 오지 않는다. 광고 메타의 video_id 로 따로 받아 둔다
@@ -2181,7 +2182,7 @@ export function normalizeCreativeCopy(creative = {}) {
   };
 }
 
-async function fetchBreakdown(
+export async function fetchBreakdown(
   token,
   accountId,
   startDate,
@@ -2191,7 +2192,7 @@ async function fetchBreakdown(
   // 페이지네이션 지원 — Meta API limit=500/페이지, paging.next로 추가 호출
   // 차원값이 많은 분해(age_gender / region / hour)는 일자 × 차원값 조합 수천 row 발생
   const params = new URLSearchParams({
-    fields: "impressions,clicks,spend,ctr,cpc,reach,actions,inline_link_clicks",
+    fields: "impressions,clicks,spend,ctr,cpc,reach,actions,inline_link_clicks,video_play_actions",
     breakdowns,
     time_range: JSON.stringify({ since: startDate, until: endDate }),
     time_increment: "1",
@@ -2201,7 +2202,14 @@ async function fetchBreakdown(
   let url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/insights?${params}`;
   const all = [];
   const MAX_PAGES = 10; // 안전망 (subrequest 한도 보호)
+  const seen = new Set();
   for (let i = 0; i < MAX_PAGES && url; i++) {
+    if (seen.has(url)) {
+      const err = new Error(`Meta breakdown(${breakdowns}) pagination cursor repeated`);
+      err.code = "meta_breakdown_pagination_cap";
+      throw err;
+    }
+    seen.add(url);
     const res = await fetch(url);
     const data = await res.json();
     if (!res.ok) {
@@ -2211,10 +2219,29 @@ async function fetchBreakdown(
       err.metaError = data?.error;
       throw err;
     }
-    all.push(...(data.data || []));
-    url = data?.paging?.next || null;
+    if (!Array.isArray(data?.data)) {
+      const err = new Error(`Meta breakdown(${breakdowns}) response missing data`);
+      err.code = "meta_breakdown_invalid_response";
+      throw err;
+    }
+    all.push(...data.data);
+    const next = String(data?.paging?.next || "");
+    if (!next) return all;
+    if (!/^https:\/\/graph\.facebook\.com\//i.test(next)) {
+      const err = new Error(`Meta breakdown(${breakdowns}) pagination URL rejected`);
+      err.code = "meta_breakdown_pagination_cap";
+      throw err;
+    }
+    if (i === MAX_PAGES - 1) {
+      const err = new Error(`Meta breakdown(${breakdowns}) page cap reached`);
+      err.code = "meta_breakdown_pagination_cap";
+      throw err;
+    }
+    url = next;
   }
-  return all;
+  const err = new Error(`Meta breakdown(${breakdowns}) incomplete`);
+  err.code = "meta_breakdown_pagination_cap";
+  throw err;
 }
 
 function isRateLimit(e) {
@@ -2229,6 +2256,13 @@ function firstActionValue(arr, types) {
     if (types.includes(a.action_type)) return Number(a.value || 0);
   }
   return 0;
+}
+
+function nullableVideoPlays(row) {
+  if (!Object.prototype.hasOwnProperty.call(row || {}, "video_play_actions")) return null;
+  if (!Array.isArray(row.video_play_actions)) return null;
+  const action = row.video_play_actions.find((item) => ["video_view", "video_play"].includes(item?.action_type));
+  return action ? Number(action.value || 0) : null;
 }
 
 function preferredActionValue(arr, types) {
@@ -2325,7 +2359,7 @@ const DAILY_COLS = [
   "CostPerLinkClick",
   "FetchedAt",
 ];
-function buildDailyStmt(env, fields) {
+export function buildDailyStmt(env, fields) {
   const id = generateId();
   const now = new Date().toISOString();
   const setClause = DAILY_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
@@ -2334,14 +2368,17 @@ function buildDailyStmt(env, fields) {
     "?",
     "?",
     "?",
+    "?",
     ...DAILY_COLS.map(() => "?"),
     "?",
   ].join(",");
   const sql = `INSERT INTO MetaAdsDaily
-      (id, Date, Level, EntityId, ${DAILY_COLS.join(",")}, CreatedAt)
+    (id, CrmTenantId, Date, Level, EntityId, ${DAILY_COLS.join(",")}, CreatedAt)
      VALUES (${placeholders})
-     ON CONFLICT(Date, Level, EntityId) DO UPDATE SET ${setClause}`;
-  const values = [id, fields.Date, fields.Level, fields.EntityId];
+     ON CONFLICT(Date, Level, EntityId) DO UPDATE SET
+       CrmTenantId=COALESCE(NULLIF(MetaAdsDaily.CrmTenantId,''), excluded.CrmTenantId), ${setClause}
+     WHERE MetaAdsDaily.CrmTenantId IS NULL OR MetaAdsDaily.CrmTenantId='' OR MetaAdsDaily.CrmTenantId=excluded.CrmTenantId`;
+  const values = [id, "day1design", fields.Date, fields.Level, fields.EntityId];
   for (const c of DAILY_COLS)
     values.push(fields[c] ?? (typeof fields[c] === "number" ? 0 : ""));
   values.push(now);
@@ -2389,14 +2426,16 @@ export function buildAdStmt(env, fields) {
   const setClause = AD_COLS.map((c) => copyCols.has(c)
     ? `${c}=CASE WHEN NULLIF(excluded.CreativeId,'') IS NOT NULL AND excluded.CreativeId<>MetaAdsAd.CreativeId THEN excluded.${c} ELSE COALESCE(NULLIF(excluded.${c},''),MetaAdsAd.${c}) END`
     : `${c}=excluded.${c}`).join(", ");
-  const placeholders = ["?", "?", "?", ...AD_COLS.map(() => "?"), "?"].join(
+  const placeholders = ["?", "?", "?", "?", ...AD_COLS.map(() => "?"), "?"].join(
     ",",
   );
   const sql = `INSERT INTO MetaAdsAd
-      (id, Date, AdId, ${AD_COLS.join(",")}, CreatedAt)
+      (id, CrmTenantId, Date, AdId, ${AD_COLS.join(",")}, CreatedAt)
      VALUES (${placeholders})
-     ON CONFLICT(Date, AdId) DO UPDATE SET ${setClause}`;
-  const values = [id, fields.Date, fields.AdId];
+     ON CONFLICT(Date, AdId) DO UPDATE SET
+       CrmTenantId=COALESCE(NULLIF(MetaAdsAd.CrmTenantId,''), excluded.CrmTenantId), ${setClause}
+     WHERE MetaAdsAd.CrmTenantId IS NULL OR MetaAdsAd.CrmTenantId='' OR MetaAdsAd.CrmTenantId=excluded.CrmTenantId`;
+  const values = [id, "day1design", fields.Date, fields.AdId];
   for (const c of AD_COLS) values.push(fields[c] ?? "");
   values.push(now);
   return env.DB.prepare(sql).bind(...values);
@@ -2411,9 +2450,10 @@ const BRK_COLS = [
   "Cpc",
   "Reach",
   "Leads",
+  "VideoPlays",
   "FetchedAt",
 ];
-function buildBreakdownStmt(env, fields) {
+export function buildBreakdownStmt(env, fields) {
   const id = generateId();
   const now = new Date().toISOString();
   const setClause = BRK_COLS.map((c) => `${c}=excluded.${c}`).join(", ");
@@ -2423,30 +2463,41 @@ function buildBreakdownStmt(env, fields) {
     "?",
     "?",
     "?",
+    "?",
     ...BRK_COLS.map(() => "?"),
     "?",
   ].join(",");
   const sql = `INSERT INTO MetaAdsBreakdown
-      (id, Date, Dimension, DimensionValue, DimensionSub, ${BRK_COLS.join(",")}, CreatedAt)
+      (id, CrmTenantId, Date, Dimension, DimensionValue, DimensionSub, ${BRK_COLS.join(",")}, CreatedAt)
      VALUES (${placeholders})
-     ON CONFLICT(Date, Dimension, DimensionValue, DimensionSub) DO UPDATE SET ${setClause}`;
+     ON CONFLICT(Date, Dimension, DimensionValue, DimensionSub) DO UPDATE SET
+       CrmTenantId=COALESCE(NULLIF(MetaAdsBreakdown.CrmTenantId,''), excluded.CrmTenantId), ${setClause}
+     WHERE MetaAdsBreakdown.CrmTenantId IS NULL OR MetaAdsBreakdown.CrmTenantId='' OR MetaAdsBreakdown.CrmTenantId=excluded.CrmTenantId`;
   const values = [
     id,
+    "day1design",
     fields.Date,
     fields.Dimension,
     fields.DimensionValue,
     fields.DimensionSub || "",
   ];
-  for (const c of BRK_COLS) values.push(fields[c] ?? "");
+  for (const c of BRK_COLS) values.push(fields[c] === undefined ? "" : fields[c]);
   values.push(now);
   return env.DB.prepare(sql).bind(...values);
 }
 
 // batch 분할 실행 — D1 batch는 statement 수 한도 있음 (안전하게 100개씩)
-async function runBatch(env, stmts) {
-  const CHUNK = 100;
+export async function runBatch(env, stmts, revisionTenantId = "") {
+  const CHUNK = revisionTenantId ? 99 : 100;
   for (let i = 0; i < stmts.length; i += CHUNK) {
-    await env.DB.batch(stmts.slice(i, i + CHUNK));
+    const batch = stmts.slice(i, i + CHUNK);
+    if (revisionTenantId) {
+      batch.push(env.DB.prepare(
+        `INSERT INTO CrmDataRevisions(tenant_id,version,updated_at) VALUES (?,1,?)
+         ON CONFLICT(tenant_id) DO UPDATE SET version=CrmDataRevisions.version+1, updated_at=excluded.updated_at`,
+      ).bind(revisionTenantId, new Date().toISOString()));
+    }
+    await env.DB.batch(batch);
   }
 }
 

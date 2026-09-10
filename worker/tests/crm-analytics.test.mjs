@@ -21,6 +21,51 @@ test("advertising rates use period sums and separate link CPC", () => {
   assert.equal(metrics.cpl.value, 25);
 });
 
+test("video watch time uses play-weighted account rows and stays unavailable without fields", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`CREATE TABLE MetaAdsDaily (Date TEXT, CrmTenantId TEXT, Level TEXT, Impressions INTEGER, Clicks INTEGER, LinkClicks INTEGER, Spend REAL, Leads INTEGER, VideoAvgWatchSec REAL, VideoPlays INTEGER, FetchedAt TEXT); CREATE INDEX meta_video_tenant_date ON MetaAdsDaily(CrmTenantId, Date); INSERT INTO MetaAdsDaily VALUES ('2026-09-01','t1','account',1000,100,80,50,5,10,2,'2026-09-01T00:00:00Z'); INSERT INTO MetaAdsDaily VALUES ('2026-09-02','t1','account',1000,100,80,50,5,20,1,'2026-09-02T00:00:00Z');`);
+  const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
+  const result = await readCrmAnalytics(db, { tenantId: "t1", startDate: "2026-09-01", endDate: "2026-09-02" });
+  const ads = result.sources.find((source) => source.key === "meta_ads").metrics;
+  assert.equal(ads.videoViewing.available, true);
+  assert.equal(ads.videoViewing.videoPlays, 3);
+  assert.equal(ads.videoViewing.avgWatchSec, 40 / 3);
+  const briefing = composeBriefing(result, { runDate: "2026-09-02" });
+  assert.equal(briefing.metrics.videoAvgWatchSec, 40 / 3);
+  sqlite.close();
+});
+
+test("video watch time stays unavailable when a played row has no watch-time value", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`CREATE TABLE MetaAdsDaily (Date TEXT, CrmTenantId TEXT, Level TEXT, Impressions INTEGER, Clicks INTEGER, LinkClicks INTEGER, Spend REAL, Leads INTEGER, VideoAvgWatchSec REAL, VideoPlays INTEGER, FetchedAt TEXT); CREATE INDEX meta_video_partial_tenant_date ON MetaAdsDaily(CrmTenantId, Date); INSERT INTO MetaAdsDaily VALUES ('2026-09-01','t1','account',1000,100,80,50,5,NULL,2,'2026-09-01T00:00:00Z');`);
+  const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
+  const result = await readCrmAnalytics(db, { tenantId: "t1", startDate: "2026-09-01", endDate: "2026-09-01" });
+  const ads = result.sources.find((source) => source.key === "meta_ads").metrics;
+  assert.equal(ads.videoViewing.available, false);
+  assert.equal(ads.videoViewing.reason, "partial_video_metrics");
+  assert.equal(ads.videoViewing.missingVideoPlays, 2);
+  sqlite.close();
+});
+
+test("video watch coverage distinguishes uncollected, null, partial, and stored zero plays", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`CREATE TABLE MetaAdsDaily (Date TEXT, CrmTenantId TEXT, Level TEXT, Impressions INTEGER, Clicks INTEGER, LinkClicks INTEGER, Spend REAL, Leads INTEGER, VideoAvgWatchSec REAL, VideoPlays INTEGER, FetchedAt TEXT); CREATE INDEX meta_video_coverage_tenant_date ON MetaAdsDaily(CrmTenantId, Date); INSERT INTO MetaAdsDaily VALUES ('2026-09-01','nulls','account',100,10,8,5,1,NULL,NULL,'2026-09-01T00:00:00Z'); INSERT INTO MetaAdsDaily VALUES ('2026-09-01','partial','account',100,10,8,5,1,10,2,'2026-09-01T00:00:00Z'); INSERT INTO MetaAdsDaily VALUES ('2026-09-02','partial','account',100,10,8,5,1,NULL,NULL,'2026-09-02T00:00:00Z'); INSERT INTO MetaAdsDaily VALUES ('2026-09-01','zero','account',100,10,8,5,1,0,0,'2026-09-01T00:00:00Z');`);
+  const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
+  const read = async (tenantId, startDate = "2026-09-01", endDate = startDate) => {
+    const result = await readCrmAnalytics(db, { tenantId, startDate, endDate });
+    return result.sources.find((source) => source.key === "meta_ads").metrics.videoViewing;
+  };
+  assert.deepEqual(await read("empty"), { available: false, reason: "video_not_collected", avgWatchSec: null, videoPlays: null, denominator: "VideoPlays", basis: "video plays" });
+  assert.deepEqual(await read("nulls"), { available: false, reason: "video_not_collected", avgWatchSec: null, videoPlays: null, denominator: "VideoPlays", basis: "video plays" });
+  const partial = await read("partial", "2026-09-01", "2026-09-02");
+  assert.equal(partial.available, false);
+  assert.equal(partial.reason, "partial_video_metrics");
+  assert.equal(partial.missingVideoRows, 1);
+  assert.equal((await read("zero")).videoPlays, 0);
+  assert.equal((await read("zero")).reason, "no_video_plays");
+  sqlite.close();
+});
+
 test("briefing contains facts and no invented performance verdict", () => {
   const result = composeBriefing({ facts: [{ type: "fact", key: "saved_leads", value: 2 }], hypotheses: [] }, { runDate: "2026-09-09" });
   assert.equal(result.schedule.key, "crm-briefing:2026-09-09:10:00:Asia/Seoul");
@@ -222,28 +267,44 @@ test("D02 budget buckets and intake channels apply boundaries, tenant, and date 
   sqlite.close();
 });
 
-test("budget dimension uses stored Detail answers and keeps blank labels unknown", async () => {
+test("D02 budget distribution falls back to the original Detail answer when EstimateAmount is empty", async () => {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`
-    CREATE TABLE Estimates (id TEXT PRIMARY KEY, CrmTenantId TEXT, SubmittedAt TEXT, Source TEXT, Platform TEXT, Detail TEXT, EstimateAmount INTEGER);
+    CREATE TABLE Estimates (id TEXT PRIMARY KEY, CrmTenantId TEXT, SubmittedAt TEXT, Source TEXT, Platform TEXT, EstimateAmount INTEGER, Detail TEXT);
     CREATE INDEX estimates_tenant_date ON Estimates(CrmTenantId, SubmittedAt);
   `);
-  const add = (id, detail, amount) => sqlite.prepare("INSERT INTO Estimates VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, "day1", "2026-09-05T01:00:00.000Z", "homepage", "web", detail, amount);
-  add("detail-known", "가용예산: 5천만원\n문의내용: 주방", 0);
-  add("detail-spaced", "가용 예산 : 3천만원", 0);
-  add("detail-blank", "가용예산: \n문의내용: 8천만원", 80000000);
+  const add = (id, amount, detail) => sqlite.prepare("INSERT INTO Estimates VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, "day1", "2026-09-05T01:00:00.000Z", "homepage", "web", amount, detail);
+  add("detail-30", 0, "공간유형: 아파트\n가용예산: 3~5천만원");
+  add("detail-70", null, "가용예산: 7천만원");
+  add("detail-spaced-label", 0, "가용 예산 : 2천만원");
+  add("stored", 50000000, "가용예산: 미정");
+  add("won", 0, "가용예산: 50,000,000원");
+  add("blank-label", 50000000, "가용 예산 :\n연락 가능 시간: 10시");
+  add("unknown", 0, "가용예산: 미정");
+  add("unrelated-number", 0, "면적: 32평\\n연락 가능 시간: 10시");
   const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
   const result = await readCrmAnalytics(db, { tenantId: "day1", startDate: "2026-09-05", endDate: "2026-09-05" });
   const budget = result.sources.find((source) => source.key === "saved_estimates").metrics.intake.dimensions.budget;
   assert.deepEqual(budget.values, [
-    { label: "3천만 미만", count: 0 },
+    { label: "3천만 미만", count: 1 },
     { label: "3~5천만", count: 1 },
     { label: "5~7천만", count: 1 },
-    { label: "7천만 이상", count: 0 },
-    { label: "미확인", count: 1 },
+    { label: "7천만 이상", count: 1 },
+    { label: "미확인", count: 4 },
   ]);
-  assert.equal(budget.known, 2);
-  assert.equal(budget.unknown, 1);
+  assert.equal(budget.known, 4);
+  assert.equal(budget.unknown, 4);
+  sqlite.close();
+});
+
+test("D02 budget distribution stops safely when grouped source values exceed the cap", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`CREATE TABLE Estimates (id TEXT PRIMARY KEY, CrmTenantId TEXT, SubmittedAt TEXT, Source TEXT, Platform TEXT, EstimateAmount INTEGER, Detail TEXT); CREATE INDEX estimates_tenant_date ON Estimates(CrmTenantId, SubmittedAt);`);
+  const insert = sqlite.prepare("INSERT INTO Estimates VALUES (?, ?, ?, ?, ?, ?, ?)");
+  for (let index = 0; index < 501; index += 1) insert.run(`budget-${index}`, "day1", "2026-09-05T01:00:00.000Z", "homepage", "web", index + 30000000, "가용예산: 미정");
+  const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
+  const result = await readCrmAnalytics(db, { tenantId: "day1", startDate: "2026-09-05", endDate: "2026-09-05" });
+  assert.deepEqual(result.sources.find((source) => source.key === "saved_estimates").metrics.intake.dimensions.budget, { available: false, reason: "budget_group_limit_exceeded", max_groups: 500 });
   sqlite.close();
 });
 

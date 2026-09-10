@@ -164,6 +164,36 @@ async function groupedBreakdown(db, info, tenantId, range, dimension) {
   return { available: true, values: rows.slice(0, TOP_LIMIT).map((row) => ({ value: label(row.value), sub: label(row.sub), ...adMetrics(row) })), hasMore: rows.length > TOP_LIMIT, top: TOP_LIMIT };
 }
 
+async function groupedVideoBreakdown(db, info, tenantId, range, dimension, { combineAgeGender = false } = {}) {
+  if (!info.columns?.has("VideoPlays")) return unavailable("column_missing");
+  const baseWhere = `${identifier(info.tenant)}=? AND ${identifier(info.date)}>=? AND ${identifier(info.date)}<=? AND ${identifier("Dimension")}=?`;
+  const binds = [tenantId, range.startDate, range.endDate, dimension];
+  const coverage = (await all(db, `SELECT COUNT(*) AS rows, SUM(CASE WHEN ${identifier("VideoPlays")} IS NULL THEN 1 ELSE 0 END) AS missing_rows, SUM(COALESCE(${identifier("VideoPlays")}, 0)) AS video_plays FROM ${identifier("MetaAdsBreakdown")} WHERE ${baseWhere}`, binds))[0] || {};
+  const rowCount = integer(coverage.rows);
+  const missingRows = integer(coverage.missing_rows);
+  const totalVideoPlays = numberOrNull(coverage.video_plays) ?? 0;
+  if (!rowCount) return unavailable("video_breakdown_not_collected");
+  if (missingRows > 0) return unavailable(missingRows === rowCount ? "video_breakdown_not_collected" : "partial_video_breakdown");
+  const valueExpression = combineAgeGender
+    ? `CASE WHEN instr(${identifier("DimensionValue")}, '_') > 0 THEN substr(${identifier("DimensionValue")}, 1, instr(${identifier("DimensionValue")}, '_') - 1) ELSE ${identifier("DimensionValue")} END`
+    : identifier("DimensionValue");
+  const rows = await all(db, `SELECT ${valueExpression} AS value, MAX(${identifier("DimensionSub")}) AS sub, SUM(${identifier("VideoPlays")}) AS video_plays FROM ${identifier("MetaAdsBreakdown")} WHERE ${baseWhere} GROUP BY ${valueExpression} ORDER BY video_plays DESC, value ASC LIMIT ${TOP_LIMIT + 1}`, binds);
+  if (rows.length > TOP_LIMIT) return unavailable("video_breakdown_group_limit_exceeded");
+  return {
+    available: true,
+    values: rows.slice(0, TOP_LIMIT).map((row) => {
+      const videoPlays = numberOrNull(row.video_plays) ?? 0;
+      const sub = String(row.sub ?? "").trim();
+      return { value: label(row.value), ...(sub ? { sub: label(sub) } : {}), videoPlays, share: totalVideoPlays > 0 ? videoPlays / totalVideoPlays : null };
+    }),
+    hasMore: rows.length > TOP_LIMIT,
+    top: TOP_LIMIT,
+    unit: "video plays",
+    basis: "VideoPlays",
+    totalVideoPlays,
+  };
+}
+
 async function readMeta(db, tenantId, range) {
   const daily = await availability(db, "MetaAdsDaily", ["Level", "EntityId", "EntityName", ...META_METRICS], ["Date"]);
   const ad = await availability(db, "MetaAdsAd", ["AdId", "AdName", "AdsetId", "AdsetName", "CampaignId", "CampaignName", ...META_METRICS], ["Date"]);
@@ -186,6 +216,8 @@ async function readMeta(db, tenantId, range) {
   for (const [key, dimension] of [["age_gender", "age_gender"], ["regions", "region"], ["placements", "position"]]) {
     result.dimensions[key] = breakdown.available ? await groupedBreakdown(db, breakdown, tenantId, range, dimension) : unavailable(breakdown.reason);
   }
+  result.dimensions.video_platform = breakdown.available ? await groupedVideoBreakdown(db, breakdown, tenantId, range, "platform") : unavailable(breakdown.reason);
+  result.dimensions.video_age_gender = breakdown.available ? await groupedVideoBreakdown(db, breakdown, tenantId, range, "age_gender", { combineAgeGender: true }) : unavailable(breakdown.reason);
   if (!result.available) result.reason = [daily, ad, breakdown].find((source) => source.reason === "tenant_column_missing")?.reason || [daily, ad, breakdown].find((source) => source.reason)?.reason || "source_table_missing";
   return result;
 }

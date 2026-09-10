@@ -48,6 +48,7 @@ final class AnalyticsScreen {
     private static final int PAPER = Color.rgb(250, 249, 246);
     private static final int PANEL = Color.WHITE;
     private static final int LINE = Color.rgb(229, 223, 211);
+    private static final int GOOD = Color.rgb(53, 99, 78);
     private static final int ACTION = Color.rgb(148, 96, 25);
     private static final DateTimeFormatter DATE = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final long BRIEF_REFRESH_MIN_INTERVAL_MS = 60_000L;
@@ -1056,10 +1057,12 @@ final class AnalyticsScreen {
         void meta(LinearLayout root) {
             JSONObject source = source("meta_ads");
             JSONObject m = sourceMetrics(source, "meta_ads");
+            JSONObject metaDimensions = obj(obj(obj(analytics, "dimensions"), "meta"), "dimensions");
             root.addView(metricRow(metric("광고비", money(m, "spend"), currencyDetail(m)),
                 metric("Meta 리드", number(m, "leads"), "Meta가 보고한 리드")), top(12));
             root.addView(metricRow(metric("CPL", ratio(m, "cpl"), "광고비 ÷ Meta 리드"),
                 metric("CPC", ratio(m, "cpcLink"), "광고비 ÷ 링크 클릭")), top(8));
+            root.addView(videoViewingRows(m, metaDimensions), top(10));
             root.addView(adRateRows(m), top(10));
             if (metaCardsPayload == null && metaCardsLoading) {
                 root.addView(body("소재별 광고 데이터를 불러오는 중입니다."), top(16));
@@ -1072,7 +1075,7 @@ final class AnalyticsScreen {
                 root.addView(MetaAdCardsView.create(activity, analytics, api, metaCardsGeneration, this::loadNextMetaCards), top(16));
                 if (metaCardsError) root.addView(note("추가 소재 데이터를 불러오지 못했습니다. 현재까지 확인된 소재를 표시합니다."), top(8));
             }
-            JSONObject dimensions=obj(obj(obj(analytics,"dimensions"),"meta"),"dimensions");
+            JSONObject dimensions = metaDimensions;
             addAdDimension(root,obj(dimensions,"campaigns"),"캠페인별",dimensions,m);
             LinearLayout detail = column();
             addAdDimension(detail,obj(dimensions,"adsets"),"광고 세트",dimensions,m);
@@ -1268,6 +1271,117 @@ final class AnalyticsScreen {
                 " · 링크 클릭 " + countWithUnit(metrics, "linkClicks", "회"), 11, false, MUTED), top(8));
             return box;
         }
+
+        View videoViewingRows(JSONObject metrics, JSONObject dimensions) {
+            LinearLayout box = column();
+            box.setPadding(dp(15), dp(14), dp(15), dp(12));
+            box.setBackground(round(PANEL, 6));
+            JSONObject viewing = obj(metrics, "videoViewing");
+            LinearLayout average = column();
+            average.addView(text("영상 평균 시청시간", 13, false, MUTED));
+            boolean explicitlyUnavailable = viewing.has("available") && !viewing.optBoolean("available", false);
+            Double seconds = metricNumber(viewing, "avgWatchSec");
+            Double plays = numericFrom(viewing, "videoPlays", "video_plays", "plays");
+            if (!explicitlyUnavailable && seconds == null) seconds = metricNumber(metrics, "videoAvgWatchSec");
+            if (!explicitlyUnavailable && plays == null) plays = numericFrom(metrics, "videoPlays");
+            String value;
+            String detail;
+            if (!explicitlyUnavailable && seconds != null && !seconds.isNaN() && !seconds.isInfinite()) {
+                value = String.format(Locale.US, "%.2f초", seconds);
+                detail = "재생수로 가중한 평균 · 자동 재생 포함" + (plays == null ? "" : " · 재생 " + formatCount(plays) + "회");
+            } else if (plays != null && plays == 0d) {
+                value = "재생 0회";
+                detail = "선택 기간에 실제 영상 재생이 없습니다.";
+            } else {
+                value = "시청시간 미수집";
+                detail = "선택 기간에 영상 시청시간이 수집되지 않았습니다.";
+            }
+            average.addView(text(value, 18, true, INK), top(7));
+            average.addView(text(detail, 11, false, MUTED), top(4));
+            box.addView(average);
+            View divider = new View(activity);
+            divider.setBackgroundColor(LINE);
+            box.addView(divider, top(12));
+            addVideoDistribution(box, "시청 플랫폼", obj(dimensions, "video_platform"), "영상 재생 기준 · 자동 재생 포함");
+            addVideoDistribution(box, "시청 연령대", obj(dimensions, "video_age_gender"), "영상 재생 기준 · 실제 수집된 연령 구간 표시");
+            return box;
+        }
+
+        void addVideoDistribution(LinearLayout box, String heading, JSONObject dimension, String detail) {
+            box.addView(text(heading, 13, true, INK), top(12));
+            if (!available(dimension)) {
+                box.addView(text("시청 분포 미수집", 14, true, INK), top(7));
+                box.addView(text("선택 기간에 해당 시청 분포가 수집되지 않았습니다.", 11, false, MUTED), top(4));
+                return;
+            }
+            JSONArray values = array(dimension, "values");
+            if (values.length() == 0) {
+                box.addView(text("시청 기록 0회", 14, true, INK), top(7));
+                box.addView(text("선택 기간에 표시할 시청 분포가 없습니다.", 11, false, MUTED), top(4));
+                return;
+            }
+            double total = 0d;
+            boolean hasCounts = false;
+            for (int i = 0; i < values.length(); i++) {
+                Double count = distributionCount(values.optJSONObject(i));
+                if (count != null && count >= 0d) { total += count; hasCounts = true; }
+            }
+            for (int i = 0; i < values.length(); i++) {
+                JSONObject row = values.optJSONObject(i);
+                if (row == null) continue;
+                Double count = distributionCount(row);
+                Double share = distributionShare(row);
+                if (share == null && count != null && hasCounts && total > 0d) share = count / total;
+                StringBuilder caption = new StringBuilder(displayVideoLabel(row));
+                if (share != null) caption.append(" · ").append(String.format(Locale.US, "%.1f%%", share * 100d));
+                caption.append(" · ").append(count == null ? "횟수 미수집" : formatCount(count) + "회");
+                box.addView(text(caption.toString(), 12, false, INK), top(9));
+                if (share != null) {
+                    LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(-1, dp(7));
+                    barParams.topMargin = dp(4);
+                    box.addView(videoDistributionBar(share), barParams);
+                }
+            }
+            box.addView(text(detail, 11, false, MUTED), top(8));
+        }
+
+        View videoDistributionBar(Double share) {
+            LinearLayout track = new LinearLayout(activity);
+            track.setBackgroundColor(LINE);
+            float fraction = (float)Math.max(0d, Math.min(1d, share));
+            if (fraction > 0f) {
+                View bar = new View(activity);
+                bar.setBackgroundColor(GOOD);
+                track.addView(bar, new LinearLayout.LayoutParams(0, -1, fraction));
+            }
+            if (fraction < 1f) track.addView(new View(activity), new LinearLayout.LayoutParams(0, -1, 1f - fraction));
+            return track;
+        }
+
+        String displayVideoLabel(JSONObject row) {
+            String value = row == null ? "미확인" : row.optString("value", row.optString("label", "미확인"));
+            String normalized = value.toLowerCase(Locale.US).replace("_", "-");
+            if ("instagram".equals(normalized) || "ig".equals(normalized)) return "IG · Instagram";
+            if ("facebook".equals(normalized) || "fb".equals(normalized)) return "FB · Facebook";
+            String sub = row == null ? "" : row.optString("sub", "").trim();
+            return sub.isEmpty() ? value : value + " · " + sub;
+        }
+
+        static Double distributionCount(JSONObject row) { return numericFrom(row, "videoPlays"); }
+        static Double distributionShare(JSONObject row) {
+            Double value = numericFrom(row, "share");
+            if (value == null) return null;
+            return value > 1d ? value / 100d : value;
+        }
+        static Double numericFrom(JSONObject row, String... keys) {
+            if (row == null) return null;
+            for (String key : keys) {
+                Double value = metricNumber(row, key);
+                if (value != null && !value.isNaN() && !value.isInfinite()) return value;
+            }
+            return null;
+        }
+        static String formatCount(Double value) { return String.format(Locale.KOREA, "%,d", Math.max(0L, Math.round(value))); }
 
         View labeledMetricRow(String label, String value) {
             LinearLayout row = new LinearLayout(activity);
@@ -1920,7 +2034,7 @@ final class AnalyticsScreen {
             title.addView(text(heading, 14, true, INK), weight());
             String status = showStatus ? adDeliveryStatus(row) : "";
             if (!status.isEmpty()) {
-                int color = "ON".equals(status) ? Color.rgb(53, 99, 78) : MUTED;
+                    int color = "ON".equals(status) ? GOOD : MUTED;
                 int background = "ON".equals(status) ? Color.rgb(232, 244, 236) : Color.rgb(237, 240, 241);
                 TextView indicator = pill(status, color);
                 indicator.setBackground(round(background, 4));

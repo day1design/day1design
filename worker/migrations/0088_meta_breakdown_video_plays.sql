@@ -1,0 +1,1 @@
+ALTER TABLE MetaAdsBreakdown ADD COLUMN VideoPlays INTEGER;

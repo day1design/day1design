@@ -23,7 +23,9 @@ test("[가드] breakdown 조회도 페이지를 따라간다", async () => {
   const src = await readFile(SRC, "utf8");
   const start = src.indexOf("async function fetchBreakdown");
   assert.ok(start > 0, "fetchBreakdown 을 찾지 못했다");
-  const body = src.slice(start, start + 1400);
+  const end = src.indexOf("function isRateLimit", start);
+  assert.ok(end > start, "fetchBreakdown end boundary missing");
+  const body = src.slice(start, end);
   assert.match(body, /paging\?\.next/);
 });
 

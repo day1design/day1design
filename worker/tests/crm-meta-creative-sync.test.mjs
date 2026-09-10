@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildAdStmt,
+  buildBreakdownStmt,
   cacheFacebookVideoPreview,
   fetchAdMeta,
+  fetchBreakdown,
   extractFacebookVideoEmbedUrl,
   mirrorFetchedCreativeThumbs,
   cleanupInactiveMediaAssets,
@@ -364,5 +366,46 @@ test("catalog pagination rejects a response beyond the 500 row cap", async () =>
   globalThis.fetch = async (url) => new Response(JSON.stringify({ data: Array.from({ length: 501 }, (_, index) => ({ id: `ad-${index}` })) }), { status: 200 });
   try {
     await assert.rejects(() => fetchAdMeta("token", "123", { ApiCallsUsed: 0 }), (error) => error.code === "meta_ads_pagination_cap");
+  } finally { globalThis.fetch = oldFetch; }
+});
+
+test("breakdown requests nullable video plays without adding an API call", async () => {
+  const oldFetch = globalThis.fetch;
+  let requested;
+  globalThis.fetch = async (url) => {
+    requested = String(url);
+    return new Response(JSON.stringify({ data: [{ publisher_platform: "instagram", video_play_actions: [{ action_type: "video_view", value: "0" }] }] }), { status: 200 });
+  };
+  try {
+    const rows = await fetchBreakdown("token", "123", "2026-09-10", "2026-09-10", "publisher_platform");
+    assert.match(new URL(requested).searchParams.get("fields"), /video_play_actions/);
+    assert.equal(rows[0].video_play_actions[0].value, "0");
+  } finally { globalThis.fetch = oldFetch; }
+});
+
+test("breakdown binding preserves nullable video plays after insight defaults", () => {
+  let statement;
+  const env = { DB: { prepare(sql) { return { bind(...values) { statement = { sql, values }; return statement; } }; } } };
+  buildBreakdownStmt(env, {
+    Date: "2026-09-10", Dimension: "platform", DimensionValue: "instagram", DimensionSub: "",
+    Impressions: 1, Clicks: 2, LinkClicks: 3, Spend: 4, Ctr: 5, Cpc: 6, Reach: 7, Leads: 8,
+    VideoPlays: null, FetchedAt: "2026-09-10T00:00:00.000Z",
+  });
+  assert.equal(statement.values[14], null);
+  assert.match(statement.sql, /VideoPlays/);
+});
+
+test("breakdown pagination rejects repeated cursors and incomplete caps", async () => {
+  const oldFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => new Response(JSON.stringify({ data: [{ publisher_platform: "facebook" }], paging: { next: String(url) } }), { status: 200 });
+    await assert.rejects(() => fetchBreakdown("token", "123", "2026-09-10", "2026-09-10", "publisher_platform"), (error) => error.code === "meta_breakdown_pagination_cap");
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return new Response(JSON.stringify({ data: [{ publisher_platform: "facebook" }], paging: { next: `https://graph.facebook.com/v18.0/page-${calls + 1}` } }), { status: 200 });
+    };
+    await assert.rejects(() => fetchBreakdown("token", "123", "2026-09-10", "2026-09-10", "publisher_platform"), (error) => error.code === "meta_breakdown_pagination_cap");
+    assert.equal(calls, 10);
   } finally { globalThis.fetch = oldFetch; }
 });
