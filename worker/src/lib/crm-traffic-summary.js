@@ -87,13 +87,13 @@ async function readGa4Snapshot(db, { tenantId, propertyId, startDate, endDate } 
   }
 }
 
-async function readLegacySelfSnapshot(db, { propertyId, startDate, endDate } = {}) {
-  if (!validPropertyId(propertyId)) return null;
+async function readLegacySelfSnapshot(db, { tenantId, propertyId, startDate, endDate } = {}) {
+  if (String(tenantId) !== ALLOWED_TENANT || !validPropertyId(propertyId)) return null;
   try {
     const rangeKey = startDate === endDate ? "today" : "custom";
     const row = await queryOne(db.prepare(`SELECT Payload,CreatedAt FROM AnalyticsSnapshots WHERE RangeKey=? AND StartDate=? AND EndDate=? AND Source='self' AND length(Payload)<=? ORDER BY CreatedAt DESC LIMIT 1`), rangeKey, startDate, endDate, MAX_LEGACY_PAYLOAD_BYTES);
     const payload = parsePayload(row?.Payload);
-    if (!payload || String(payload.propertyId || '') !== String(propertyId)) return null;
+    if (!payload || (payload.propertyId != null && String(payload.propertyId) !== String(propertyId))) return null;
     return { returningVisitors: payload.self?.returningVisitors, createdAt: row.CreatedAt || '' };
   } catch {
     return null;
@@ -186,7 +186,7 @@ export async function readCrmTrafficSummary(db, { tenantId, propertyId = null, s
     const ga4 = await readGa4Snapshot(db, { tenantId, propertyId, startDate, endDate });
     const ga4Summary = ga4.available ? ga4.summary : {};
     const legacySelf = ga4Summary.returningVisitors == null
-      ? await readLegacySelfSnapshot(db, { propertyId, startDate, endDate })
+      ? await readLegacySelfSnapshot(db, { tenantId, propertyId, startDate, endDate })
       : null;
     const returningVisitors = ga4Summary.returningVisitors ?? legacySelf?.returningVisitors;
     return {

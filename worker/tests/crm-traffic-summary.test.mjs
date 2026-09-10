@@ -67,7 +67,7 @@ test("uses only an explicitly tenant/property-bound GA4 snapshot", async () => {
 test("falls back to the tenant property's legacy self snapshot for returning visitors", async () => {
   const db = fixture();
   db.exec("CREATE TABLE AnalyticsSnapshots (Payload TEXT NOT NULL, RangeKey TEXT NOT NULL, Source TEXT NOT NULL, StartDate TEXT NOT NULL, EndDate TEXT NOT NULL, CreatedAt TEXT NOT NULL); CREATE INDEX idx_analytics_snapshots_range ON AnalyticsSnapshots(RangeKey,StartDate,EndDate,Source,CreatedAt DESC)");
-  db.prepare("INSERT INTO AnalyticsSnapshots VALUES (?, 'today', 'self', ?, ?, ?)").run(JSON.stringify({ propertyId: "537274300", self: { returningVisitors: 2 } }), "2026-09-09", "2026-09-09", "2026-09-10T00:00:00.000Z");
+  db.prepare("INSERT INTO AnalyticsSnapshots VALUES (?, 'today', 'self', ?, ?, ?)").run(JSON.stringify({ self: { returningVisitors: 2 } }), "2026-09-09", "2026-09-09", "2026-09-10T00:00:00.000Z");
   const result = await readCrmTrafficSummary(db, { tenantId: "day1design", propertyId: "537274300", startDate: "2026-09-09", endDate: "2026-09-09" });
   assert.deepEqual(result.traffic.returningVisitors, { value: 2, reason: null });
   const plan = db.prepare("EXPLAIN QUERY PLAN SELECT Payload FROM AnalyticsSnapshots WHERE RangeKey=? AND StartDate=? AND EndDate=? AND Source=? AND length(Payload)<=? ORDER BY CreatedAt DESC LIMIT 1").all("today", "2026-09-09", "2026-09-09", "self", 524288);
@@ -81,4 +81,13 @@ test("legacy self snapshot never crosses the requested period or payload bound",
   db.prepare("INSERT INTO AnalyticsSnapshots VALUES (?, 'today', 'self', ?, ?, ?)").run("x".repeat(524289), "2026-09-09", "2026-09-09", "2026-09-10T00:00:00.000Z");
   const result = await readCrmTrafficSummary(db, { tenantId: "day1design", propertyId: "537274300", startDate: "2026-09-09", endDate: "2026-09-09" });
   assert.deepEqual(result.traffic.returningVisitors, { value: null, reason: "ga4_tenant_snapshot_table_missing" });
+});
+
+test("legacy self snapshot rejects a mismatched embedded property", async () => {
+  const db = fixture();
+  db.exec("CREATE TABLE AnalyticsSnapshots (Payload TEXT NOT NULL, RangeKey TEXT NOT NULL, Source TEXT NOT NULL, StartDate TEXT NOT NULL, EndDate TEXT NOT NULL, CreatedAt TEXT NOT NULL); CREATE INDEX idx_analytics_snapshots_range ON AnalyticsSnapshots(RangeKey,StartDate,EndDate,Source,CreatedAt DESC)");
+  db.prepare("INSERT INTO AnalyticsSnapshots VALUES (?, 'today', 'self', ?, ?, ?)").run(JSON.stringify({ propertyId: "9999999", self: { returningVisitors: 99 } }), "2026-09-09", "2026-09-09", "2026-09-10T00:00:00.000Z");
+  const result = await readCrmTrafficSummary(db, { tenantId: "day1design", propertyId: "537274300", startDate: "2026-09-09", endDate: "2026-09-09" });
+  assert.equal(result.traffic.returningVisitors.value, null);
+  assert.equal(result.traffic.returningVisitors.reason, "ga4_tenant_snapshot_table_missing");
 });
