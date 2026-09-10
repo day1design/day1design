@@ -1,7 +1,7 @@
 import { jsonOk, jsonError } from './response.js';
 const MAX_IMAGE=2*1024*1024,MAX_REPORT=256*1024,MAX_SNAPSHOT=256*1024;
 const DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
-const MAX_METRICS=8,MAX_CHANNELS=6;
+const MAX_METRICS=8,MAX_CHANNELS=6,MAX_ACTIONS=3;
 function finite(value){if(value===null||value===undefined||typeof value==='boolean'||(typeof value==='string'&&!value.trim()))return null;const number=Number(value);return Number.isFinite(number)?number:null;}
 function dateShift(date,days){const value=new Date(`${date}T00:00:00Z`);value.setUTCDate(value.getUTCDate()+days);return value.toISOString().slice(0,10);}
 function actualAggregate(snapshot,date,previous=false){
@@ -16,6 +16,25 @@ function actualAggregate(snapshot,date,previous=false){
  return {hasData:true,spend,impressions,clicks,leads,saved:leadRow?finite(leadRow.n):null,sessions:traffic?finite(traffic.sessions):null,ctr:finite(source.ctr),cpc:finite(source.cpc),cpm:finite(source.cpm),cpl:finite(source.cpl)};
 }
 function label(value){const text=String(value??'').replace(/[^\p{L}\p{N} _-]/gu,'').trim().slice(0,80);return text&& !/@|\d{4,}/.test(text)?text:null;}
+function priorityActions(snapshot,reportDate){
+ const stats=snapshot?.stats;
+ if(!stats||typeof stats!=='object')return [];
+ const actions=[];
+ const funnel=stats.funnel;
+ if(funnel?.bottleneck&&typeof funnel.verdict==='string'&&funnel.verdict.trim()){
+  const bottleneck=funnel.bottleneck;
+  actions.push({priority:1,type:'funnel_bottleneck',title:'퍼널 병목 구간 점검',body:`분석 기준일 ${reportDate}: ${funnel.verdict.trim()}`.slice(0,240),evidence:{from:label(bottleneck.from),at:label(bottleneck.at),pass_through:finite(bottleneck.passThrough)}});
+ }
+ const reconciliation=stats.leadReconciliation;
+ if(reconciliation&&finite(reconciliation.gap)!==null&&finite(reconciliation.gap)>0&&typeof reconciliation.note==='string'){
+  actions.push({priority:2,type:'lead_reconciliation',title:'Meta 접수와 저장 접수 차이 확인',body:`분석 기준일 ${reportDate}: ${reconciliation.note.trim()}`.slice(0,240),evidence:{meta_reported:finite(reconciliation.metaReportedLeads),stored_meta:finite(reconciliation.storedLeadsFromMeta),gap:finite(reconciliation.gap)}});
+ }
+ const leads=stats.leads;
+ if(typeof leads?.smallSampleWarning==='string'&&leads.smallSampleWarning.trim()){
+  actions.push({priority:3,type:'small_sample',title:'접수 표본 규모 확인',body:`분석 기준일 ${reportDate}: ${leads.smallSampleWarning.trim()}`.slice(0,240),evidence:{total:finite(leads.total)}});
+ }
+ return actions.slice(0,MAX_ACTIONS);
+}
 function visualization(snapshot,reportDate){
  if(!snapshot||snapshot.reportDate!==reportDate||snapshot.day?.ok!==true)return null;
  const current=actualAggregate(snapshot,reportDate);if(!current?.hasData)return null;const previousDate=snapshot.day.ads?.efficiency?.previous?.startDate||dateShift(reportDate,-1),previous=actualAggregate(snapshot,previousDate,true);
@@ -23,7 +42,7 @@ function visualization(snapshot,reportDate){
  const metrics=metricDefs.slice(0,MAX_METRICS).map(([key,labelText,keyValue,unit])=>({key,label:labelText,value:keyValue===null?null:Number(keyValue.toFixed(4)),unit,currency:unit==='USD'?'USD':undefined,previous:previous?.hasData&&previous[key]!==null?Number((key==='ctr'?previous[key]*100:previous[key]).toFixed(4)):null}));
  const channelMap=new Map();for(const row of Array.isArray(snapshot.day.leads?.bySource)?snapshot.day.leads.bySource:[]){const channel=label(row.source);if(!channel)continue;const count=finite(row.n);if(count===null||count<0)continue;channelMap.set(channel,(channelMap.get(channel)||0)+count);}
  const channels=[...channelMap.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,MAX_CHANNELS).map(([labelText,value])=>({label:labelText,value,unit:'건'}));
- return {metrics,channels,actions:[],period:{start:reportDate,end:reportDate},...(previous?.hasData?{comparison_period:{start:previousDate,end:previousDate}}:{})};
+ return {metrics,channels,actions:priorityActions(snapshot,reportDate),period:{start:reportDate,end:reportDate},...(previous?.hasData?{comparison_period:{start:previousDate,end:previousDate}}:{})};
 }
 function period(request){
  const u=new URL(request.url),start=u.searchParams.get('start')||'',end=u.searchParams.get('end')||'';
