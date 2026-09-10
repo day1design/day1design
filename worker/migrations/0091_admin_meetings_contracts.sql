@@ -42,21 +42,21 @@ CREATE TRIGGER IF NOT EXISTS estimates_consult_overlap_guard_insert
 BEFORE INSERT ON Estimates
 WHEN NEW.CrmTenantId='day1design' AND COALESCE(NEW.ConsultAt,'') <> '' AND COALESCE(NEW.ConsultCancelledAt,'') = ''
 BEGIN
-  SELECT CASE WHEN EXISTS (
+  SELECT (CASE WHEN EXISTS (
     SELECT 1 FROM Estimates e
     WHERE e.CrmTenantId='day1design' AND COALESCE(e.ConsultAt,'') <> '' AND COALESCE(e.ConsultCancelledAt,'') = ''
       AND julianday(e.ConsultAt) < julianday(NEW.ConsultAt, '+' || ((COALESCE(NEW.ConsultDurationMinutes,120)+COALESCE(NEW.ConsultBufferMinutes,60))*60) || ' seconds')
       AND julianday(NEW.ConsultAt) < julianday(e.ConsultAt, '+' || ((COALESCE(e.ConsultDurationMinutes,120)+COALESCE(e.ConsultBufferMinutes,60))*60) || ' seconds')
-  ) THEN RAISE(ABORT,'meeting_conflict') END;
+  ) THEN RAISE(ABORT,'meeting_conflict') END);
 END;
 CREATE TRIGGER IF NOT EXISTS estimates_consult_overlap_guard_update
 BEFORE UPDATE OF ConsultAt, ConsultDurationMinutes, ConsultBufferMinutes, ConsultCancelledAt ON Estimates
 WHEN NEW.CrmTenantId='day1design' AND COALESCE(NEW.ConsultAt,'') <> '' AND COALESCE(NEW.ConsultCancelledAt,'') = ''
 BEGIN
-  SELECT CASE WHEN EXISTS (
+  SELECT (CASE WHEN EXISTS (
     SELECT 1 FROM Estimates e
     WHERE e.CrmTenantId='day1design' AND e.id <> NEW.id AND COALESCE(e.ConsultAt,'') <> '' AND COALESCE(e.ConsultCancelledAt,'') = ''
       AND julianday(e.ConsultAt) < julianday(NEW.ConsultAt, '+' || ((COALESCE(NEW.ConsultDurationMinutes,120)+COALESCE(NEW.ConsultBufferMinutes,60))*60) || ' seconds')
       AND julianday(NEW.ConsultAt) < julianday(e.ConsultAt, '+' || ((COALESCE(e.ConsultDurationMinutes,120)+COALESCE(e.ConsultBufferMinutes,60))*60) || ' seconds')
-  ) THEN RAISE(ABORT,'meeting_conflict') END;
+  ) THEN RAISE(ABORT,'meeting_conflict') END);
 END;
