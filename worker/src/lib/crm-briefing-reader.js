@@ -60,8 +60,9 @@ export async function readMobileBriefing(request,env,auth,path){
  if(auth.role!=='owner')return jsonError(403,'owner required');
  // Existing BriefRuns belongs exclusively to the Day1 website.
  if(auth.tenant_id!=='day1design')return jsonOk({available:false,reason:'no_report'});
- const latest=path==='/briefings/latest',image=path.match(/^\/briefings\/([A-Za-z0-9_-]{1,120})\/image$/);
+ const latest=path==='/briefings/latest',image=path.match(/^\/briefings\/([A-Za-z0-9_-]{1,120})\/image$/),knownId=latest?new URL(request.url).searchParams.get('known_id')?.trim()||'':'';
  if(!latest&&!image)return jsonError(404,'not found');
+ if(knownId.length>120)return jsonError(400,'invalid known id');
  let row;
  if(latest){
   let p;
@@ -71,6 +72,7 @@ export async function readMobileBriefing(request,env,auth,path){
   row=p?await stmt.bind(p.start,p.end).first():await stmt.first();
  }else row=await env.DB.prepare("SELECT id,ImageKey FROM BriefRuns WHERE id=? AND ReportKind='daily'").bind(image[1]).first();
  if(!row)return latest?jsonOk({available:false,reason:'no_report'}):jsonError(404,'not found');
+ if(latest&&knownId&&knownId===String(row.id))return jsonOk({available:true,id:row.id,unchanged:true});
  if(!env.CRM_CACHE)return jsonError(503,'report storage unavailable');
  if(image){
   if(!row.ImageKey)return jsonError(404,'image not available');
