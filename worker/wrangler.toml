@@ -20,9 +20,6 @@ bucket_name = "day1design-r2"
 binding = "CRM_CACHE"
 bucket_name = "day1design-crm-cache"
 
-[[r2_buckets]]
-binding = "CRM_CACHE"
-bucket_name = "day1design-crm-cache"
 
 # D1 database (데이터 저장 — Airtable 대체)
 [[d1_databases]]
