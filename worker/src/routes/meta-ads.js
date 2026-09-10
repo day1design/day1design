@@ -1577,8 +1577,12 @@ async function mirrorFetchedCreativeThumb(env, creative, key, log, outcome) {
       try {
         const res = await fetch(
           `https://graph.facebook.com/${META_API_VERSION}/${creativeId}?${params}`,
-          { method: "GET", redirect: "error", signal: controller.signal },
+          { method: "GET", redirect: "manual", signal: controller.signal },
         );
+        if (res.redirected) {
+          outcome.reason = "graph_redirect";
+          return false;
+        }
         const data = await res.json();
         if (res.ok) source = trustedCreativeUrl(data?.image_url) || trustedCreativeUrl(data?.thumbnail_url);
         else outcome.reason = `graph_http_${res.status}`;
@@ -1600,7 +1604,11 @@ async function mirrorFetchedCreativeThumb(env, creative, key, log, outcome) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await fetch(source, { method: "GET", redirect: "error", signal: controller.signal });
+    const response = await fetch(source, { method: "GET", redirect: "manual", signal: controller.signal });
+    if (response.redirected) {
+      outcome.reason = "image_redirect";
+      return false;
+    }
     if (!response.ok) {
       outcome.reason = `image_http_${response.status}`;
       return false;
@@ -1811,8 +1819,12 @@ async function fillVideoLengths(env, token, videoIds, log, stats) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
       try {
-        const res = await fetch(url, { method: "GET", redirect: "error", signal: controller.signal });
+        const res = await fetch(url, { method: "GET", redirect: "manual", signal: controller.signal });
         const data = await res.json();
+        if (res.redirected) {
+          mediaReason(stats, "video", "graph_redirect");
+          continue;
+        }
         if (!res.ok) {
           mediaReason(stats, "video", `graph_http_${res.status}`);
           continue;
@@ -1875,10 +1887,15 @@ export async function fetchAdMeta(token, accountId, log) {
       let data;
       let res;
       try {
-        res = await fetch(url, { method: "GET", redirect: "error", signal: controller.signal });
+        res = await fetch(url, { method: "GET", redirect: "manual", signal: controller.signal });
         data = await res.json();
       } finally {
         clearTimeout(timer);
+      }
+      if (res.redirected) {
+        const err = new Error("Meta ads redirect rejected");
+        err.code = "meta_ads_redirect";
+        throw err;
       }
       if (!res.ok) {
         const err = new Error(`Meta ads ${res.status}: ${data?.error?.message || "unknown"}`);

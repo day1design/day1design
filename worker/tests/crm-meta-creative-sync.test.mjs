@@ -133,7 +133,7 @@ test("cron thumbnail mirror is private, bounded, allowlisted, and capped per run
 
     assert.equal(copied, 15);
     assert.equal(fetched.length, 15);
-    assert.ok(fetched.every(({ url, options }) => url.includes("fbcdn.net") && options.redirect === "error" && options.method === "GET"));
+    assert.ok(fetched.every(({ url, options }) => url.includes("fbcdn.net") && options.redirect === "manual" && options.method === "GET"));
     assert.equal(cache.objects.get("meta-ads/thumbs/creative-1").httpMetadata.contentType, "image/webp");
     assert.equal(cache.objects.get("meta-ads/thumbs/already").customMetadata.previewVersion, "3");
     assert.equal(cache.objects.has("meta-ads/thumbs/creative-16"), false);
