@@ -207,6 +207,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/workflow/:path*", "destination": "https://day1design-api.day1design-co.workers.dev/api/workflow/:path*" },
     {
       "source": "/api/:path*",
       "has": [{ "type": "host", "value": "admin.day1design.co.kr" }],
