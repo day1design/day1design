@@ -68,9 +68,12 @@ test("falls back to the tenant property's legacy self snapshot for returning vis
   const db = fixture();
   db.exec("CREATE TABLE AnalyticsSnapshots (Payload TEXT NOT NULL, RangeKey TEXT NOT NULL, Source TEXT NOT NULL, StartDate TEXT NOT NULL, EndDate TEXT NOT NULL, CreatedAt TEXT NOT NULL); CREATE INDEX idx_analytics_snapshots_range ON AnalyticsSnapshots(RangeKey,StartDate,EndDate,Source,CreatedAt DESC)");
   db.prepare("INSERT INTO AnalyticsSnapshots VALUES (?, 'today', 'self', ?, ?, ?)").run(JSON.stringify({ self: { returningVisitors: 2 } }), "2026-09-09", "2026-09-09", "2026-09-10T00:00:00.000Z");
+  db.prepare("INSERT INTO AnalyticsSnapshots VALUES (?, '30', 'self', ?, ?, ?)").run(JSON.stringify({ self: { returningVisitors: 241 } }), "2026-08-12", "2026-09-10", "2026-09-10T01:00:26.730Z");
   const result = await readCrmTrafficSummary(db, { tenantId: "day1design", propertyId: "537274300", startDate: "2026-09-09", endDate: "2026-09-09" });
   assert.deepEqual(result.traffic.returningVisitors, { value: 2, reason: null });
-  const plan = db.prepare("EXPLAIN QUERY PLAN SELECT Payload FROM AnalyticsSnapshots WHERE RangeKey=? AND StartDate=? AND EndDate=? AND Source=? AND length(Payload)<=? ORDER BY CreatedAt DESC LIMIT 1").all("today", "2026-09-09", "2026-09-09", "self", 524288);
+  const thirtyDay = await readCrmTrafficSummary(db, { tenantId: "day1design", propertyId: "537274300", startDate: "2026-08-12", endDate: "2026-09-10" });
+  assert.deepEqual(thirtyDay.traffic.returningVisitors, { value: 241, reason: null });
+  const plan = db.prepare("EXPLAIN QUERY PLAN SELECT Payload FROM AnalyticsSnapshots WHERE RangeKey IN ('today','30','cur-month','custom') AND StartDate=? AND EndDate=? AND Source='self' AND length(Payload)<=? ORDER BY CreatedAt DESC LIMIT 1").all("2026-09-09", "2026-09-09", 524288);
   assert.ok(plan.some((row) => String(row.detail || "").includes("idx_analytics_snapshots_range")));
 });
 
