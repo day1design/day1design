@@ -428,10 +428,10 @@ const MENU = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2-5 4 11 2-6h6"/></svg>',
   },
 ];
-const ANALYTICS_MENU_ORDER = ["analytics", "meta-ads", "kpi", "estimates"];
+const ADMIN_MENU_ORDER = ["home", "hero", "portfolio", "analytics", "meta-ads", "kpi", "estimates", "calendar", "meeting-settings"];
 MENU.sort((a, b) => {
-  const ai = ANALYTICS_MENU_ORDER.indexOf(a.nav);
-  const bi = ANALYTICS_MENU_ORDER.indexOf(b.nav);
+  const ai = ADMIN_MENU_ORDER.indexOf(a.nav);
+  const bi = ADMIN_MENU_ORDER.indexOf(b.nav);
   if (ai === -1 && bi === -1) return 0;
   if (ai === -1) return 1;
   if (bi === -1) return -1;

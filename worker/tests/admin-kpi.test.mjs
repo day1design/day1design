@@ -65,7 +65,8 @@ function seedBusiness(sqlite, start, endExclusive, values = {}) {
 function seedMeta(sqlite, start, endExclusive, values = {}) {
   const insert = sqlite.prepare("INSERT INTO MetaAdsDaily(id,Date,CrmTenantId,Level,EntityId,EntityName,Impressions,Clicks,LinkClicks,Spend,Leads,FetchedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
   eachDay(start, endExclusive, (day) => {
-    insert.run(`meta-${day}`, day, "day1design", "account", "act_1", "Account", values.impressions ?? 0, values.clicks ?? 0, values.linkClicks ?? 0, values.spend ?? 0, values.leads ?? 0, values.fetchedAt ?? "2026-09-10T00:00:00.000Z");
+    const entityId = values.entityId ?? "act_1";
+    insert.run(`meta-${entityId}-${day}`, day, "day1design", "account", entityId, "Account", values.impressions ?? 0, values.clicks ?? 0, values.linkClicks ?? 0, values.spend ?? 0, values.leads ?? 0, values.fetchedAt ?? "2026-09-10T00:00:00.000Z");
   });
 }
 
@@ -154,6 +155,38 @@ test("KPI reuses saved business rollups, Meta daily rows, and exact GA4 snapshot
     assert.equal(result.metrics.users.current, 17);
     assert.equal(result.metrics.sessions.previous, 20);
     assert.equal(result.budgetBands.find((band) => band.name === "3천-5천만원 미만").current, 7);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("Meta account binding accepts bare configured account and reads one canonical act-prefixed source", async () => {
+  const { sqlite } = fixture();
+  try {
+    seedBusiness(sqlite, "2026-08-27", "2026-09-10");
+    seedMeta(sqlite, "2026-08-27", "2026-09-10", { entityId: "act_1", spend: 10, leads: 1 });
+    seedGa4(sqlite, "2026-09-03", "2026-09-09", { users: 1, sessions: 1, pageviews: 1 });
+    seedGa4(sqlite, "2026-08-27", "2026-09-02", { users: 1, sessions: 1, pageviews: 1 });
+    const result = await read(sqlite, { metaAccountId: "1" });
+    assert.equal(result.coverage.status, "complete");
+    assert.equal(result.metrics.spend.current, 70);
+    assert.equal(result.sourceStatus.sources.find((source) => source.name === "meta").binding, "act_1");
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("Meta account binding does not double count bare and act-prefixed rows", async () => {
+  const { sqlite } = fixture();
+  try {
+    seedBusiness(sqlite, "2026-08-27", "2026-09-10");
+    seedMeta(sqlite, "2026-08-27", "2026-09-10", { entityId: "1", spend: 3, leads: 1 });
+    seedMeta(sqlite, "2026-08-27", "2026-09-10", { entityId: "act_1", spend: 10, leads: 1 });
+    seedGa4(sqlite, "2026-09-03", "2026-09-09", { users: 1, sessions: 1, pageviews: 1 });
+    seedGa4(sqlite, "2026-08-27", "2026-09-02", { users: 1, sessions: 1, pageviews: 1 });
+    const result = await read(sqlite, { metaAccountId: "1" });
+    assert.equal(result.metrics.spend.current, 21);
+    assert.equal(result.sourceStatus.sources.find((source) => source.name === "meta").binding, "1");
   } finally {
     sqlite.close();
   }

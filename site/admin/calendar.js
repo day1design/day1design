@@ -312,7 +312,8 @@
       const duration = Number(r.consultDurationMinutes || r.durationMinutes || (type.includes("디자인") ? 180 : 120)) / 60;
       const event = document.createElement("button");
       event.type = "button";
-      event.className = `cc-week-event${type.includes("디자인") ? " design" : ""}${legacy ? " legacy" : ""}${isCancelled(r) ? " cancelled" : ""}`;
+      const oneHour = Math.ceil(duration) === 1;
+      event.className = `cc-week-event${oneHour ? " one-hour" : ""}${type.includes("디자인") ? " design" : ""}${legacy ? " legacy" : ""}${isCancelled(r) ? " cancelled" : ""}`;
       const meetingColor = ({blue:"#1d4ed8",green:"#167044",purple:"#6d28d9",orange:"#b45309",pink:"#be185d",teal:"#0f766e"}[r.consultColorKey] || "#1d4ed8");
       event.style.borderLeftColor = meetingColor;
       event.style.setProperty("--meeting-color", meetingColor);

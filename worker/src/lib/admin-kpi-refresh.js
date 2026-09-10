@@ -6,6 +6,7 @@ const PAGE = 100;
 const businessMetrics = ['inquiries','metaReceived','webReceived','organic','naverOrganic','googleOrganic','chatgptOrganic','meetings','contracts','amount','changes', ...Array.from({ length: 7 }, (_, i) => `budget${i}`)];
 const rows = result => result?.results || [];
 const dayAfter = day => new Date(Date.parse(`${day}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+const addDays = (day, amount) => new Date(Date.parse(`${day}T00:00:00Z`) + amount * 86400000).toISOString().slice(0, 10);
 const utcStart = day => new Date(`${day}T00:00:00+09:00`).toISOString();
 const kstDay = now => new Date(now.getTime() + 32400000).toISOString().slice(0, 10);
 const validDate = day => /^\d{4}-\d{2}-\d{2}$/.test(day || '') && new Date(`${day}T00:00:00Z`).toISOString().slice(0,10) === day;
@@ -29,6 +30,26 @@ export async function enqueueAdminKpiBatch(db, { kind, startDate, endDate = star
   });
   if(statements.length) await db.batch(statements);
   return { queued: pendingDates.length,reused:reusableDays.size, maxRowsPerStep: PAGE };
+}
+
+export async function enqueueDefaultAdminKpiWarmup(db, { now = new Date(), includePeriod15 = false } = {}) {
+  const anchor = kstDay(now);
+  const yesterday = addDays(anchor, -1);
+  const queued = [];
+  queued.push({ kind: 'business', ...(await enqueueAdminKpiBatch(db, { kind: 'business', startDate: addDays(anchor, includePeriod15 ? -30 : -14), endDate: yesterday, now })) });
+  for (const [startDate, endDate] of [
+    [addDays(anchor, -7), yesterday],
+    [addDays(anchor, -14), addDays(anchor, -8)],
+    ...(includePeriod15 ? [[addDays(anchor, -15), yesterday], [addDays(anchor, -30), addDays(anchor, -16)]] : []),
+  ]) queued.push({ kind: 'ga4', startDate, endDate, ...(await enqueueAdminKpiBatch(db, { kind: 'ga4', startDate, endDate, now })) });
+  return { anchor, queued };
+}
+
+async function warmupDefaultKpi(env, now) {
+  if (!env.ADMIN_KPI_WARM_DEFAULTS) return null;
+  const budget = Number(env.ADMIN_KPI_GA4_DAILY_REQUEST_BUDGET || 0);
+  if (!Number.isSafeInteger(budget) || budget < 2 || budget > 100) return { skipped: 'request_budget_unconfigured' };
+  return enqueueDefaultAdminKpiWarmup(env.DB, { now, includePeriod15: env.ADMIN_KPI_WARM_PERIOD15 === '1' });
 }
 
 async function readPage(db, job, phase, cursor) {
@@ -112,6 +133,7 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
   const stamp = now.toISOString();
   // A crashed or timed-out job requires an explicit retry; cron cannot loop forever.
   await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code='lease_expired',lease_until='' WHERE tenant_id=? AND status='running' AND lease_until<?`).bind(TENANT,stamp).run();
+  await warmupDefaultKpi(env, now);
   const dirty = await db.prepare(`SELECT day FROM AdminKpiDirtyDays WHERE tenant_id=? AND source='business' AND day<? ORDER BY day LIMIT 1`).bind(TENANT,kstDay(now)).first();
   if (dirty) await enqueueAdminKpiBatch(db,{kind:'business',startDate:dirty.day,now});
   const job = await db.prepare(`SELECT * FROM AdminKpiJobs WHERE tenant_id=? AND status='queued' ORDER BY updated_at,id LIMIT 1`).bind(TENANT).first();
@@ -163,6 +185,7 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
     await db.prepare(`UPDATE AdminKpiJobs SET status='complete',lease_until='',updated_at=? WHERE id=?`).bind(stamp,job.id).run();
     return { status:'complete',externalRequests:2 };
   } catch (error) {
+    if (env.ADMIN_KPI_DEBUG_ERRORS === '1') console.error('[admin-kpi-debug]', String(error?.message || error).slice(0,500));
     const reason = /^kpi_[a-z0-9_]+$/.test(error?.message || '') ? error.message.slice(0,80) : 'batch_step_failed';
     await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code=?,attempts=attempts+1,lease_until='',updated_at=? WHERE id=?`).bind(reason,stamp,job.id).run();
     return { status:'failed',reason };

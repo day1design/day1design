@@ -75,6 +75,13 @@ function makeValues(keys) { return Object.fromEntries(keys.map((key) => [key, nu
 function dotDate(value) { return String(value || "").replaceAll("-", "."); }
 function monthNumber(value) { const [year, month] = value.slice(0, 7).split("-").map(Number); return year * 12 + month; }
 function sanitizeBinding(value) { return String(value || "").trim(); }
+function metaBindingCandidates(value) {
+  const binding = sanitizeBinding(value);
+  if (!binding) return [];
+  const stripped = binding.replace(/^act_/, "");
+  const candidates = binding.startsWith("act_") ? [binding, stripped] : [binding, `act_${binding}`];
+  return [...new Set(candidates.filter(Boolean))];
+}
 
 function coverage(source, complete, reason = "") {
   return complete
@@ -232,26 +239,44 @@ function latestUpdatedAt(list) {
 async function readMetaPeriod(db, period, { accountId }) {
   const values = makeValues(META_METRICS);
   const binding = sanitizeBinding(accountId);
+  const bindings = metaBindingCandidates(binding);
   if (!binding) return { values, coverage: coverage("MetaAdsDaily", false, "meta_account_binding_missing"), source: { name: "meta", binding, fetchedAt: null, definition: "MetaAdsDaily account rows: spend, impressions, clicks, linkClicks, leads" } };
+  const placeholders = bindings.map(() => "?").join(",");
   const result = await db.prepare(
-    `SELECT Date,Impressions,Clicks,LinkClicks,Spend,Leads,FetchedAt
+    `SELECT Date,EntityId,Impressions,Clicks,LinkClicks,Spend,Leads,FetchedAt
      FROM MetaAdsDaily INDEXED BY idx_meta_ads_daily_tenant_date
-     WHERE CrmTenantId=? AND Date>=? AND Date<? AND Level='account' AND EntityId=?
-     ORDER BY Date LIMIT ?`,
-  ).bind(TENANT, period.start, period.endExclusive, binding, period.days + 1).all().catch(async () => db.prepare(
-    `SELECT Date,Impressions,Clicks,LinkClicks,Spend,Leads FROM MetaAdsDaily INDEXED BY idx_meta_ads_daily_tenant_date
-     WHERE CrmTenantId=? AND Date>=? AND Date<? AND Level='account' AND EntityId=? ORDER BY Date LIMIT ?`,
-  ).bind(TENANT, period.start, period.endExclusive, binding, period.days + 1).all());
-  const list = rows(result);
-  if (list.length > period.days) throw new Error("kpi_meta_limit");
+     WHERE CrmTenantId=? AND Date>=? AND Date<? AND Level='account' AND EntityId IN (${placeholders})
+     ORDER BY EntityId,Date LIMIT ?`,
+  ).bind(TENANT, period.start, period.endExclusive, ...bindings, period.days * bindings.length + 1).all().catch(async () => db.prepare(
+    `SELECT Date,EntityId,Impressions,Clicks,LinkClicks,Spend,Leads FROM MetaAdsDaily INDEXED BY idx_meta_ads_daily_tenant_date
+     WHERE CrmTenantId=? AND Date>=? AND Date<? AND Level='account' AND EntityId IN (${placeholders}) ORDER BY EntityId,Date LIMIT ?`,
+  ).bind(TENANT, period.start, period.endExclusive, ...bindings, period.days * bindings.length + 1).all());
+  const found = rows(result);
+  if (found.length > period.days * bindings.length) throw new Error("kpi_meta_limit");
+  const byBinding = new Map(bindings.map((candidate) => [candidate, []]));
+  for (const row of found) if (byBinding.has(row.EntityId)) byBinding.get(row.EntityId).push(row);
+  let selectedBinding = binding;
+  let list = [];
+  for (const candidate of bindings) {
+    const candidateRows = byBinding.get(candidate) || [];
+    if (candidateRows.length >= period.days) {
+      selectedBinding = candidate;
+      list = candidateRows;
+      break;
+    }
+    if (candidateRows.length > list.length) {
+      selectedBinding = candidate;
+      list = candidateRows;
+    }
+  }
   const complete = list.length >= period.days;
-  if (!complete) return { values, coverage: coverage("MetaAdsDaily", false, list.length ? "meta_daily_incomplete" : "meta_daily_missing"), source: { name: "meta", binding, fetchedAt: null, definition: "MetaAdsDaily account rows: spend, impressions, clicks, linkClicks, leads" } };
+  if (!complete) return { values, coverage: coverage("MetaAdsDaily", false, list.length ? "meta_daily_incomplete" : "meta_daily_missing"), source: { name: "meta", binding: selectedBinding, fetchedAt: null, definition: "MetaAdsDaily account rows: spend, impressions, clicks, linkClicks, leads" } };
   values.spend = list.reduce((sum, row) => sum + number(row.Spend), 0);
   values.impressions = list.reduce((sum, row) => sum + number(row.Impressions), 0);
   values.clicks = list.reduce((sum, row) => sum + number(row.Clicks), 0);
   values.linkClicks = list.reduce((sum, row) => sum + number(row.LinkClicks), 0);
   values.leads = list.reduce((sum, row) => sum + number(row.Leads), 0);
-  return { values, coverage: coverage("MetaAdsDaily", true), source: { name: "meta", binding, fetchedAt: list.map((row) => row.FetchedAt).filter(Boolean).sort().at(-1) || null, definition: "MetaAdsDaily account rows: spend, impressions, clicks, linkClicks, leads" } };
+  return { values, coverage: coverage("MetaAdsDaily", true), source: { name: "meta", binding: selectedBinding, fetchedAt: list.map((row) => row.FetchedAt).filter(Boolean).sort().at(-1) || null, definition: "MetaAdsDaily account rows: spend, impressions, clicks, linkClicks, leads" } };
 }
 
 function parsePayload(value) {
@@ -388,8 +413,8 @@ async function readKpiSnapshot(db, bucket, { tenantId, role, resolved, revision,
     const actualBytes = object.size ?? object.contentLength ?? object.httpMetadata?.contentLength;
     if (actualBytes != null && Number(actualBytes) !== Number(row.byte_size)) return null;
     const sources = payload?.sourceStatus?.sources || [];
-    const expected = { meta: sanitizeBinding(metaAccountId), ga4: sanitizeBinding(ga4PropertyId).replace(/^properties\//, "") };
-    if (payload?.tenantId !== tenantId || payload?.period?.key !== resolved.key || payload?.period?.anchor !== resolved.anchor || payload?.cache?.revision !== revision || sources.find((source) => source.name === "meta")?.binding !== expected.meta || sources.find((source) => source.name === "ga4")?.binding !== expected.ga4) return null;
+    const expected = { meta: metaBindingCandidates(metaAccountId), ga4: sanitizeBinding(ga4PropertyId).replace(/^properties\//, "") };
+    if (payload?.tenantId !== tenantId || payload?.period?.key !== resolved.key || payload?.period?.anchor !== resolved.anchor || payload?.cache?.revision !== revision || !expected.meta.includes(sources.find((source) => source.name === "meta")?.binding) || sources.find((source) => source.name === "ga4")?.binding !== expected.ga4) return null;
     return { ...payload, cache: { ...(payload.cache || {}), snapshot: "hit" } };
   } catch {
     return null;
