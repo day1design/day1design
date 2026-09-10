@@ -17,3 +17,5 @@
 
 .kpi-source-state{margin-top:14px;padding:10px 12px;border:1px solid var(--kpi-line);border-radius:4px;background:#fff;max-width:none;text-align:left}.kpi-source-state span{display:block}.kpi-card .bar-row{grid-template-columns:1fr}
 @media(max-width:800px){.kpi-source-state{order:5;width:100%;box-sizing:border-box}.kpi-heading{flex:none}.organic-kpi h3{word-break:keep-all}}
+
+@media(min-width:801px){.bar-track{height:24px}.kpi-card .bar-track{height:20px}}
