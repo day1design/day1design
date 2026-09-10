@@ -101,8 +101,8 @@ async function buildHomePayload(env,auth) {
     };
     try {
       const [todayAnalytics, recent30Analytics, trafficSummary] = await Promise.all([
-        cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: bounds.date, endDate: bounds.date }),
-        cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: periods.recent30.start, endDate: bounds.date }),
+        cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: bounds.date, endDate: bounds.date }).catch(() => null),
+        cachedAnalytics(env, { tenantId: auth.tenant_id, startDate: periods.recent30.start, endDate: bounds.date }).catch(() => null),
         readCrmTrafficSummary(env.DB, { tenantId: auth.tenant_id, propertyId: env.GA4_PROPERTY_ID, startDate: bounds.date, endDate: bounds.date }).catch(() => null),
       ]);
       home_metrics = buildCrmHomeMetrics({ tenantId: auth.tenant_id, todayAnalytics, recent30Analytics,

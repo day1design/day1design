@@ -74,7 +74,7 @@ test("GET home obtains traffic summary outside the persisted analytics payload",
     const analyticsResponse = await handleMobileCrm(req(`/api/mobile/analytics?start=${bounds.date}&end=${bounds.date}`, token), env);
     assert.equal(analyticsResponse.status, 200);
     const cached = sqlite.prepare("SELECT cache_key FROM CrmAnalyticsCache WHERE tenant_id='day1design' AND start_date=? AND end_date=? LIMIT 1").get(bounds.date, bounds.date);
-    sqlite.prepare("UPDATE CrmAnalyticsCache SET payload_json=?,object_key=NULL,expires_at=? WHERE cache_key=?").run(JSON.stringify({ tenant_id: "day1design", metrics: {}, sources: [] }), Date.now() + 300000, cached.cache_key);
+    sqlite.prepare("UPDATE CrmAnalyticsCache SET payload_json=NULL,object_key=NULL,expires_at=0,lease_until=?,lease_token=? WHERE cache_key=?").run(Date.now() + 60000, "held-by-another-reader", cached.cache_key);
     const homeResponse = await handleMobileCrm(req("/api/mobile/home", token), env);
     assert.equal(homeResponse.status, 200);
     const home = await homeResponse.json();
