@@ -1218,6 +1218,10 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     // UPSERT — D1 batch로 묶어 subrequest 절약 (수백 statement → 몇 subrequest)
     const fetchedAt = new Date().toISOString();
     const stmts = [];
+    const platformVideo = reconcileVideoBreakdown(accountRows, brkPlatform, "platform");
+    const ageGenderVideo = reconcileVideoBreakdown(accountRows, brkAgeGender, "age_gender");
+    const videoReconciliation = { platform: platformVideo.evidence, age_gender: ageGenderVideo.evidence };
+    log.ErrorMessage = JSON.stringify({ videoReconciliation }).slice(0, 400);
 
     for (const row of accountRows) {
       stmts.push(
@@ -1307,7 +1311,16 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       ],
     ];
 
+    const snapshots = [];
     for (const [dim, rows, keyFn] of breakdowns) {
+      if (dim === "platform") {
+        snapshots.push(...platformVideo.snapshots);
+        continue;
+      }
+      if (dim === "age_gender") {
+        snapshots.push(...ageGenderVideo.snapshots);
+        continue;
+      }
       for (const row of rows) {
         const [val, sub] = keyFn(row);
         if (!val) continue;
@@ -1325,8 +1338,9 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       }
     }
 
+    await writeBreakdownSnapshots(env, snapshots, fetchedAt);
     await runBatch(env, stmts, "day1design");
-    const updated = stmts.length;
+    const updated = stmts.length + snapshots.reduce((total, snapshot) => total + snapshot.rows.length, 0);
 
     // 영상 길이는 지표와 함께 오지 않는다. 광고 메타의 video_id 로 따로 받아 둔다
     try {
@@ -1352,6 +1366,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       range: { startDate, endDate },
       apiCalls: log.ApiCallsUsed,
       recordsUpdated: updated,
+      videoReconciliation,
       media,
       cleanup,
     });
@@ -2265,6 +2280,66 @@ function nullableVideoPlays(row) {
   return action ? Number(action.value || 0) : null;
 }
 
+function explicitVideoPlay(row) {
+  if (!Object.prototype.hasOwnProperty.call(row || {}, "video_play_actions")) return { kind: "missing" };
+  if (!Array.isArray(row.video_play_actions)) return { kind: "invalid" };
+  const actions = row.video_play_actions.filter((item) => ["video_view", "video_play"].includes(item?.action_type));
+  if (actions.length === 0) return { kind: "missing" };
+  if (actions.length !== 1) return { kind: "invalid" };
+  const raw = actions[0]?.value;
+  const value = typeof raw === "number" ? raw : String(raw ?? "").trim() === "" ? NaN : Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0) return { kind: "invalid" };
+  return { kind: "explicit", value };
+}
+
+export function reconcileVideoBreakdown(accountRows, breakdownRows, dimension) {
+  if (!["platform", "age_gender"].includes(dimension)) throw new Error("video_partition_dimension_invalid");
+  const accounts = new Map();
+  const dateOf = (row) => {
+    const date = String(row?.date_start || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || (row.date_stop && row.date_stop !== date)) throw new Error("video_partition_day_invalid");
+    return date;
+  };
+  for (const row of accountRows || []) {
+    const date = dateOf(row);
+    if (accounts.has(date)) throw new Error("video_partition_duplicate_account");
+    accounts.set(date, explicitVideoPlay(row));
+  }
+  const grouped = new Map();
+  const keys = new Set();
+  for (const row of breakdownRows || []) {
+    const date = dateOf(row);
+    const parts = dimension === "platform" ? [row.publisher_platform] : [row.age, row.gender];
+    if (parts.some(value => typeof value !== "string" || !value.trim())) throw new Error("video_partition_group_invalid");
+    const key = JSON.stringify([date, ...parts]);
+    if (keys.has(key)) throw new Error("video_partition_duplicate_group");
+    keys.add(key);
+    if (explicitVideoPlay(row).kind === "invalid") throw new Error("video_partition_metric_invalid");
+    const rows = grouped.get(date) || [];
+    rows.push(row); grouped.set(date, rows);
+  }
+  const evidence = { dimension, completeDays: 0, publishedDays: 0, omittedUnobserved: 0, invalidDays: 0, partialDays: 0, reasons: [] };
+  const snapshots = [];
+  for (const [date, rows] of grouped) {
+    const control = accounts.get(date);
+    const observed = rows.map(explicitVideoPlay).filter(value => value.kind === "explicit");
+    const sum = observed.reduce((total, value) => total + value.value, 0);
+    if (!Number.isSafeInteger(sum)) throw new Error("video_partition_total_invalid");
+    // Only these disjoint account/day breakdowns are reconciled, using the same
+    // requested metric and default attribution scope in this completed fetch.
+    // The source column preserves that omitted actions were not directly observed.
+    const complete = control?.kind === "explicit" && observed.length > 0 && sum === control.value;
+    const missing = rows.length - observed.length;
+    evidence.omittedUnobserved += missing;
+    if (complete) { evidence.completeDays++; evidence.publishedDays++; }
+    else { evidence.partialDays++; evidence.reasons.push(`${date}:unreconciled_account_total`); }
+    snapshots.push({ date, dimension, rows: rows.map(row => ({ ...row,
+      __videoPlaysSource: explicitVideoPlay(row).kind === "explicit" ? "meta_action" : complete ? "account_total_reconciled" : null,
+    })) });
+  }
+  return { snapshots, evidence };
+}
+
 function preferredActionValue(arr, types) {
   if (!Array.isArray(arr)) return 0;
   for (const type of types) {
@@ -2451,6 +2526,7 @@ const BRK_COLS = [
   "Reach",
   "Leads",
   "VideoPlays",
+  "VideoPlaysSource",
   "FetchedAt",
 ];
 export function buildBreakdownStmt(env, fields) {
@@ -2484,6 +2560,42 @@ export function buildBreakdownStmt(env, fields) {
   for (const c of BRK_COLS) values.push(fields[c] === undefined ? "" : fields[c]);
   values.push(now);
   return env.DB.prepare(sql).bind(...values);
+}
+
+export async function writeBreakdownSnapshots(env, snapshots, fetchedAt) {
+  for (const snapshot of snapshots) {
+    if (!["platform", "age_gender"].includes(snapshot?.dimension) || !Array.isArray(snapshot.rows) || snapshot.rows.length > 98) throw new Error("video_snapshot_batch_limit");
+  }
+  for (const snapshot of snapshots) {
+    if (!snapshot?.date || !snapshot.dimension || !Array.isArray(snapshot.rows) || snapshot.rows.length === 0) continue;
+    const statements = [env.DB.prepare(
+      `DELETE FROM MetaAdsBreakdown WHERE CrmTenantId=? AND Date=? AND Dimension=?`,
+    ).bind("day1design", snapshot.date, snapshot.dimension)];
+    for (const row of snapshot.rows) {
+      const [value, sub] = snapshot.dimension === "platform"
+        ? [row.publisher_platform || "", ""]
+        : [`${row.age || ""}_${row.gender || ""}`, ""];
+      if (!value) continue;
+      statements.push(buildBreakdownStmt(env, {
+        Date: snapshot.date,
+        Dimension: snapshot.dimension,
+        DimensionValue: value,
+        DimensionSub: sub,
+        ...mapInsight(row),
+        VideoPlays: explicitVideoPlay(row).kind === "explicit"
+          ? explicitVideoPlay(row).value
+          : row.__videoPlaysSource === "account_total_reconciled" ? 0 : null,
+        VideoPlaysSource: row.__videoPlaysSource || null,
+        FetchedAt: fetchedAt,
+      }));
+    }
+    if (statements.length === 1) continue;
+    statements.push(env.DB.prepare(
+      `INSERT INTO CrmDataRevisions(tenant_id,version,updated_at) VALUES (?,1,?)
+       ON CONFLICT(tenant_id) DO UPDATE SET version=CrmDataRevisions.version+1, updated_at=excluded.updated_at`,
+    ).bind("day1design", new Date().toISOString()));
+    await env.DB.batch(statements);
+  }
 }
 
 // batch 분할 실행 — D1 batch는 statement 수 한도 있음 (안전하게 100개씩)
