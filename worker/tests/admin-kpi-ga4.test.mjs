@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectAdminKpiGa4 } from '../src/lib/admin-kpi-ga4.js';
+import { collectAdminKpiGa4, isReusableAdminKpiGa4Snapshot } from '../src/lib/admin-kpi-ga4.js';
 const env = { GA4_PROPERTY_ID: '12345', GOOGLE_CLIENT_ID: 'fixture', GOOGLE_CLIENT_SECRET: 'fixture', GA4_REFRESH_TOKEN: 'fixture' };
 const range = { startDate: '2026-08-01', endDate: '2026-08-31' };
-const now = new Date('2026-09-10T00:00:00Z');
+const now = new Date('2026-09-11T00:00:00Z');
 const report = () => ({ metadata: { timeZone: 'Asia/Seoul' }, rowCount: 1,
   metricHeaders: ['activeUsers', 'sessions', 'screenPageViews'].map(name => ({ name })),
   rows: [{ metricValues: ['100', '150', '300'].map(value => ({ value })) }] });
@@ -43,11 +43,28 @@ test('invalid dates, future days, oversized ranges and property IDs fail before 
   let count = 0;
   const fetchImpl = () => { count++; throw new Error('unexpected'); };
   for (const bad of [{ startDate: '2026-02-30', endDate: '2026-03-01' },
-    { startDate: '2026-09-01', endDate: '2026-09-10' },
+    { startDate: '2026-09-01', endDate: '2026-09-12' },
     { startDate: '2024-01-01', endDate: '2026-01-01' }])
     await assert.rejects(collectAdminKpiGa4(env, bad, { fetchImpl, now }));
   await assert.rejects(collectAdminKpiGa4({ ...env, GA4_PROPERTY_ID: 'https://example.com' }, range, { fetchImpl, now }));
   assert.equal(count, 0);
+});
+
+test('today is collected as a provisional exact-period total', async () => {
+  const mock = transport(report());
+  const result = await collectAdminKpiGa4(env, { startDate: '2026-09-05', endDate: '2026-09-11' }, { ...mock, now });
+  assert.equal(result.endDate, '2026-09-11');
+  assert.equal(result.complete, false);
+  assert.equal(result.provisional, true);
+  assert.equal(mock.calls.length, 2);
+});
+
+test('today snapshot reuse expires after the bounded freshness window', () => {
+  const payload = { tenant_id:'day1design', source_kind:'ga4', source_id:'12345', start_date:'2026-09-05', end_date:'2026-09-11', summary:{ visitors:1, sessions:1, pageviews:1 } };
+  const fresh = isReusableAdminKpiGa4Snapshot(payload,{ tenantId:'day1design', propertyId:'12345', startDate:'2026-09-05', endDate:'2026-09-11', createdAt:'2026-09-10T12:00:00.000Z', now:new Date('2026-09-11T11:59:59.000Z') });
+  const stale = isReusableAdminKpiGa4Snapshot(payload,{ tenantId:'day1design', propertyId:'12345', startDate:'2026-09-05', endDate:'2026-09-11', createdAt:'2026-09-10T12:00:00.000Z', now:new Date('2026-09-11T12:00:01.000Z') });
+  assert.equal(fresh,true);
+  assert.equal(stale,false);
 });
 test('zero totals remain zero only with a valid complete report', async () => {
   const data = report(); data.rows[0].metricValues.forEach(v => v.value = '0');

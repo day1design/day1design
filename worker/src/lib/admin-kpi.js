@@ -8,7 +8,7 @@ const MAX_RESPONSE_BYTES = 65536;
 const MAX_ROLLUP_ROWS = 24000;
 const CACHE_TTL_MS = 60000;
 const CACHE_LIMIT = 128;
-const SNAPSHOT_VERSION = "v2";
+const SNAPSHOT_VERSION = "v3";
 
 const PERIODS = Object.freeze({
   "7": { kind: "days", size: 7 },
@@ -112,7 +112,7 @@ export function resolveKpiPeriod(period = "7", anchorValue, now = new Date()) {
   const anchor = normalizeAnchor(anchorValue, now);
   let current;
   if (spec.kind === "days") {
-    current = range(addDays(anchor, -spec.size), anchor);
+    current = range(addDays(anchor, 1 - spec.size), addDays(anchor, 1));
   } else {
     const currentEnd = addMonths(anchor, 0).slice(0, 7) + "-01";
     current = range(addMonths(currentEnd, -spec.size), currentEnd);
@@ -316,7 +316,7 @@ async function readGa4Period(db, period, { propertyId }) {
     return { values, coverage: coverage("CrmGa4AnalyticsSnapshots", false, "ga4_snapshot_binding_mismatch") };
   }
   const parsed = ga4SummaryValues(payload.summary || {});
-  if (!isReusableAdminKpiGa4Snapshot(payload, { tenantId: TENANT, propertyId: binding, startDate: period.start, endDate: period.end })) {
+  if (!isReusableAdminKpiGa4Snapshot(payload, { tenantId: TENANT, propertyId: binding, startDate: period.start, endDate: period.end, createdAt: row.created_at })) {
     return { values, coverage: coverage("CrmGa4AnalyticsSnapshots", false, "ga4_snapshot_metric_missing") };
   }
   return { values: parsed, coverage: coverage("CrmGa4AnalyticsSnapshots", true), source: { name: "ga4", binding, fetchedAt: row.created_at || null } };
@@ -460,7 +460,7 @@ export async function buildAdminKpi(db, {
     metrics: buildMetricComparison(current.values, previous.values),
     organic: buildOrganic(organicBasis, current.values, current.coverage, previous.coverage),
     coverage: { ...coverageMap, status: statusFromCoverage(coverageMap) },
-    sourceStatus: { label: "저장된 지표 기준", sources: current.sources || [] },
+    sourceStatus: { label: resolved.current.end === todayKst(now) ? "오늘 포함 · 출처별 마지막 갱신 시점 기준" : "저장된 지표 기준", sources: current.sources || [] },
     budgetBands: buildBudgetBands(current.budget, previous.budget),
     limits: { maxSourceDays: MAX_SOURCE_DAYS, maxRollupRows: MAX_ROLLUP_ROWS, maxResponseBytes: MAX_RESPONSE_BYTES, cacheTtlSeconds: 60 },
     cache: { revision: rev, snapshot: "miss" },

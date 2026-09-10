@@ -12,7 +12,7 @@ const kstDay = now => new Date(now.getTime() + 32400000).toISOString().slice(0, 
 const validDate = day => /^\d{4}-\d{2}-\d{2}$/.test(day || '') && new Date(`${day}T00:00:00Z`).toISOString().slice(0,10) === day;
 
 export async function enqueueAdminKpiBatch(db, { kind, startDate, endDate = startDate, now = new Date() }) {
-  if (!['business','ga4'].includes(kind) || !validDate(startDate) || !validDate(endDate) || startDate > endDate || endDate >= kstDay(now)) throw new Error('kpi_batch_range');
+  if (!['business','ga4'].includes(kind) || !validDate(startDate) || !validDate(endDate) || startDate > endDate || endDate > kstDay(now)) throw new Error('kpi_batch_range');
   const days = (Date.parse(endDate) - Date.parse(startDate)) / 86400000 + 1;
   if (days > (kind === 'business' ? 31 : 366)) throw new Error('kpi_batch_range_limit');
   const active = rows(await db.prepare(`SELECT id FROM AdminKpiJobs WHERE tenant_id=? AND status IN ('queued','running','paused') LIMIT 513`).bind(TENANT).all());
@@ -26,7 +26,7 @@ export async function enqueueAdminKpiBatch(db, { kind, startDate, endDate = star
   const statements = pendingDates.map(day => {
     const end = kind === 'business' ? day : endDate;
     return db.prepare(`INSERT INTO AdminKpiJobs(id,tenant_id,kind,start_date,end_date,status,updated_at)
-      VALUES(?,?,?,?,?,'queued',?) ON CONFLICT(id) DO UPDATE SET status='queued',cursor='',payload_json='{}',updated_at=excluded.updated_at WHERE AdminKpiJobs.status='complete' AND (excluded.kind='ga4' OR EXISTS(SELECT 1 FROM AdminKpiDirtyDays WHERE tenant_id=excluded.tenant_id AND day=excluded.start_date AND source='business'))`).bind(`${TENANT}:${kind}:${day}:${end}`, TENANT, kind, day, end, now.toISOString());
+      VALUES(?,?,?,?,?,'queued',?) ON CONFLICT(id) DO UPDATE SET status='queued',cursor='',payload_json='{}',updated_at=excluded.updated_at WHERE AdminKpiJobs.status='complete' AND (excluded.kind='ga4' OR excluded.start_date>=? OR EXISTS(SELECT 1 FROM AdminKpiDirtyDays WHERE tenant_id=excluded.tenant_id AND day=excluded.start_date AND source='business'))`).bind(`${TENANT}:${kind}:${day}:${end}`, TENANT, kind, day, end, now.toISOString(), kstDay(now));
   });
   if(statements.length) await db.batch(statements);
   return { queued: pendingDates.length,reused:reusableDays.size, maxRowsPerStep: PAGE };
@@ -34,13 +34,12 @@ export async function enqueueAdminKpiBatch(db, { kind, startDate, endDate = star
 
 export async function enqueueDefaultAdminKpiWarmup(db, { now = new Date(), includePeriod15 = false } = {}) {
   const anchor = kstDay(now);
-  const yesterday = addDays(anchor, -1);
   const queued = [];
-  queued.push({ kind: 'business', ...(await enqueueAdminKpiBatch(db, { kind: 'business', startDate: addDays(anchor, includePeriod15 ? -30 : -14), endDate: yesterday, now })) });
+  queued.push({ kind: 'business', ...(await enqueueAdminKpiBatch(db, { kind: 'business', startDate: addDays(anchor, includePeriod15 ? -29 : -13), endDate: anchor, now })) });
   for (const [startDate, endDate] of [
-    [addDays(anchor, -7), yesterday],
-    [addDays(anchor, -14), addDays(anchor, -8)],
-    ...(includePeriod15 ? [[addDays(anchor, -15), yesterday], [addDays(anchor, -30), addDays(anchor, -16)]] : []),
+    [addDays(anchor, -6), anchor],
+    [addDays(anchor, -13), addDays(anchor, -7)],
+    ...(includePeriod15 ? [[addDays(anchor, -14), anchor], [addDays(anchor, -29), addDays(anchor, -15)]] : []),
   ]) queued.push({ kind: 'ga4', startDate, endDate, ...(await enqueueAdminKpiBatch(db, { kind: 'ga4', startDate, endDate, now })) });
   return { anchor, queued };
 }
@@ -49,7 +48,7 @@ async function warmupDefaultKpi(env, now) {
   if (!env.ADMIN_KPI_WARM_DEFAULTS) return null;
   const budget = Number(env.ADMIN_KPI_GA4_DAILY_REQUEST_BUDGET || 0);
   if (!Number.isSafeInteger(budget) || budget < 2 || budget > 100) return { skipped: 'request_budget_unconfigured' };
-  return enqueueDefaultAdminKpiWarmup(env.DB, { now, includePeriod15: env.ADMIN_KPI_WARM_PERIOD15 === '1' });
+  return enqueueDefaultAdminKpiWarmup(env.DB, { now, includePeriod15: env.ADMIN_KPI_WARM_PERIOD15 !== '0' });
 }
 
 async function readPage(db, job, phase, cursor) {
@@ -134,7 +133,7 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
   // A crashed or timed-out job requires an explicit retry; cron cannot loop forever.
   await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code='lease_expired',lease_until='' WHERE tenant_id=? AND status='running' AND lease_until<?`).bind(TENANT,stamp).run();
   await warmupDefaultKpi(env, now);
-  const dirty = await db.prepare(`SELECT day FROM AdminKpiDirtyDays WHERE tenant_id=? AND source='business' AND day<? ORDER BY day LIMIT 1`).bind(TENANT,kstDay(now)).first();
+  const dirty = await db.prepare(`SELECT day FROM AdminKpiDirtyDays WHERE tenant_id=? AND source='business' AND day<=? ORDER BY day LIMIT 1`).bind(TENANT,kstDay(now)).first();
   if (dirty) await enqueueAdminKpiBatch(db,{kind:'business',startDate:dirty.day,now});
   const job = await db.prepare(`SELECT * FROM AdminKpiJobs WHERE tenant_id=? AND status='queued' ORDER BY updated_at,id LIMIT 1`).bind(TENANT).first();
   if (!job) return { skipped:'no_work' };
@@ -156,12 +155,12 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
       return await businessStep(db,job,stamp);
     }
     const propertyId = String(env.GA4_PROPERTY_ID || '').replace(/^properties\//,'');
-    const existing = await db.prepare(`SELECT id,payload_json FROM CrmGa4AnalyticsSnapshots WHERE tenant_id=? AND source_kind='ga4' AND source_id=? AND start_date=? AND end_date=? LIMIT 1`)
+    const existing = await db.prepare(`SELECT id,payload_json,created_at FROM CrmGa4AnalyticsSnapshots WHERE tenant_id=? AND source_kind='ga4' AND source_id=? AND start_date=? AND end_date=? LIMIT 1`)
       .bind(TENANT,propertyId,job.start_date,job.end_date).first();
     let reusable = false;
     try {
       const payload = JSON.parse(existing?.payload_json || '{}');
-      reusable = isReusableAdminKpiGa4Snapshot(payload, { tenantId: TENANT, propertyId, startDate: job.start_date, endDate: job.end_date });
+      reusable = isReusableAdminKpiGa4Snapshot(payload, { tenantId: TENANT, propertyId, startDate: job.start_date, endDate: job.end_date, createdAt: existing?.created_at, now });
     } catch {}
     if (reusable) {
       await db.prepare(`UPDATE AdminKpiJobs SET status='complete',lease_until='',updated_at=? WHERE id=?`).bind(stamp,job.id).run();
@@ -181,7 +180,7 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
     }
     const snapshot = await collectAdminKpiGa4(env,{ startDate:job.start_date,endDate:job.end_date },{ fetchImpl,now });
     await persistCrmGa4Snapshot(db,{ tenantId:TENANT,propertyId,startDate:job.start_date,endDate:job.end_date,
-      summary:{ ...snapshot.summary,timezone:snapshot.timezone,complete:true },createdAt:stamp });
+      summary:{ ...snapshot.summary,timezone:snapshot.timezone,complete:snapshot.endDate < kstDay(now),provisional:snapshot.endDate >= kstDay(now) },createdAt:stamp });
     await db.prepare(`UPDATE AdminKpiJobs SET status='complete',lease_until='',updated_at=? WHERE id=?`).bind(stamp,job.id).run();
     return { status:'complete',externalRequests:2 };
   } catch (error) {

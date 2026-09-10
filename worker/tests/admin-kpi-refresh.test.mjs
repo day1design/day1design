@@ -50,6 +50,15 @@ test('existing exact GA4 snapshot is reused without transport or budget consumpt
  const result=await runAdminKpiBatch(env,{now,fetchImpl:()=>{throw new Error('must not call');}});
  assert.equal(result.reused,true);assert.equal(result.externalRequests,0);
 });
+
+test('today business day is accepted and dirty today is scheduled for refresh', async () => {
+ const env=fixture();
+ await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-11',endDate:'2026-09-11',now:new Date('2026-09-11T00:00:00.000Z')});
+ env.db.exec("INSERT INTO AdminKpiDirtyDays VALUES('day1design','2026-09-11','business',0)");
+ const result=await runAdminKpiBatch(env,{now:new Date('2026-09-11T01:00:00.000Z')});
+ assert.notEqual(result.status,'failed');
+ assert.equal(env.db.prepare("SELECT status FROM AdminKpiJobs WHERE kind='business' AND start_date='2026-09-11'").get().status,'queued');
+});
 test('missing GA4 batch pauses when request budget unset; does not retry on cron',async()=>{
  const env=fixture();env.GA4_PROPERTY_ID='12345';await enqueueAdminKpiBatch(env.DB,{kind:'ga4',startDate:'2026-08-01',endDate:'2026-08-31',now});
  assert.equal((await runAdminKpiBatch(env,{now})).status,'paused');
@@ -60,7 +69,6 @@ test('default KPI warmup queues current and previous default ranges without raw 
  const result=await enqueueDefaultAdminKpiWarmup(env.DB,{now:new Date('2026-09-11T00:00:00.000Z')});
  assert.equal(result.anchor,'2026-09-11');
  assert.deepEqual(env.db.prepare('SELECT kind,start_date,end_date,status FROM AdminKpiJobs ORDER BY kind,start_date,end_date').all().map((job) => ({ ...job })),[
-  {kind:'business',start_date:'2026-08-28',end_date:'2026-08-28',status:'queued'},
   {kind:'business',start_date:'2026-08-29',end_date:'2026-08-29',status:'queued'},
   {kind:'business',start_date:'2026-08-30',end_date:'2026-08-30',status:'queued'},
   {kind:'business',start_date:'2026-08-31',end_date:'2026-08-31',status:'queued'},
@@ -74,8 +82,9 @@ test('default KPI warmup queues current and previous default ranges without raw 
   {kind:'business',start_date:'2026-09-08',end_date:'2026-09-08',status:'queued'},
   {kind:'business',start_date:'2026-09-09',end_date:'2026-09-09',status:'queued'},
   {kind:'business',start_date:'2026-09-10',end_date:'2026-09-10',status:'queued'},
-  {kind:'ga4',start_date:'2026-08-28',end_date:'2026-09-03',status:'queued'},
-  {kind:'ga4',start_date:'2026-09-04',end_date:'2026-09-10',status:'queued'},
+  {kind:'business',start_date:'2026-09-11',end_date:'2026-09-11',status:'queued'},
+  {kind:'ga4',start_date:'2026-08-29',end_date:'2026-09-04',status:'queued'},
+  {kind:'ga4',start_date:'2026-09-05',end_date:'2026-09-11',status:'queued'},
  ]);
  assert(!env.queries.some(sql=>/FROM Estimates|FROM EstimateContractHistory/.test(sql)));
 });
@@ -84,8 +93,8 @@ test('scheduled KPI batch warmup is gated by request budget configuration',async
  let result;
  for(let i=0;i<3;i++)result=await runAdminKpiBatch(env,{now:new Date('2026-09-11T00:00:00.000Z')});
  assert.equal(result.status,'complete');
- assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiJobs WHERE kind='business'").get().n,14);
- assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiJobs WHERE kind='ga4'").get().n,2);
+ assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiJobs WHERE kind='business'").get().n,30);
+ assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiJobs WHERE kind='ga4'").get().n,4);
 });
 test('revision change across resumable steps fails without publishing mixed totals',async()=>{
  const env=fixture();await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now});

@@ -139,12 +139,12 @@ export async function handleMetaAds(request, env, ctx) {
   return jsonError(404, "Not Found");
 }
 
-// ─── Cron 자동 sync — 최근 3일치 (attribution window 보정) ──
+// ─── Cron sync: 직전 3일 보정 + 오늘 KPI 잠정값 ──
 // Meta 광고는 며칠 뒤에 전환이 소급 추가될 수 있어서 매일 3일치 UPSERT.
 // 같은 (Date, Level, EntityId) 는 덮어쓰기라 row 수 안 늘어남, 수치만 보정.
 // API 호출은 time_range 한 번에 처리라 비용 동일.
 export async function runScheduledSync(env, ctx) {
-  const end = kstYesterday();
+  const end = kstToday();
   const start = kstDaysAgo(3);
   return syncRange(env, ctx, start, end, "cron");
 }

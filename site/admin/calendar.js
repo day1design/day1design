@@ -15,14 +15,12 @@
   const BRANCH_CLASS = {
     강남점: "b-gangnam",
     판교점: "b-pangyo",
-    "고객 현장": "b-onsite",
   };
   const BRANCH_COLOR = {
     강남점: "var(--br-gangnam)",
     판교점: "var(--br-pangyo)",
-    "고객 현장": "var(--br-onsite)",
   };
-  const BRANCHES = ["강남점", "판교점", "고객 현장"];
+  const BRANCHES = ["강남점", "판교점"];
   // 상담이 성사되지 않은 상태는 흐리게 둔다(지우지는 않는다 — 기록은 남는다)
   const DIM_STATUS = ["진행불가 (예산/범위/지역/일정등)", "전화상담 후 미진행"];
 
@@ -40,7 +38,8 @@
     loadVersion: 0,
   };
   const UPCOMING_DAYS = 90;
-  const isMobileCalendar = () => window.matchMedia?.('(max-width: 640px)').matches;
+  const mobileCalendarQuery = window.matchMedia('(max-width: 640px)');
+  const isMobileCalendar = () => mobileCalendarQuery.matches;
   const visibleDays = () => (isMobileCalendar() ? 3 : 7);
 
   /* ---------- KST 시각 계산 ----------
@@ -583,6 +582,15 @@
     $("ccNext").addEventListener("click", () => shiftMonth(1));
     $("ccToday2").addEventListener("click", goToday);
     bindMobileSwipe();
+    mobileCalendarQuery.addEventListener("change", () => {
+      const focus = state.selected || state.weekStart;
+      const [year, month, day] = focus.split("-").map(Number);
+      const offset = mondayOffset(new Date(Date.UTC(year, month - 1, day)));
+      const pageOffset = isMobileCalendar() ? Math.floor(offset / 3) * 3 : 0;
+      state.weekStart = new Date(Date.UTC(year, month - 1, day - offset + pageOffset)).toISOString().slice(0, 10);
+      renderGrid();
+      load();
+    });
     load();
     loadUpcoming();
   }

@@ -6,11 +6,15 @@ function validMetricValue(value) {
   return value !== null && value !== undefined && value !== '' && typeof value !== 'boolean' && Number.isFinite(Number(value)) && Number(value) >= 0;
 }
 
-export function isReusableAdminKpiGa4Snapshot(payload, { tenantId, propertyId, startDate, endDate } = {}) {
+export function isReusableAdminKpiGa4Snapshot(payload, { tenantId, propertyId, startDate, endDate, createdAt, now = new Date(), maxAgeMs = 24 * 60 * 60 * 1000 } = {}) {
   const binding = String(propertyId || '').replace(/^properties\//, '');
   if (!isAdminKpiGa4PayloadBinding(payload, { tenantId, propertyId, startDate, endDate })) return false;
   const summary = payload.summary;
-  return Boolean(summary && [summary.users ?? summary.visitors ?? summary.activeUsers, summary.sessions, summary.pageviews ?? summary.screenPageViews].every(validMetricValue));
+  if (!summary || ![summary.users ?? summary.visitors ?? summary.activeUsers, summary.sessions, summary.pageviews ?? summary.screenPageViews].every(validMetricValue)) return false;
+  const today = new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
+  if (endDate !== today) return true;
+  const age = Date.parse(now.toISOString()) - Date.parse(createdAt || '');
+  return Number.isFinite(age) && age >= 0 && age <= maxAgeMs;
 }
 
 export function isAdminKpiGa4PayloadBinding(payload, { tenantId, propertyId, startDate, endDate } = {}) {
@@ -46,7 +50,7 @@ export async function collectAdminKpiGa4(env, { startDate, endDate }, { fetchImp
   if (!dateValid(startDate) || !dateValid(endDate) || startDate > endDate ||
       (Date.parse(endDate) - Date.parse(startDate)) / 86400000 > 366) throw new Error('kpi_ga4_range');
   const today = new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
-  if (endDate >= today) throw new Error('kpi_ga4_incomplete_day');
+  if (endDate > today) throw new Error('kpi_ga4_incomplete_day');
   const propertyId = String(env.GA4_PROPERTY_ID || '').replace(/^properties\//, '');
   const refreshToken = env.GA4_REFRESH_TOKEN || env.GOOGLE_ANALYTICS_REFRESH_TOKEN || env.GOOGLE_REFRESH_TOKEN;
   if (!/^\d+$/.test(propertyId) || !env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !refreshToken)
@@ -83,7 +87,7 @@ export async function collectAdminKpiGa4(env, { startDate, endDate }, { fetchImp
     values[name] = value;
   }
   return { source: 'ga4', propertyId, startDate, endDate, timezone: meta.timeZone,
-    fetchedAt: now.toISOString(), complete: true,
+    fetchedAt: now.toISOString(), complete: endDate < today, provisional: endDate === today,
     summary: { users: values.activeUsers, visitors: values.activeUsers, sessions: values.sessions,
       pageviews: values.screenPageViews }, requestCount: 2 };
 }

@@ -86,7 +86,7 @@ function seedGa4(sqlite, start, end, summary) {
 async function read(sqlite, options = {}) {
   return readAdminKpiCached(d1(sqlite), {
     period: "7",
-    anchor: "2026-09-10",
+    anchor: "2026-09-09",
     now: new Date("2026-09-10T03:00:00.000Z"),
     metaAccountId: "act_1",
     ga4PropertyId: "123",
@@ -94,10 +94,10 @@ async function read(sqlite, options = {}) {
   });
 }
 
-test("KPI rolling periods end before the KST anchor", () => {
+test("KPI rolling periods include the KST anchor without overlapping the prior period", () => {
   const result = resolveKpiPeriod("7", "2026-09-10", new Date("2026-09-10T03:00:00.000Z"));
-  assert.deepEqual(result.current, { start: "2026-09-03", endExclusive: "2026-09-10", end: "2026-09-09", days: 7 });
-  assert.deepEqual(result.previous, { start: "2026-08-27", endExclusive: "2026-09-03", end: "2026-09-02", days: 7 });
+  assert.deepEqual(result.current, { start: "2026-09-04", endExclusive: "2026-09-11", end: "2026-09-10", days: 7 });
+  assert.deepEqual(result.previous, { start: "2026-08-28", endExclusive: "2026-09-04", end: "2026-09-03", days: 7 });
 });
 
 test("monthly KPI periods use completed calendar months", () => {
@@ -245,13 +245,13 @@ test("organic unit value uses recent 15 day CPL and savings uses selected period
   const { sqlite } = fixture();
   try {
     seedBusiness(sqlite, "2026-08-27", "2026-09-10", { organic: 2 });
-    seedMeta(sqlite, "2026-08-26", "2026-09-10", { spend: 30, leads: 3, linkClicks: 10, impressions: 100, clicks: 10 });
+    seedMeta(sqlite, "2026-08-25", "2026-09-10", { spend: 30, leads: 3, linkClicks: 10, impressions: 100, clicks: 10 });
     seedGa4(sqlite, "2026-09-03", "2026-09-09", { users: 1, sessions: 1, pageviews: 1 });
     seedGa4(sqlite, "2026-08-27", "2026-09-02", { users: 1, sessions: 1, pageviews: 1 });
     const result = await read(sqlite);
     assert.equal(result.organic.unitValue, 10);
     assert.equal(result.organic.savings, 140);
-    assert.equal(result.organic.range, "2026.08.26-2026.09.09");
+    assert.equal(result.organic.range, "2026.08.25-2026.09.08");
   } finally {
     sqlite.close();
   }
@@ -261,7 +261,7 @@ test("organic savings is withheld when the comparison period is incomplete", asy
   const { sqlite } = fixture();
   try {
     seedBusiness(sqlite, "2026-09-03", "2026-09-10", { organic: 2 });
-    seedMeta(sqlite, "2026-08-26", "2026-09-10", { spend: 30, leads: 3 });
+    seedMeta(sqlite, "2026-08-25", "2026-09-10", { spend: 30, leads: 3 });
     seedGa4(sqlite, "2026-09-03", "2026-09-09", { users: 1, sessions: 1, pageviews: 1 });
     const result = await read(sqlite);
     assert.equal(result.organic.savings, null);
@@ -280,7 +280,7 @@ test("cache is revision scoped and coalesces concurrent reads", async () => {
     seedMeta(sqlite, "2026-08-27", "2026-09-10", { spend: 1, leads: 1 });
     seedGa4(sqlite, "2026-09-03", "2026-09-09", { users: 1, sessions: 1, pageviews: 1 });
     seedGa4(sqlite, "2026-08-27", "2026-09-02", { users: 1, sessions: 1, pageviews: 1 });
-    const opts = { period: "7", anchor: "2026-09-10", now: new Date("2026-09-10T03:00:00.000Z"), metaAccountId: "act_1", ga4PropertyId: "123" };
+    const opts = { period: "7", anchor: "2026-09-09", now: new Date("2026-09-10T03:00:00.000Z"), metaAccountId: "act_1", ga4PropertyId: "123" };
     const [first, second] = await Promise.all([readAdminKpiCached(DB, opts), readAdminKpiCached(DB, opts)]);
     assert.equal(first.cache.hit, false);
     assert.equal(second.cache.coalesced, true);
@@ -308,7 +308,7 @@ test("private R2 snapshot is written and read by exact period, role, tenant, and
     seedMeta(sqlite, "2026-08-27", "2026-09-10", { spend: 1, leads: 1 });
     seedGa4(sqlite, "2026-09-03", "2026-09-09", { users: 1, sessions: 1, pageviews: 1 });
     seedGa4(sqlite, "2026-08-27", "2026-09-02", { users: 1, sessions: 1, pageviews: 1 });
-    const opts = { period: "7", anchor: "2026-09-10", now: new Date("2026-09-10T03:00:00.000Z"), metaAccountId: "act_1", ga4PropertyId: "123", r2 };
+    const opts = { period: "7", anchor: "2026-09-09", now: new Date("2026-09-10T03:00:00.000Z"), metaAccountId: "act_1", ga4PropertyId: "123", r2 };
     const first = await readAdminKpiCached(d1(sqlite), opts);
     assert.equal(first.cache.snapshot, "miss");
     assert.equal(objects.size, 1);
@@ -320,4 +320,11 @@ test("private R2 snapshot is written and read by exact period, role, tenant, and
   } finally {
     sqlite.close();
   }
+});
+
+test("today inclusive 7 days crosses month boundary without gaps", () => {
+ const r=resolveKpiPeriod("7","2026-09-01",new Date("2026-09-01T00:00:00Z"));
+ assert.equal(r.current.start,"2026-08-26"); assert.equal(r.current.end,"2026-09-01");
+ assert.equal(r.previous.start,"2026-08-19"); assert.equal(r.previous.end,"2026-08-25");
+ assert.equal(r.previous.endExclusive,r.current.start);
 });
