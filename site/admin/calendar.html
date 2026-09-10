@@ -33,6 +33,46 @@
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
     <link rel="stylesheet" href="admin.css?v=20260903-branch" />
     <style>
+      /* 승인된 M01 압축형 주간 시간표 */
+      .cc-week-wrap { overflow-x:auto; border:1px solid var(--c-border); border-radius:var(--radius); background:var(--c-surface); }
+      .cc-week-grid { min-width:780px; display:grid; grid-template-columns:56px repeat(7,minmax(100px,1fr)); grid-template-rows:34px repeat(13,40px); position:relative; }
+      .cc-week-grid > * { border-right:1px solid var(--c-border-soft); border-bottom:1px solid var(--c-border-soft); min-width:0; }
+      .cc-week-day { padding:6px 4px; text-align:center; font-size:12px; font-weight:700; background:#fafbfc; }
+      .cc-week-day.today { background:#f5f6f7; color:#282d34; }
+      .cc-week-hour { padding:4px 5px; text-align:right; font-size:11px; color:var(--c-text-sub); background:#fafbfc; }
+      .cc-week-slot { border:0; background:var(--c-surface); padding:0; cursor:pointer; }
+      .cc-week-slot:hover { background:var(--c-brand-soft); }
+      .cc-week-slot.late { background:#f8f9fb; cursor:not-allowed; }
+      .cc-week-event { z-index:2; margin:2px; padding:4px 7px; border:0; border-left:3px solid #2563eb; border-radius:5px; background:#eaf1ff; color:#1e3a8a; text-align:left; overflow:hidden; font:11px/1.3 inherit; cursor:pointer; }
+      .cc-week-event strong { display:block; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .cc-week-event span { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .cc-week-event { display:flex; flex-direction:column; justify-content:flex-start; background:#f8fafc; color:#2c333c; border:0; border-left-width:2px; border-left-style:solid; border-radius:3px; margin:3px 4px; padding:6px 7px; box-shadow:none; font-size:10px; line-height:1.45; }
+      .cc-week-event strong { font-size:12px; font-weight:600; }
+      .cc-week-event span { color:#67717e; font-size:11px; }
+      .cc-week-event.design { background:#f8fafc; color:#2c333c; }
+      .cc-week-event.buffer { border-left:2px solid #c7cdd4; background:#f3f4f5; color:#65707c; font-size:10px; font-weight:400; justify-content:center; padding:3px 7px; margin:0 4px 3px; }
+      .cc-week-event:hover { background:#eaf0f5; color:#202934; outline:1px solid #aeb9c5; outline-offset:-1px; }
+      .cc-week-event.design:hover { background:#eaf0f5; color:#202934; }
+      .cc-week-event.buffer:hover,.cc-week-event.buffer:disabled { background:#f3f4f5; color:#65707c; outline:0; }
+      .cc-week-event.legacy { border-style:dashed; }
+      .cc-week-event.cancelled { border-left-color:#9ca3af; background:#f3f4f6; color:#6b7280; text-decoration:line-through; }
+      .cc-week-slot { border-right:1px solid var(--c-border-soft); border-bottom:1px solid var(--c-border-soft); }
+      .cc-week-event .cc-week-time { color:#4b5563; font-size:11px; }
+      .cc-week-event .cc-week-customer { color:#67717e; font-size:11px; }
+      .cc-sum { gap:0; margin-bottom:14px; border:1px solid var(--c-border); border-radius:var(--radius); background:var(--c-surface); box-shadow:none; }
+      .cc-sum .card { border:0; border-right:1px solid var(--c-border-soft); border-radius:0; padding:10px 14px; box-shadow:none; background:transparent; }
+      .cc-sum .card:last-child { border-right:0; }
+      .cc-sum .card.accent { border-color:var(--c-border-soft); background:var(--c-surface); }
+      .cc-sum .label { margin-bottom:4px; font-size:11px; }
+      .cc-sum .value { font-size:20px; }
+      .cc-bar { border:0; border-bottom:1px solid var(--c-border); border-radius:0; padding:0 0 10px; background:transparent; box-shadow:none; }
+      .cc-cal { box-shadow:none; }
+      .cc-side { box-shadow:none; }
+      .cc-side-head { background:var(--c-surface); color:var(--c-text); }
+      .cc-side-head .n { color:var(--c-text-sub); }
+      .cc-week-loading { padding:24px; text-align:center; color:var(--c-text-sub); }
+      .cc-settings-link { white-space:nowrap; }
+      @media (max-width:640px) { .cc-week-grid { min-width:720px; grid-template-columns:48px repeat(7,minmax(96px,1fr)); } }
       /* 상담 지점별 식별색 — 캘린더 칩과 필터 점이 같은 색을 쓴다 */
       .cc {
         --br-gangnam: #2563eb;
@@ -560,9 +600,57 @@
           font-size: 12.5px;
         }
       }
+      .cc-sum { gap:0; margin-bottom:14px; border:1px solid var(--c-border); border-radius:var(--radius); background:#fff; box-shadow:none; }
+      .cc-sum .card, .cc-sum .card.accent { border:0; border-right:1px solid var(--c-border-soft); border-radius:0; padding:10px 14px; box-shadow:none; background:#fff; }
+      .cc-sum .card:last-child { border-right:0; }
+      .cc-sum .label { margin-bottom:4px; font-size:11px; }
+      .cc-sum .value { font-size:20px; }
+      .cc-bar { border:0; border-bottom:1px solid var(--c-border); border-radius:0; padding:0 0 10px; background:transparent; box-shadow:none; }
+      .cc-cal, .cc-side { box-shadow:none; }
+      .cc-side-head { background:#fff; color:var(--c-text); }
+      .cc-side-head .n { color:var(--c-text-sub); }
+      .cc-week-slot { border-right:1px solid var(--c-border-soft); border-bottom:1px solid var(--c-border-soft); }
+      .cc-week-event .cc-week-time, .cc-week-event .cc-week-customer { color:#67717e; font-size:11px; }
+      @media (max-width:640px) {
+        /* M01 mobile: three dates are one page. Previous/next moves by exactly 3 days. */
+        .page-header { margin-bottom:8px; padding-bottom:0; }
+        .page-header h2 { font-size:18px; margin-bottom:0; }
+        .page-header p { display:none; }
+        .page-actions { gap:4px; }
+        .page-actions .btn { min-height:34px; padding:5px 8px; font-size:12px; }
+        .cc-sum, .cc-up, .cc-filter { display:none; }
+        .cc-bar { margin-bottom:8px; padding-bottom:8px; }
+        .cc-month { width:100%; justify-content:space-between; }
+        .cc-month .m { min-width:0; font-size:15px; }
+        .cc-week-wrap, .cc-cal { overflow:hidden; touch-action:pan-y; }
+        .cc-cols { display:block; }
+        .cc-week-grid { min-width:0; width:100%; grid-template-columns:34px repeat(3,minmax(0,1fr)); grid-template-rows:34px repeat(13,28px); }
+        .cc-week-grid > * { min-width:0; }
+        .cc-week-day { padding:8px 1px; font-size:13px; white-space:nowrap; overflow:hidden; }
+        .cc-week-hour { padding:4px 3px 0 1px; font-size:10px; white-space:nowrap; }
+        .cc-week-slot { min-height:28px; }
+        .cc-week-event { margin:1px 2px; padding:2px 3px; border:0; border-radius:2px; gap:4px; color:#fff; background:var(--meeting-color,#2563eb); font-size:11px; line-height:1.15; }
+        .cc-week-event.design:not(.buffer) { background:var(--meeting-color,#16a34a); color:#fff; }
+        .cc-week-event:not(.buffer):not(.cancelled):hover { background:var(--meeting-color,#1d4ed8); color:#fff; }
+        .cc-week-event strong { font-size:11px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .cc-week-event .cc-week-time { display:none; }
+        .cc-week-event .cc-week-customer { color:#fff; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .cc-week-event.buffer { margin:0 2px 1px; padding:2px 3px; border:0; background:#e5e7eb; color:#46515e; font-size:10px; cursor:pointer; }
+        .cc-week-event.buffer:hover { background:#d1d5db; color:#26313d; outline:1px solid #7b8794; }
+        .cc-side { margin-top:10px; border-top:1px solid var(--c-border); }
+        .cc-side-head { padding:10px 12px 6px; }
+        .cc-side-body { padding:0 10px 10px; }
+        .cc-bk { margin:0 0 8px; }
+      }
+      .cc-buffer-dialog { position:fixed; inset:0; z-index:30; display:grid; place-items:center; background:#11182766; padding:16px; }
+      .cc-buffer-dialog[hidden] { display:none; }
+      .cc-buffer-dialog-card { width:min(100%,360px); padding:18px; border-radius:10px; background:#fff; box-shadow:0 12px 36px #11182733; }
+      .cc-buffer-dialog-card h3 { margin:0 0 8px; font-size:16px; }
+      .cc-buffer-dialog-card p { margin:0 0 16px; color:var(--c-text-sub); font-size:13px; }
+      .cc-buffer-dialog-actions { display:flex; justify-content:flex-end; gap:8px; }
     </style>
     <script>
-      window.ADMIN_PAGE = { title: "상담 캘린더", nav: "calendar" };
+      window.ADMIN_PAGE = { title: "주간 미팅 시간표", nav: "calendar" };
     </script>
   </head>
   <body class="admin-body">
@@ -577,9 +665,9 @@
       <main class="admin-content" id="adminContent">
         <div class="page-header">
           <div>
-            <h2>상담 캘린더</h2>
+            <h2>주간 미팅 시간표</h2>
             <p>
-              상담신청에서 <b>상담 예약 일시</b>를 저장한 건이 여기에
+              상담신청에서 <b>미팅 예약 일시</b>를 저장한 건이 여기에
               올라옵니다. 취소해도 일정은 지워지지 않고
               <b>취소로 표시되어 남습니다</b>. 등록·변경·취소는
               <b>데이원디자인 상담일정관리</b> 채널로 알립니다.
@@ -587,6 +675,7 @@
           </div>
           <div class="page-actions">
             <a class="btn btn-ghost" href="estimates">상담신청으로</a>
+            <a class="btn btn-ghost cc-settings-link" href="meeting-settings">미팅 설정</a>
           </div>
         </div>
 
@@ -622,19 +711,11 @@
             <div class="cc-sp"></div>
             <div class="cc-filter" id="ccFilter"></div>
           </div>
+          <div class="cc-empty" id="ccLimitNotice" hidden></div>
 
           <div class="cc-cols">
             <div class="cc-cal">
-              <div class="cc-dow">
-                <div>일</div>
-                <div>월</div>
-                <div>화</div>
-                <div>수</div>
-                <div>목</div>
-                <div>금</div>
-                <div>토</div>
-              </div>
-              <div class="cc-grid" id="ccGrid"></div>
+              <div class="cc-week-grid" id="ccGrid" aria-label="주간 미팅 시간표"></div>
             </div>
 
             <div class="cc-side">
@@ -671,6 +752,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
     <script defer src="admin.js?v=20260903-logo"></script>
-    <script defer src="calendar.js?v=20260903-tz"></script>
+    <script defer src="calendar.js?v=20260910-refined"></script>
   </body>
 </html>

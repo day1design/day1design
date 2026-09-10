@@ -8,6 +8,8 @@ import test from "node:test";
 
 import {
   healthReportTarget,
+  healthOverall,
+  normalizeHealthResults,
   judgeIntakeGap,
   judgePollerFreshness,
   judgeSmsDelivery,
@@ -98,4 +100,23 @@ test("헬스 리포트 채널 — 인프라봇 우선, 미설정 시에만 폴�
     { botToken: "t", chatId: "-1" },
   );
   assert.equal(healthReportTarget({}), null);
+});
+
+test("시트 점검은 폐기 항목으로 제거하고 남은 실제 장애는 유지", () => {
+  const results = [
+    { key: "sheet", label: "Google Sheets", status: "fail" },
+    { key: "metadata", label: "Meta 데이터 연결성", status: "ok" },
+  ];
+  const normalized = normalizeHealthResults(results);
+  assert.deepEqual(normalized, [results[1]]);
+  assert.equal(healthOverall(normalized), "ok");
+  assert.equal(
+    healthOverall(
+      normalizeHealthResults([
+        ...results,
+        { key: "leadpoll", label: "리드 폴러 생존", status: "fail" },
+      ]),
+    ),
+    "fail",
+  );
 });

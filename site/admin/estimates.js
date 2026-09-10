@@ -388,8 +388,7 @@ function fmtDateTime(iso) {
   if (!iso) return "—";
   try {
     const d = new Date(iso);
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul", dateStyle: "short", timeStyle: "short" }).format(d);
   } catch {
     return iso;
   }
@@ -402,9 +401,9 @@ function fmtConsultAt(iso) {
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
-    const pad = (n) => String(n).padStart(2, "0");
-    const dow = "일월화수목금토"[d.getDay()];
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}(${dow}) ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const parts = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+    const get = (type) => parts.find((part) => part.type === type)?.value || "";
+    return `${get("year")}-${get("month")}-${get("day")}(${get("weekday")}) ${get("hour")}:${get("minute")}`;
   } catch {
     return iso;
   }
@@ -419,11 +418,15 @@ function toLocalInputValue(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  );
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const get = (type) => parts.find((part) => part.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+}
+
+function kstLocalToIso(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return "";
+  return new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:00+09:00`).toISOString();
 }
 
 // 카드 아래에 붙는 예약 메모. 예약이 잡힌 건만 나오고, 그 날짜의 캘린더로
@@ -776,6 +779,29 @@ function filtered() {
 // 있어 따로 고른다. 지점이 늘면 여기에 추가하면 되고, 목록에 없는 값이 이미
 // 저장돼 있으면 그 값도 선택지에 남겨 덮어쓰지 않는다.
 const CONSULT_BRANCHES = ["강남점", "판교점", "고객 현장"];
+let meetingSettingsCache = null;
+const DEFAULT_MEETING_TYPES = [
+  { id: "initial", name: "이니셜미팅", durationMinutes: 120, bufferMinutes: 60, colorKey: "blue", active: 1 },
+  { id: "design", name: "디자인미팅", durationMinutes: 180, bufferMinutes: 60, colorKey: "green", active: 1 },
+];
+
+async function loadMeetingSettings() {
+  if (meetingSettingsCache) return meetingSettingsCache;
+  try {
+    const data = await adminUtil.api("/api/meeting-settings");
+    meetingSettingsCache = data?.types?.length ? data : { types: DEFAULT_MEETING_TYPES };
+  } catch {
+    meetingSettingsCache = { types: DEFAULT_MEETING_TYPES };
+  }
+  return meetingSettingsCache;
+}
+
+function meetingTypeOptions(selected) {
+  const types = meetingSettingsCache?.types?.length ? meetingSettingsCache.types : DEFAULT_MEETING_TYPES;
+  return types.filter((type) => type.active !== 0).map((type) =>
+    `<option value="${escapeHtml(type.id)}"${String(selected || "initial") === String(type.id) ? " selected" : ""}>${escapeHtml(type.name)} · ${Math.round(Number(type.durationMinutes || 0) / 60 * 10) / 10}시간</option>`,
+  ).join("");
+}
 
 // 상태 드롭다운. '계약완료' 는 여기 없다 — 계약은 일시·담당자·금액을 같이
 // 받아야 하므로 아래 계약 패널의 버튼으로만 처리한다. 드롭다운에 두면 금액을
@@ -797,32 +823,47 @@ const CONTRACT_STATUS = "계약완료";
 // 계약된 건은 값을 바로 펼쳐 두어 수정할 수 있게 한다.
 function contractPanelHtml(r) {
   const done = r.Status === CONTRACT_STATUS;
-  const amount = Number(r.ContractAmount || 0) || Number(r.EstimateAmount || 0);
+  const amount = Number(r.ContractAmount || 0);
   return `
-    <div class="est-contract ${done ? "is-done" : ""}" id="contractPanel" data-open="${done ? "1" : "0"}">
+    <div class="est-contract ${done ? "is-done" : ""}" id="contractPanel" data-open="0">
       <div class="est-contract-head">
-        <span class="est-contract-title">계약</span>
+        <span class="est-contract-title">계약금액 변경 이력</span>
         ${
           done
-            ? `<span class="est-contract-chip">계약완료</span>`
-            : `<button type="button" class="btn btn-sm btn-primary" id="btnContractOpen">계약완료 처리</button>`
+            ? `<span class="est-contract-chip">계약완료 · 현재 ${fmtInt(amount)}원</span>`
+            : `<span class="est-contract-chip">현재 ${fmtInt(amount)}원</span>`
         }
+        <button type="button" class="btn btn-sm btn-primary" id="btnContractAdd">금액 변경 기록</button>
       </div>
-      <div class="est-contract-body" ${done ? "" : "hidden"}>
+      <div class="est-contract-body" hidden>
         <div class="est-manage-grid">
           <div class="field">
-            <label>계약 일시</label>
-            <input type="datetime-local" id="editContractAt" value="${(r.ContractAt || "").slice(0, 16)}" />
+            <label>기록 일시 (KST)</label>
+            <input type="datetime-local" id="editContractAt" value="${toLocalInputValue(r.ContractAt)}" />
           </div>
           <div class="field">
             <label>계약 담당자</label>
             <input type="text" id="editContractOwner" value="${escapeHtml(r.ContractOwner || r.Assignee || "")}" />
           </div>
           <div class="field">
-            <label>계약 금액 (원)</label>
-            <input type="number" id="editContractAmount" min="0" value="${amount}" />
+            <label>변경 후 총 계약금액 (원)</label>
+            <input type="number" id="editContractAmount" min="0" placeholder="최종 총액을 입력하세요" value="" />
           </div>
         </div>
+        <div class="est-contract-entry-grid">
+          <label class="field"><span>변경 구분</span><input id="editContractStage" maxlength="80" placeholder="협의 / 최종확정 / 정정" /></label>
+          <label class="field"><span>사유</span><input id="editContractReason" maxlength="500" placeholder="변경 사유를 입력하세요" /></label>
+          <label class="field"><span>지역</span><input id="editContractRegion" maxlength="120" value="${escapeHtml(r.ContractRegion || "")}" placeholder="주소에서 자동 입력" /></label>
+        </div>
+        <div class="est-contract-address-grid">
+          <label class="field"><span>우편번호</span><input id="editContractPostcode" value="${escapeHtml(r.Postcode || "")}" readonly /></label>
+          <label class="field address"><span>주소</span><input id="editContractAddress" value="${escapeHtml(r.Address || "")}" readonly /></label>
+          <label class="field"><span>상세주소</span><input id="editContractAddressDetail" value="${escapeHtml(r.AddressDetail || "")}" placeholder="상세주소" /></label>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnContractAddressSearch">다음 주소 검색</button>
+        </div>
+        <p class="est-contract-current">현재 총 계약금액 <b>${fmtInt(amount)}원</b> · 저장 시각은 한국 표준시(KST)로 기록됩니다.</p>
+        <div class="est-contract-history" id="contractHistory"><span class="muted">계약금 이력을 불러오는 중...</span></div>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSaveContract">계약금액 변경 저장</button>
         ${
           done
             ? `<button type="button" class="btn btn-ghost btn-sm" id="btnContractCancel">계약완료 해제</button>`
@@ -1370,8 +1411,8 @@ async function openDetail(id) {
             <div class="nd-quote">${r.Detail ? escapeHtml(r.Detail) : '<span style="color:#cbd2da">접수내용 없음</span>'}</div>
           </div>
 
-          <div class="nd-card">
-            <div class="nd-card-h"><b>현장</b></div>
+           <div class="nd-card">
+             <div class="nd-card-h"><b>고객 정보</b><button type="button" class="btn btn-ghost btn-sm nd-inline-edit" id="btnOpenCustomerEditInline">고객정보 수정</button></div>
             <div class="nd-grid">
               <div class="nd-f">
                 <b>공간</b><span${spaceText ? "" : ' class="empty"'}>${escapeHtml(spaceText || "미입력")}</span>
@@ -1447,6 +1488,10 @@ async function openDetail(id) {
               <div class="field">
                 <label>상담 예약 일시</label>
                 <input type="datetime-local" id="editConsultAt" value="${toLocalInputValue(r.ConsultAt)}" />
+              </div>
+              <div class="field">
+                <label>미팅 종류</label>
+                <select id="editConsultTypeId">${meetingTypeOptions(r.ConsultTypeId)}</select>
               </div>
               <p class="nd-sync">
                 📅 저장하면 <b>상담 캘린더</b>에 올라가고
@@ -1541,29 +1586,40 @@ async function openDetail(id) {
       .then(() => adminUtil.toast("연락처를 복사했습니다"))
       .catch(() => adminUtil.toast("복사하지 못했습니다", "error"));
   });
+  detail.querySelector("#btnOpenCustomerEditInline")?.addEventListener("click", () => openCustomerEdit(id));
 
-  // 계약 입력칸은 '계약완료 처리' 를 누른 뒤에만 펼친다. 펼친 상태에서 저장하면
-  // 상태가 계약완료로 바뀐다(doPatch 가 data-open 을 보고 판단한다).
-  detail.querySelector("#btnContractOpen")?.addEventListener("click", () => {
+  detail.querySelector("#btnContractAdd")?.addEventListener("click", () => {
     const panel = detail.querySelector("#contractPanel");
     const body = panel?.querySelector(".est-contract-body");
     if (!panel || !body) return;
-    panel.dataset.open = "1";
     body.hidden = false;
-    const at = detail.querySelector("#editContractAt");
-    // 계약일은 대개 오늘이라 비어 있으면 지금 시각을 넣어 준다(수정 가능).
-    if (at && !at.value) {
-      const now = new Date();
-      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      at.value = now.toISOString().slice(0, 16);
-    }
-    detail.querySelector("#btnContractOpen")?.setAttribute("hidden", "");
-    at?.focus();
+    detail.querySelector("#editContractAmount")?.focus();
+    loadContractHistory(id);
   });
+  detail.querySelector("#editContractRegion")?.addEventListener("focus", (e) => {
+    if (!e.target.value) e.target.value = [r.Address || ""].join(" ").trim().split(/\s+/).slice(0, 3).join(" ");
+  });
+  detail.querySelector("#btnContractAddressSearch")?.addEventListener("click", () => {
+    if (!window.daum?.Postcode) {
+      adminUtil.toast("다음 주소 검색을 불러오지 못했습니다", "error");
+      return;
+    }
+    new window.daum.Postcode({
+      oncomplete(data) {
+        const address = data.roadAddress || data.jibunAddress || "";
+        detail.querySelector("#editContractPostcode").value = data.zonecode || "";
+        detail.querySelector("#editContractAddress").value = address;
+        detail.querySelector("#editContractRegion").value = address.split(/\s+/).slice(0, 3).join(" ");
+        detail.querySelector("#editContractAddressDetail")?.focus();
+      },
+    }).open();
+  });
+  detail.querySelector("#btnSaveContract")?.addEventListener("click", () => saveContract(id));
   detail.querySelector("#btnContractCancel")?.addEventListener("click", () => {
     const panel = detail.querySelector("#contractPanel");
     if (!panel) return;
     panel.dataset.open = "0";
+    panel.dataset.release = "1";
     adminUtil.toast("계약 해제 상태입니다. 저장을 눌러야 반영됩니다.");
   });
   detail
@@ -1583,7 +1639,49 @@ async function openDetail(id) {
   // 메모 + 회차 + 방문 히스토리 병렬 로드
   if (!memoCache[id]) loadMemos(id);
   if (!historyCache[id]) loadHistory(id);
+  loadMeetingSettings().then(() => {
+    const typeSelect = detail.querySelector("#editConsultTypeId");
+    if (typeSelect) typeSelect.innerHTML = meetingTypeOptions(r.ConsultTypeId);
+  });
+  loadContractHistory(id);
   loadVisitHistory(id);
+}
+
+function contractHistoryHtml(records) {
+  if (!Array.isArray(records) || !records.length) return `<div class="est-contract-empty">아직 계약금 저장 이력이 없습니다.</div>`;
+  return `<ol class="est-contract-history-list">${records.map((item) => {
+    const delta = Number(item.amount || 0) - Number(item.previousAmount || 0);
+    const sign = delta >= 0 ? "+" : "−";
+    return `<li><div><b>${escapeHtml(item.stage || "협의")}</b><span>${escapeHtml(item.savedAtKst || fmtDateTime(item.savedAt))}</span></div><strong>${fmtInt(item.amount)}원</strong><small>${fmtInt(item.previousAmount)}원 → ${fmtInt(item.amount)}원 (${sign}${fmtInt(Math.abs(delta))}원) · ${escapeHtml(item.reason || "사유 미입력")} · ${escapeHtml(item.region || "지역 미입력")}</small></li>`;
+  }).join("")}</ol>`;
+}
+
+const contractHistoryState = {};
+const contractRequestState = {};
+
+function contractRequestKey() {
+  return window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function loadContractHistory(id, cursor = "") {
+  const slot = detail?.querySelector("#contractHistory");
+  if (!slot) return;
+  try {
+    const state = contractHistoryState[id] || { rows: [], cursor: "", hasMore: false };
+    const data = await adminUtil.api(`/api/estimates/${id}/contracts?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+    const rows = data?.records || data?.contracts || [];
+    state.rows = cursor ? [...state.rows, ...rows] : rows;
+    state.cursor = data?.nextCursor || "";
+    state.hasMore = Boolean(data?.hasMore && state.cursor);
+    contractHistoryState[id] = state;
+    slot.innerHTML = contractHistoryHtml(state.rows) + (state.hasMore ? `<button type="button" class="btn btn-ghost btn-sm est-contract-more" id="btnContractMore">이력 더보기</button>` : "");
+    slot.querySelector("#btnContractMore")?.addEventListener("click", () => loadContractHistory(id, state.cursor));
+    const region = rows[0]?.region;
+    const regionInput = detail?.querySelector("#editContractRegion");
+    if (regionInput && region && !regionInput.value) regionInput.value = region;
+  } catch (e) {
+    slot.innerHTML = `<div class="est-contract-empty">계약금 이력을 불러오지 못했습니다.</div>`;
+  }
 }
 
 const visitHistoryCache = {};
@@ -1637,6 +1735,70 @@ async function loadVisitHistory(id) {
   }
 }
 
+async function saveContract(id) {
+  const panel = detail?.querySelector("#contractPanel");
+  const btn = panel?.querySelector("#btnSaveContract");
+  if (!panel || !btn) return;
+  const amount = Number(panel.querySelector("#editContractAmount")?.value || 0);
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    adminUtil.toast("변경 후 총 계약금액을 입력하세요", "error");
+    return;
+  }
+  const record = records.find((item) => item.id === id) || {};
+  const request = contractRequestState[id] || { key: contractRequestKey(), expectedVersion: Number(record.ContractVersion || 0) };
+  contractRequestState[id] = request;
+  btn.disabled = true;
+  try {
+    await adminUtil.api(`/api/estimates/${id}/contracts`, {
+      method: "POST",
+      headers: { "Idempotency-Key": request.key },
+      json: {
+        amount,
+        reason: panel.querySelector("#editContractReason")?.value.trim() || "",
+        stage: panel.querySelector("#editContractStage")?.value.trim() || "협의",
+        contractDate: kstLocalToIso(panel.querySelector("#editContractAt")?.value) || new Date().toISOString(),
+        address: panel.querySelector("#editContractAddress")?.value.trim() || record.Address || "",
+        addressDetail: panel.querySelector("#editContractAddressDetail")?.value.trim() || record.AddressDetail || "",
+        region: panel.querySelector("#editContractRegion")?.value.trim() || "",
+        idempotencyKey: request.key,
+        expectedVersion: request.expectedVersion,
+      },
+    });
+    try {
+      const latest = await adminUtil.api(`/api/estimates/${id}`);
+      Object.assign(record, latest?.estimate || latest?.updated || latest || {});
+    } catch {
+      record.ContractVersion = request.expectedVersion + 1;
+    }
+    record.ContractAmount = amount;
+    const chip = panel.querySelector(".est-contract-chip");
+    if (chip) chip.textContent = record.Status === CONTRACT_STATUS ? `계약완료 · 현재 ${fmtInt(amount)}원` : `현재 ${fmtInt(amount)}원`;
+    const current = panel.querySelector(".est-contract-current b");
+    if (current) current.textContent = `${fmtInt(amount)}원`;
+    adminUtil.toast("계약금액 변경을 저장했습니다");
+    panel.querySelector("#editContractAmount").value = "";
+    panel.querySelector("#editContractReason").value = "";
+    delete contractRequestState[id];
+    await loadContractHistory(id);
+  } catch (e) {
+    if (String(e.message || "").toLowerCase().includes("changed")) {
+      try {
+        const latest = await adminUtil.api(`/api/estimates/${id}`);
+        Object.assign(record, latest?.estimate || latest?.updated || latest || {});
+        request.expectedVersion = Number(record.ContractVersion || request.expectedVersion);
+        await loadContractHistory(id);
+        adminUtil.toast("최신 계약금액을 다시 불러왔습니다. 같은 요청키로 재시도할 수 있습니다.", "error");
+      } catch {
+        adminUtil.toast("최신 계약금액을 불러오지 못했습니다", "error");
+      }
+    } else {
+      adminUtil.toast("계약금액 저장 실패: " + e.message, "error");
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function doPatch(id) {
   const btn = detail.querySelector("#btnPatch");
   btn.disabled = true;
@@ -1644,20 +1806,9 @@ async function doPatch(id) {
     Status: detail.querySelector("#editStatus").value,
     Assignee: detail.querySelector("#editAssignee").value.trim(),
   };
-  // 계약 패널이 펼쳐져 있으면 계약으로 저장한다. 상태 드롭다운에는 계약완료가
-  // 없으므로 여기서만 그 상태가 붙는다. 해제하면 접수 흐름으로 되돌린다.
   const contractPanel = detail.querySelector("#contractPanel");
   if (contractPanel) {
-    if (contractPanel.dataset.open === "1") {
-      const at = detail.querySelector("#editContractAt").value;
-      payload.Status = CONTRACT_STATUS;
-      payload.ContractAt = at ? new Date(at).toISOString() : "";
-      payload.ContractOwner = detail
-        .querySelector("#editContractOwner")
-        .value.trim();
-      payload.ContractAmount =
-        Number(detail.querySelector("#editContractAmount").value) || 0;
-    } else if (payload.Status === CONTRACT_STATUS) {
+    if (contractPanel.dataset.release === "1" && payload.Status === CONTRACT_STATUS) {
       // 계약을 해제했는데 상태가 계약완료로 남으면 집계가 어긋난다.
       payload.Status = "접수대기";
       payload.ContractAt = "";
@@ -1666,11 +1817,12 @@ async function doPatch(id) {
     }
   }
   const ca = detail.querySelector("#editContactedAt").value;
-  if (ca) payload.ContactedAt = new Date(ca).toISOString();
+  if (ca) payload.ContactedAt = kstLocalToIso(ca);
   // 예약을 지우는 것도 저장이라 빈 값이면 빈 문자열을 보낸다 — if 로 감싸면
   // 한 번 잡힌 예약을 화면에서 비워도 서버에 남는다.
   const consultAt = detail.querySelector("#editConsultAt").value;
-  payload.ConsultAt = consultAt ? new Date(consultAt).toISOString() : "";
+  payload.ConsultAt = consultAt ? kstLocalToIso(consultAt) : "";
+  payload.ConsultTypeId = detail.querySelector("#editConsultTypeId")?.value || "initial";
   payload.ConsultBranch = detail.querySelector("#editConsultBranch").value;
   try {
     const d = await adminUtil.api(`/api/estimates/${id}`, {

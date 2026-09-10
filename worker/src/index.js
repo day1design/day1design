@@ -1,4 +1,9 @@
 import { handleEstimates, runConsultReminders } from "./routes/estimates.js";
+import { handleMeetingSettings } from "./lib/admin-meetings.js";
+import { handleAdminDashboard } from "./routes/admin-dashboard.js";
+import { handleAdminKpi } from "./routes/admin-kpi.js";
+import { handleAdminKpiBatches } from "./routes/admin-kpi-batches.js";
+import { runAdminKpiBatch } from "./lib/admin-kpi-refresh.js";
 import { handleHero } from "./routes/hero.js";
 import { handlePopups } from "./routes/popups.js";
 import { handlePortfolio } from "./routes/portfolio.js";
@@ -46,6 +51,7 @@ import { createServices } from "./lib/services.js";
 import { accessDenied, authorizeRequest } from "./lib/access.js";
 import { queueAudit } from "./lib/audit-log.js";
 import { captureRejectedSubmission } from "./lib/estimate-archive.js";
+import { runAdminMeetingReminders } from "./lib/admin-meeting-notifications.js";
 
 const API_HOST = "api.day1design.co.kr";
 const WORKERS_DEV_HOST = "day1design-api.day1design-co.workers.dev";
@@ -203,6 +209,14 @@ async function handleApi(request, env, ctx, path) {
     } else {
       res = await handleEstimates(request, env, ctx, services);
     }
+  } else if (path === "/api/meeting-settings") {
+    res = await handleMeetingSettings(request, env);
+  } else if (path === "/api/admin/kpi/batches") {
+    res = await handleAdminKpiBatches(request, env);
+  } else if (path === "/api/admin/kpi") {
+    res = await handleAdminKpi(request, env, ctx, services);
+  } else if (path === "/api/admin/dashboard") {
+    res = await handleAdminDashboard(request, env, ctx, services);
   } else if (path.startsWith("/api/estimates")) {
     res = await handleEstimates(request, env, ctx, services);
   } else if (path.startsWith("/api/hero")) {
@@ -321,8 +335,14 @@ export default {
   //   "0 19 * * *" 매일 KST 04:00 — meta-ads sync + analytics snapshot + 풀 헬스점검(다이제스트)
   //   "0 * * * *"  매시간 정각 — 헬스 하트비트 점검(기록만, 오류 시 텔레그램). 전원 인디케이터용.
   async scheduled(event, env, ctx) {
+    if (event.cron === '* * * * *') {
+      ctx.waitUntil(runAdminMeetingReminders(env).catch(() => ({ skipped: "error" })));
+      return;
+    }
     const isDaily = event.cron === "0 19 * * *";
     const isQuarter = event.cron === "*/15 * * * *";
+    ctx.waitUntil(runAdminKpiBatch(env).catch(() => ({ skipped: "kpi_batch_error" })));
+    ctx.waitUntil(runAdminMeetingReminders(env).catch(() => ({ skipped: "error" })));
     // 🔴 상담 리마인드는 어느 회차든 먼저 돌린다. 발송 기록을 컬럼에 남기는
     // 멱등 동작이라 여러 번 불려도 중복 발송이 없다. 특정 cron 문자열이
     // 일치할 때만 돌리게 두면, 그 비교가 어긋나는 순간 알림이 영영 안 나간다

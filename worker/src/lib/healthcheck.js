@@ -326,11 +326,23 @@ const CHECK_DEFS = [
   { key: "leadpoll", label: "리드 폴러 생존", run: (env) => checkLeadPoller(env) },
 ];
 
-function rollup(results) {
+export function healthOverall(results) {
   const st = results.map((r) => r.status);
   if (st.includes("fail")) return "fail";
   if (st.includes("warn")) return "warn";
   return "ok";
+}
+
+export function isRetiredHealthCheck(result) {
+  const key = String(result?.key || "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+  const label = String(result?.label || "").toLowerCase();
+  return key.includes("sheet") || label.includes("google sheets") || label.includes("시트");
+}
+
+export function normalizeHealthResults(results) {
+  return (Array.isArray(results) ? results : []).filter(
+    (result) => !isRetiredHealthCheck(result),
+  );
 }
 
 // 점검 실행 + HealthChecks 기록. { overall, results, id } 반환.
@@ -349,7 +361,7 @@ export async function runHealthChecks(env, services, triggeredBy = "cron") {
     }
     results.push({ key: def.key, label: def.label, ...r });
   }
-  const overall = rollup(results);
+  const overall = healthOverall(results);
   const checkedAt = new Date().toISOString();
   let id = null;
   try {

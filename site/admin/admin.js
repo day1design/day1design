@@ -1,6 +1,62 @@
 // ========== 공통 어드민 유틸 ==========
 const API_BASE = (window.ADMIN_API_BASE || "").replace(/\/$/, "");
 const TOKEN_KEY = "day1_admin_token";
+const ADMIN_LOGO_SRC = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone.webp";
+const apiInflight = new Map();
+const apiControllers = new Set();
+const apiMetrics = { requests: 0, deduped: 0, completed: 0, failed: 0, totalMs: 0 };
+let loadingPending = 0;
+let loadingShowTimer = null;
+let authEpoch = 0;
+
+function ensureLoadingStyles() {
+  if (document.querySelector('link[data-admin-loading-style]')) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "admin-loading.css?v=20260910";
+  link.dataset.adminLoadingStyle = "true";
+  document.head.appendChild(link);
+}
+
+function ensureLoadingOverlay() {
+  if (document.getElementById("adminLoadingOverlay")) return;
+  ensureLoadingStyles();
+  const overlay = document.createElement("div");
+  overlay.id = "adminLoadingOverlay";
+  overlay.className = "admin-loading-overlay";
+  overlay.setAttribute("aria-live", "polite");
+  overlay.setAttribute("aria-busy", "false");
+  overlay.innerHTML = `<div class="admin-loading-card" role="status">
+    <img class="admin-loading-logo" src="${ADMIN_LOGO_SRC}" alt="데이원디자인" width="64" height="64" decoding="async">
+    <div class="admin-loading-title">DAYONE ADMIN</div>
+    <div class="admin-loading-status">불러오는 중</div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+function setLoadingPending(delta) {
+  loadingPending = Math.max(0, loadingPending + delta);
+  const overlay = document.getElementById("adminLoadingOverlay");
+  if (!overlay) return;
+  if (loadingPending > 0) {
+    if (!overlay.classList.contains("is-visible") && !loadingShowTimer) {
+      loadingShowTimer = window.setTimeout(() => {
+        loadingShowTimer = null;
+        if (loadingPending > 0) {
+          overlay.classList.add("is-visible");
+          overlay.setAttribute("aria-busy", "true");
+        }
+      }, 120);
+    }
+    return;
+  }
+  if (loadingShowTimer) {
+    window.clearTimeout(loadingShowTimer);
+    loadingShowTimer = null;
+  }
+  overlay.classList.remove("is-visible");
+  overlay.setAttribute("aria-busy", "false");
+}
 
 function getToken() {
   try {
@@ -11,17 +67,42 @@ function getToken() {
 }
 function setToken(t) {
   try {
+    const previous = localStorage.getItem(TOKEN_KEY) || "";
     localStorage.setItem(TOKEN_KEY, t);
+    if (previous !== t) resetSessionState();
   } catch {}
 }
 function clearToken() {
   try {
     localStorage.removeItem(TOKEN_KEY);
+    resetSessionState();
+  } catch {}
+}
+
+function resetSessionState() {
+  authEpoch += 1;
+  apiControllers.forEach((controller) => controller.abort());
+  apiInflight.clear();
+  try {
+    Object.keys(sessionStorage).forEach((key) => {
+      if (key.startsWith("admin_cache:")) sessionStorage.removeItem(key);
+    });
   } catch {}
 }
 
 async function api(path, opts = {}) {
+  const method = String(opts.method || "GET").toUpperCase();
+  const isGet = method === "GET" && opts.dedupe !== false && !opts.signal;
   const headers = new Headers(opts.headers || {});
+  const headerKey = [...headers.entries()]
+    .map(([name, value]) => `${name.toLowerCase()}:${value}`)
+    .sort()
+    .join("|");
+  const requestKey = isGet ? `${authEpoch}:${method}:${API_BASE + path}:${headerKey}` : "";
+  if (isGet && apiInflight.has(requestKey)) {
+    apiMetrics.deduped += 1;
+    return apiInflight.get(requestKey);
+  }
 
   let body = opts.body;
   if (opts.json !== undefined) {
@@ -35,31 +116,63 @@ async function api(path, opts = {}) {
     headers.set("authorization", "Bearer " + tok);
   }
 
-  const res = await fetch(API_BASE + path, {
-    method: opts.method || "GET",
-    headers,
-    body,
-    credentials: "include",
-  });
+  const controller = new AbortController();
+  const timeoutMs = opts.timeoutMs ?? (method === "GET" ? 15000 : 0);
+  const timeoutId = timeoutMs > 0 ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  apiControllers.add(controller);
+  const startedAt = performance.now();
+  const request = (async () => {
+    apiMetrics.requests += 1;
+    setLoadingPending(1);
+    let externalAbort;
+    try {
+      if (opts.signal) {
+        externalAbort = () => controller.abort();
+        if (opts.signal.aborted) controller.abort();
+        else opts.signal.addEventListener("abort", externalAbort, { once: true });
+      }
+      const res = await fetch(API_BASE + path, {
+        method,
+        headers,
+        body,
+        credentials: "include",
+        signal: controller.signal,
+      });
 
-  if (res.status === 401) {
-    clearToken();
-    if (!isLoginPage()) {
-      location.href =
-        "login?next=" + encodeURIComponent(location.pathname + location.search);
+      if (res.status === 401) {
+        clearToken();
+        if (!isLoginPage()) {
+          location.href =
+            "login?next=" + encodeURIComponent(location.pathname + location.search);
+        }
+        throw new Error("Unauthorized");
+      }
+      const text = await res.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {}
+      if (!res.ok) {
+        const err = (data && data.error) || `HTTP ${res.status}`;
+        throw new Error(err);
+      }
+      apiMetrics.completed += 1;
+      if (method !== "GET") cacheInvalidate();
+      return data;
+    } catch (error) {
+      apiMetrics.failed += 1;
+      throw error;
+    } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      apiControllers.delete(controller);
+      if (opts.signal && externalAbort) opts.signal.removeEventListener("abort", externalAbort);
+      apiMetrics.totalMs += performance.now() - startedAt;
+      setLoadingPending(-1);
+      if (isGet) apiInflight.delete(requestKey);
     }
-    throw new Error("Unauthorized");
-  }
-  const text = await res.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {}
-  if (!res.ok) {
-    const err = (data && data.error) || `HTTP ${res.status}`;
-    throw new Error(err);
-  }
-  return data;
+  })();
+  if (isGet) apiInflight.set(requestKey, request);
+  return request;
 }
 
 // ========== SESSION CACHE ==========
@@ -69,7 +182,7 @@ const CACHE_PREFIX = "admin_cache:";
 
 async function apiCached(path, opts = {}) {
   const ttl = opts.ttl ?? 30_000; // 기본 30초
-  const key = CACHE_PREFIX + path;
+  const key = `${CACHE_PREFIX}${authEpoch}:${path}`;
   try {
     const raw = sessionStorage.getItem(key);
     if (raw) {
@@ -92,7 +205,7 @@ function cacheInvalidate(pathPrefix) {
       });
       return;
     }
-    const full = CACHE_PREFIX + pathPrefix;
+    const full = CACHE_PREFIX + authEpoch + ":" + pathPrefix;
     Object.keys(sessionStorage).forEach((k) => {
       if (k.startsWith(full)) sessionStorage.removeItem(k);
     });
@@ -114,6 +227,7 @@ function apiUpload(path, formData) {
     }
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    cacheInvalidate();
     return data;
   });
 }
@@ -225,7 +339,7 @@ const MENU = [
   {
     nav: "calendar",
     href: "calendar",
-    label: "상담 캘린더",
+    label: "미팅 시간표",
     shortLabel: "캘린더",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>',
   },
@@ -235,6 +349,13 @@ const MENU = [
     label: "문자발송",
     shortLabel: "문자",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 1 1-3.06-6.3"/><path d="M21 4v5h-5"/><circle cx="8" cy="11" r=".7" fill="currentColor" stroke="none"/><circle cx="12" cy="11" r=".7" fill="currentColor" stroke="none"/><circle cx="16" cy="11" r=".7" fill="currentColor" stroke="none"/></svg>',
+  },
+  {
+    nav: "meeting-settings",
+    href: "meeting-settings",
+    label: "미팅 설정",
+    shortLabel: "미팅 설정",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.2-1.7l2-1.2-1.8-3.1-2.1 1a7 7 0 0 0-2.9-1.7V3h-3.6v2.3a7 7 0 0 0-2.9 1.7l-2.1-1-1.8 3.1 2 1.2A7 7 0 0 0 5.4 12c0 .6.1 1.2.2 1.7l-2 1.2 1.8 3.1 2.1-1a7 7 0 0 0 2.9 1.7V21H14v-2.3a7 7 0 0 0 2.9-1.7l2.1 1 1.8-3.1-2-1.2c.1-.5.2-1.1.2-1.7z"/></svg>',
   },
   {
     nav: "analytics",
@@ -256,6 +377,13 @@ const MENU = [
     label: "Meta 광고",
     shortLabel: "광고",
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 10v11"/><path d="M19 10v11"/><path d="M9 21V14h6v7"/><path d="M5 10l7-7 7 7"/></svg>',
+  },
+  {
+    nav: "kpi",
+    href: "kpi",
+    label: "KPI",
+    shortLabel: "KPI",
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5"/><path d="M4 19h17"/><path d="M7 15l3-4 3 2 5-7"/><circle cx="18" cy="6" r="1" fill="currentColor" stroke="none"/></svg>',
   },
   {
     nav: "search-trends",
@@ -300,6 +428,15 @@ const MENU = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2-5 4 11 2-6h6"/></svg>',
   },
 ];
+const ANALYTICS_MENU_ORDER = ["analytics", "meta-ads", "kpi", "estimates"];
+MENU.sort((a, b) => {
+  const ai = ANALYTICS_MENU_ORDER.indexOf(a.nav);
+  const bi = ANALYTICS_MENU_ORDER.indexOf(b.nav);
+  if (ai === -1 && bi === -1) return 0;
+  if (ai === -1) return 1;
+  if (bi === -1) return -1;
+  return ai - bi;
+});
 
 function renderSidebar(currentNav) {
   const sidebar = document.getElementById("adminSidebar");
@@ -475,6 +612,7 @@ function bootstrap() {
   // 응답이 새 데이터/필터를 가리던 사고 차단. apiCached 는 페이지 내 빠른
   // 재호출만 절감하고, 새 페이지 진입 = 신선한 데이터 보장.
   cacheInvalidate();
+  if (!isLoginPage()) ensureLoadingOverlay();
   initShell();
   if (!isLoginPage()) {
     // 토큰이 있으면 인증 왕복(/api/auth/me, 크로스오리진 ~200ms+)을 기다리지 않고
@@ -772,4 +910,5 @@ window.adminUtil = {
   initDragSort,
   escapeHtml,
   API_BASE,
+  getApiMetrics: () => ({ ...apiMetrics, inflight: apiInflight.size, loadingPending }),
 };

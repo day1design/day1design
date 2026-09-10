@@ -63,3 +63,9 @@ _fav_tmp/
 **/signingkey*
 
 **/*.pem
+
+# Private runtime configuration
+.dev.vars
+.dev.vars.*
+.wrangler/
+*.log

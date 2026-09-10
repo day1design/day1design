@@ -5,24 +5,6 @@
 (function () {
   const $ = (id) => document.getElementById(id);
 
-  async function loadCount(path, id, key = "records") {
-    try {
-      const d = await adminUtil.apiCached(path, { ttl: 60_000 });
-      let n = null;
-      if (Array.isArray(d?.[key])) n = d[key].length;
-      else if (Array.isArray(d?.records)) n = d.records.length;
-      else if (Array.isArray(d?.posts)) n = d.posts.length;
-      else if (Array.isArray(d?.slides)) n = d.slides.length;
-      else if (typeof d?.total === "number") n = d.total;
-      const el = $(id);
-      if (el) el.textContent = n !== null ? n.toLocaleString("ko-KR") : "—";
-    } catch (e) {
-      console.warn(`[dashboard] loadCount failed: ${path}`, e);
-      const el = $(id);
-      if (el) el.textContent = "—";
-    }
-  }
-
   // 유입 요약 — GA4 summary 가져와 4종 KPI 표시
   async function renderAnalyticsSummary() {
     const setLoading = () => {
@@ -60,27 +42,15 @@
 
   async function loadSubmissionSummary() {
     try {
-      const d = await adminUtil.apiCached("/api/estimates", { ttl: 60_000 });
-      const all = Array.isArray(d?.records) ? d.records : [];
-      $("statEstimates").textContent = all.length.toLocaleString("ko-KR");
-
-      const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      let total = 0,
-        meta = 0,
-        home = 0,
-        pending = 0;
-      for (const r of all) {
-        const t = Date.parse(r.SubmittedAt || "");
-        if (isNaN(t) || t < since) continue;
-        total++;
-        if ((r.Source || "").toLowerCase() === "meta") meta++;
-        else home++;
-        if ((r.Status || "접수대기") === "접수대기") pending++;
+      const d = await adminUtil.api('/api/admin/dashboard');
+      const counts = d.counts || {};
+      for (const [id, key] of [['statEstimates','estimates'],['statHero','hero'],['statPortfolio','portfolio'],['statCommunity','community']]) {
+        if ($(id)) $(id).textContent = Number(counts[key] || 0).toLocaleString('ko-KR');
       }
-
+      const {total=0,meta=0,home=0,pending=0}=d.submissions || {};
       $("dashSubTotal").textContent = total.toLocaleString("ko-KR");
       $("dashSubTotalAll").textContent =
-        `전체 ${all.length.toLocaleString("ko-KR")}건`;
+        `전체 ${Number(counts.estimates || 0).toLocaleString("ko-KR")}건`;
       $("dashSubHomepage").textContent = home.toLocaleString("ko-KR");
       $("dashSubHomepageRatio").textContent =
         total > 0 ? `${Math.round((home / total) * 100)}%` : "—";
@@ -89,7 +59,7 @@
         total > 0 ? `${Math.round((meta / total) * 100)}%` : "—";
       $("dashSubPending").textContent = pending.toLocaleString("ko-KR");
 
-      renderRecentList(all);
+      renderRecentList(Array.isArray(d.recent) ? d.recent : []);
     } catch (e) {
       console.warn("[dashboard] estimates load failed", e);
       [
@@ -120,8 +90,8 @@
     }
     tbody.innerHTML = sorted
       .map((r) => {
-        const d = new Date(r.SubmittedAt);
-        const date = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        const d = new Date(Date.parse(r.SubmittedAt) + 9 * 3600000);
+        const date = `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
         const name = adminUtil.escapeHtml(r.Name || "-");
         const src = (r.Source || "").toLowerCase() === "meta" ? "Meta" : "홈";
         const status = adminUtil.escapeHtml(r.Status || "접수대기");
@@ -141,9 +111,6 @@
       return;
     }
     renderAnalyticsSummary();
-    loadCount("/api/hero/slides", "statHero", "slides");
-    loadCount("/api/portfolio", "statPortfolio", "records");
-    loadCount("/api/community", "statCommunity", "posts");
     loadSubmissionSummary();
   }
 

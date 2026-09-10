@@ -141,3 +141,13 @@ test("[guard] meta-lead 하위 서버-서버 경로는 Origin 없이 통과한�
     assert.equal(access.rule.role, "integration", path);
   }
 });
+
+test("KPI and meeting dashboard routes retain administrator origin boundaries", () => {
+  for (const path of ["/api/admin/kpi", "/api/admin/kpi/batches", "/api/admin/dashboard", "/api/meeting-settings"]) {
+    const request = origin => new Request(`https://api.example.test${path}`, {headers: origin ? {origin} : {}});
+    assert.equal(classifyAccess(request()).role, "admin");
+    assert.equal(authorizeRequest(request("https://admin.day1design.co.kr"), env).ok, true);
+    assert.equal(authorizeRequest(request("https://day1design.co.kr"), env).ok, false);
+    assert.equal(authorizeRequest(request(), env).ok, false);
+  }
+});

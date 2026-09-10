@@ -95,6 +95,30 @@
       return null;
     }
   }
+  function isRetiredHealthCheck(r) {
+    const key = String(r?.key || "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+    const label = String(r?.label || "").toLowerCase();
+    return key.includes("sheet") || label.includes("google sheets") || label.includes("시트");
+  }
+  function normalizeHealthSummary(summary) {
+    if (!summary || !Array.isArray(summary.results)) return summary;
+    const results = summary.results.filter((r) => !isRetiredHealthCheck(r));
+    if (results.length === summary.results.length) return summary;
+    const statuses = results.map((r) => r.status);
+    const overall = statuses.includes("fail")
+      ? "fail"
+      : statuses.includes("warn")
+        ? "warn"
+        : "ok";
+    return Object.assign({}, summary, { results, overall });
+  }
+  function normalizeHealthPayload(payload) {
+    if (!payload) return payload;
+    return Object.assign({}, payload, {
+      latest: normalizeHealthSummary(payload.latest),
+      history: (payload.history || []).map(normalizeHealthSummary),
+    });
+  }
   function writeSnap(patch) {
     try {
       const cur = readSnap() || {};
@@ -406,9 +430,10 @@
   async function loadHealth() {
     try {
       const r = await api("/api/admin/health");
-      renderPower(r.latest);
-      renderLatest(r.latest, r.history);
-      writeSnap({ health: { latest: r.latest, history: r.history } });
+      const health = normalizeHealthPayload(r);
+      renderPower(health.latest);
+      renderLatest(health.latest, health.history);
+      writeSnap({ health });
     } catch {
       setPower("off", "확인 실패", "점검 데이터를 불러오지 못했습니다", "—");
       $("hcCards").innerHTML =
@@ -456,8 +481,10 @@
   const snap = readSnap();
   if (snap) {
     if (snap.health) {
-      renderPower(snap.health.latest);
-      renderLatest(snap.health.latest, snap.health.history);
+      const health = normalizeHealthPayload(snap.health);
+      renderPower(health.latest);
+      renderLatest(health.latest, health.history);
+      writeSnap({ health });
     }
     if (snap.events) {
       allEvents = snap.events;

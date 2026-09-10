@@ -7,19 +7,27 @@
 import { jsonOk, jsonError } from "../lib/response.js";
 import { verifyAdmin, timingSafeEqual } from "../lib/auth.js";
 import { createServices } from "../lib/services.js";
-import { runAndReportHealth } from "../lib/healthcheck.js";
+import {
+  healthOverall,
+  normalizeHealthResults,
+  runAndReportHealth,
+} from "../lib/healthcheck.js";
 
 function parseResults(row) {
   let results = [];
   try {
     results = JSON.parse(row.fields.Results || "[]");
   } catch {}
+  const normalized = normalizeHealthResults(results);
   return {
     id: row.id,
     checkedAt: row.fields.CheckedAt || "",
-    overall: row.fields.Overall || "ok",
+    overall:
+      normalized.length !== results.length
+        ? healthOverall(normalized)
+        : row.fields.Overall || "ok",
     triggeredBy: row.fields.TriggeredBy || "cron",
-    results,
+    results: normalized,
   };
 }
 

@@ -1,0 +1,130 @@
+.nd-inline-edit {
+  margin-left: auto;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.est-contract-entry-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.est-contract-entry-grid .field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.est-contract-entry-grid input,
+.est-contract-address-grid input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.est-contract-entry-grid .field span {
+  color: var(--c-text-sub);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.est-contract-address-grid {
+  display: grid;
+  grid-template-columns: minmax(70px, 92px) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.est-contract-address-grid .field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.est-contract-address-grid .field span {
+  color: var(--c-text-sub);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.est-contract-more {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.est-contract-current {
+  margin: 10px 0 8px;
+  color: var(--c-text-sub);
+  font-size: 12px;
+}
+
+.est-contract-current b {
+  color: var(--c-text);
+  font-size: 14px;
+}
+
+.est-contract-history {
+  border-top: 1px solid var(--c-border);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.est-contract-history-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.est-contract-history-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: #fafbfc;
+}
+
+.est-contract-history-list li > div {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.est-contract-history-list li span,
+.est-contract-history-list li small {
+  color: var(--c-text-muted);
+  font-size: 11px;
+}
+
+.est-contract-history-list li strong {
+  color: var(--c-text);
+  font-size: 13px;
+}
+
+.est-contract-history-list li small {
+  grid-column: 1 / -1;
+}
+
+.est-contract-empty {
+  color: var(--c-text-muted);
+  font-size: 12px;
+  padding: 6px 0;
+}
+
+@media (max-width: 680px) {
+  .est-contract-entry-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .est-contract-address-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

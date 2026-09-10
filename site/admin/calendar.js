@@ -1,4 +1,4 @@
-/* 상담 캘린더 — 예약 일시가 잡힌 접수를 월 단위로 본다.
+/* 미팅 캘린더 — 예약 일시가 잡힌 접수를 KST 주간 시간표로 본다.
    데이터 원본은 Estimates 하나뿐이다(별도 일정 테이블 없음) — 동기화 코드가
    없다. 취소는 삭제가 아니라 표시다: ConsultCancelledAt 만 적고 일정과 접수는
    그대로 남는다. 변경 이력은 감사 로그(D1 메타 + R2 원문)에 영속된다. */
@@ -7,7 +7,7 @@
   const $ = (id) => document.getElementById(id);
 
   const KST = 9 * 3600 * 1000;
-  const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+  const DOW = ["월", "화", "수", "목", "금", "토", "일"];
   const pad = (n) => String(n).padStart(2, "0");
 
   // 지점 → 색 클래스. 화상 상담은 쓰지 않는다(2026-09-03 제외).
@@ -27,7 +27,7 @@
   const DIM_STATUS = ["진행불가 (예산/범위/지역/일정등)", "전화상담 후 미진행"];
 
   const state = {
-    ym: "", // 보고 있는 달 (KST 기준 YYYY-MM)
+    weekStart: "",
     selected: "", // 선택한 날짜 (KST 기준 YYYY-MM-DD)
     records: [], // 격자에 그릴 그 달 예약
     // '다가오는 상담'은 보고 있는 달과 따로 둔다. 달을 넘겨 보는 중에도
@@ -35,8 +35,13 @@
     upcoming: [],
     hidden: new Set(), // 필터에서 끈 지점
     loading: false,
+    truncated: false,
+    selectedRecordId: "",
+    loadVersion: 0,
   };
   const UPCOMING_DAYS = 90;
+  const isMobileCalendar = () => window.matchMedia?.('(max-width: 640px)').matches;
+  const visibleDays = () => (isMobileCalendar() ? 3 : 7);
 
   /* ---------- KST 시각 계산 ----------
      ConsultAt 은 ISO(UTC)로 저장된다. 화면은 전부 KST 로 읽어야 하므로
@@ -64,6 +69,12 @@
     const [y, m, d] = ymd.split("-").map(Number);
     return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
   }
+  function mondayOffset(date) {
+    return (date.getUTCDay() + 6) % 7;
+  }
+  function weekdayIndex(date) {
+    return mondayOffset(date);
+  }
   function ddayOf(ymd) {
     const diff = dayIndex(ymd) - dayIndex(todayKst());
     if (diff === 0) return { label: "오늘", cls: "today", diff };
@@ -72,12 +83,11 @@
     return { label: `${-diff}일 전`, cls: "", diff };
   }
 
-  // KST 기준 그 달의 시작·끝을 ISO(UTC)로 바꾼다. 서버는 문자열 비교만 한다.
-  function monthRange(ym) {
-    const [y, m] = ym.split("-").map(Number);
+  function weekRange(start, span = 7) {
+    const [y, m, d] = start.split("-").map(Number);
     return {
-      from: new Date(Date.UTC(y, m - 1, 1) - KST).toISOString(),
-      to: new Date(Date.UTC(y, m, 1) - KST).toISOString(),
+      from: new Date(Date.UTC(y, m - 1, d) - KST).toISOString(),
+      to: new Date(Date.UTC(y, m - 1, d + span) - KST).toISOString(),
     };
   }
 
@@ -107,9 +117,11 @@
     const out = [];
     const seen = new Set();
     let cursor = "";
-    for (let guard = 0; guard < 20; guard++) {
+    let truncated = false;
+    for (let guard = 0; guard < 5; guard++) {
       const qs =
         `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` +
+        `&limit=200` +
         (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "") +
         (fresh ? "&fresh=1" : "");
       const res = await api(`/api/estimates/calendar?${qs}`);
@@ -121,38 +133,44 @@
       }
       if (!res || !res.nextCursor || res.nextCursor === cursor) break;
       cursor = res.nextCursor;
+      if (guard === 4) truncated = true;
     }
-    return out;
+    return { records: out, truncated };
   }
 
   async function load(fresh) {
-    if (state.loading) return;
+    const requestVersion = ++state.loadVersion;
+    const requestedStart = state.weekStart;
     state.loading = true;
-    const { from, to } = monthRange(state.ym);
+    const { from, to } = weekRange(requestedStart, visibleDays());
     try {
-      state.records = await fetchRange(from, to, fresh);
+      const result = await fetchRange(from, to, fresh);
+      if (requestVersion !== state.loadVersion || requestedStart !== state.weekStart) return;
+      state.records = result.records;
+      state.truncated = result.truncated;
     } catch {
+      if (requestVersion !== state.loadVersion || requestedStart !== state.weekStart) return;
       state.records = [];
       toast("상담 일정을 불러오지 못했습니다");
     } finally {
-      state.loading = false;
+      if (requestVersion === state.loadVersion) state.loading = false;
     }
     render();
   }
 
-  // 이번 주 일요일 00:00(KST)부터 90일. 달을 넘겨 봐도 이 목록은 그대로 남는다.
+  // 이번 주 월요일 00:00(KST)부터 90일. 달을 넘겨 봐도 이 목록은 그대로 남는다.
   // 시작을 오늘이 아니라 주 첫날로 잡아야 '이번 주' 집계에 주 초반이 들어간다
   // (목록 자체는 아래에서 오늘 이후만 추린다).
   async function loadUpcoming(fresh) {
     const t = todayKst();
     const [y, m, d] = t.split("-").map(Number);
-    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    const dow = mondayOffset(new Date(Date.UTC(y, m - 1, d)));
     const from = new Date(Date.UTC(y, m - 1, d - dow) - KST).toISOString();
     const to = new Date(
       Date.UTC(y, m - 1, d + UPCOMING_DAYS) - KST,
     ).toISOString();
     try {
-      state.upcoming = await fetchRange(from, to, fresh);
+      state.upcoming = (await fetchRange(from, to, fresh)).records;
     } catch {
       state.upcoming = [];
     }
@@ -199,8 +217,8 @@
 
   function renderSummary() {
     const ti = dayIndex(todayKst());
-    // 이번 주는 일요일 시작으로 센다(캘린더 격자와 같은 기준)
-    const weekStart = ti - new Date(Date.now() + KST).getUTCDay();
+    // 이번 주는 월요일 시작으로 센다(주간 시간표와 같은 기준)
+    const weekStart = ti - mondayOffset(new Date(Date.now() + KST));
     const weekEnd = weekStart + 6;
 
     // 오늘·이번 주는 보고 있는 달과 무관하다 → upcoming 으로 센다.
@@ -220,13 +238,12 @@
     // 아래 둘은 지금 보고 있는 달의 값이다. 다른 달을 넘겨 봤을 때
     // '이번 달'이라고 적혀 있으면 오해하므로 라벨에 달을 박는다.
     const shown = state.records.filter((r) => visible(r) && !isCancelled(r));
-    const monthNo = Number(state.ym.split("-")[1]);
     const contractN = shown.filter((r) => r.status === "계약완료").length;
 
     $("ccToday").innerHTML = `${todayN}<small>건</small>`;
     $("ccWeek").innerHTML = `${weekN}<small>건</small>`;
-    $("ccMonthLabel").textContent = `${monthNo}월 상담`;
-    $("ccContractLabel").textContent = `${monthNo}월 계약 전환`;
+    $("ccMonthLabel").textContent = "이번 주 미팅";
+    $("ccContractLabel").textContent = "이번 주 계약 전환";
     $("ccMonth").innerHTML = `${shown.length}<small>건</small>`;
     $("ccContract").innerHTML = `${contractN}<small>건</small>`;
   }
@@ -246,72 +263,87 @@
   }
 
   function renderGrid() {
-    const [y, m] = state.ym.split("-").map(Number);
-    $("ccLabel").textContent = `${y}. ${pad(m)}`;
-    const map = byDay();
-    const today = todayKst();
-    const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
-    const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const prevDays = new Date(Date.UTC(y, m - 1, 0)).getUTCDate();
-    // 모바일에서는 칩이 두 줄이라 3건까지 넣으면 셀이 지나치게 길어진다
-    const maxChips = window.matchMedia("(max-width: 640px)").matches ? 2 : 3;
-
-    let html = "";
-    for (let i = first - 1; i >= 0; i--) {
-      html += `<div class="cc-cell other"><span class="d">${prevDays - i}</span></div>`;
+    const [y, m, d] = state.weekStart.split("-").map(Number);
+    const days = visibleDays();
+    const dates = Array.from({ length: days }, (_, i) => new Date(Date.UTC(y, m - 1, d + i)).toISOString().slice(0, 10));
+    $("ccLabel").textContent = `${dates[0].replaceAll("-", ".")} – ${dates[days - 1].slice(5).replace("-", ".")}`;
+    const grid = $("ccGrid");
+    grid.replaceChildren();
+    const limitNotice = $("ccLimitNotice");
+    limitNotice.hidden = !state.truncated;
+    limitNotice.textContent = state.truncated ? "예약이 많아 일부 일정만 표시됩니다. 조회 범위를 줄인 뒤 예약을 진행해 주세요." : "";
+    const corner = document.createElement("div");
+    corner.className = "cc-week-day";
+    corner.textContent = "KST";
+    grid.append(corner);
+    dates.forEach((date) => {
+      const head = document.createElement("div");
+      head.className = `cc-week-day${date === todayKst() ? " today" : ""}`;
+      const [, mm, dd] = date.split("-");
+      head.textContent = `${mm}/${dd} ${DOW[weekdayIndex(new Date(`${date}T00:00:00Z`))]}`;
+      grid.append(head);
+    });
+    for (let hour = 10; hour < 23; hour += 1) {
+      const label = document.createElement("div");
+      label.className = "cc-week-hour";
+      label.style.gridRow = String(hour - 8);
+      label.textContent = `${hour}:00`;
+      grid.append(label);
+      dates.forEach((date, index) => {
+        const slot = document.createElement("button");
+        slot.type = "button";
+        slot.className = `cc-week-slot${hour > 19 ? " late" : ""}`;
+        slot.style.gridColumn = String(index + 2);
+        slot.style.gridRow = String(hour - 8);
+        slot.disabled = hour > 19 || state.truncated;
+        slot.setAttribute("aria-label", `${date} ${hour}:00${hour > 19 ? " 시작 불가" : " 예약 선택"}`);
+        slot.onclick = () => { state.selected = date; state.selectedRecordId = ""; renderSelected(); };
+        grid.append(slot);
+      });
     }
-    for (let d = 1; d <= days; d++) {
-      const ymd = `${y}-${pad(m)}-${pad(d)}`;
-      const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-      const items = map.get(ymd) || [];
-      const cls = [
-        "cc-cell",
-        dow === 0 ? "sun" : "",
-        dow === 6 ? "sat" : "",
-        ymd === today ? "today" : "",
-        ymd === state.selected ? "sel" : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      const chips = items
-        .slice(0, maxChips)
-        .map((r) => {
-          // 취소는 회색 취소선으로 남긴다 — 지우지 않는다
-          const cls = isCancelled(r)
-            ? "cancelled"
-            : classOf(r) + (DIM_STATUS.includes(r.status) ? " dim" : "");
-          return (
-            `<span class="cc-ev ${cls}">` +
-            `<span class="t">${kstTimeStr(r.consultAt)}</span>${escapeHtml(r.name || "이름 없음")}</span>`
-          );
-        })
-        .join("");
-      const more =
-        items.length > maxChips
-          ? `<span class="cc-more">＋${items.length - maxChips}건</span>`
-          : "";
-      html += `<button type="button" class="${cls}" data-ymd="${ymd}"><span class="d">${d}</span>${chips}${more}</button>`;
-    }
-    // 마지막 주를 7칸으로 채운다
-    const filled = first + days;
-    const tail = (7 - (filled % 7)) % 7;
-    for (let i = 1; i <= tail; i++) {
-      html += `<div class="cc-cell other"><span class="d">${i}</span></div>`;
-    }
-    $("ccGrid").innerHTML = html;
-    $("ccGrid")
-      .querySelectorAll("[data-ymd]")
-      .forEach((el) =>
-        el.addEventListener("click", () => {
-          state.selected = el.dataset.ymd;
-          render();
-        }),
-      );
+    state.records.forEach((r) => {
+      const date = kstDateStr(r.consultAt);
+      const index = dates.indexOf(date);
+      if (index < 0 || !visible(r)) return;
+      const hour = Number(kstTimeStr(r.consultAt).slice(0, 2));
+      if (hour < 10 || hour > 22) return;
+      const legacy = !r.consultTypeId || r.consultTypeId === "legacy";
+      const type = legacy ? "기존 미팅 · 유형 확인 필요" : String(r.consultTypeName || r.consultType || r.meetingType || "이니셜미팅");
+      const duration = Number(r.consultDurationMinutes || r.durationMinutes || (type.includes("디자인") ? 180 : 120)) / 60;
+      const event = document.createElement("button");
+      event.type = "button";
+      event.className = `cc-week-event${type.includes("디자인") ? " design" : ""}${legacy ? " legacy" : ""}${isCancelled(r) ? " cancelled" : ""}`;
+      const meetingColor = ({blue:"#1d4ed8",green:"#167044",purple:"#6d28d9",orange:"#b45309",pink:"#be185d",teal:"#0f766e"}[r.consultColorKey] || "#1d4ed8");
+      event.style.borderLeftColor = meetingColor;
+      event.style.setProperty("--meeting-color", meetingColor);
+      event.style.gridColumn = String(index + 2);
+      event.style.gridRow = `${hour - 8} / span ${Math.max(1, Math.ceil(duration))}`;
+      const endHour = hour + Math.ceil(duration);
+      const customerLabel = `${r.name || "이름 없음"}${r.assignee ? `(${r.assignee})` : ""}`;
+      event.innerHTML = `<strong>${escapeHtml(type)}</strong><span class="cc-week-time">${pad(hour)}:00–${pad(endHour)}:00</span><span class="cc-week-customer">${escapeHtml(customerLabel)}</span>`;
+      event.onclick = (e) => { e.stopPropagation(); state.selected = date; state.selectedRecordId = r.id; renderSelected(); };
+      grid.append(event);
+      if (isCancelled(r)) return;
+      const buffer = document.createElement("button");
+      buffer.type = "button";
+      buffer.className = "cc-week-event buffer";
+      buffer.style.gridColumn = String(index + 2);
+      buffer.style.gridRow = `${hour - 8 + Math.ceil(duration)} / span 1`;
+      const bufferMinutes = Number(r.consultBufferMinutes ?? r.ConsultBufferMinutes ?? 60);
+      if (bufferMinutes <= 0) return;
+      buffer.textContent = "여유 1시간";
+      buffer.setAttribute("aria-label", `${r.name || "예약"} 여유시간 삭제`);
+      buffer.onclick = (e) => { e.stopPropagation(); openBufferDialog(r); };
+      grid.append(buffer);
+    });
   }
 
   function renderSelected() {
     const ymd = state.selected;
-    const items = (byDay().get(ymd) || []).slice();
+    const allItems = (byDay().get(ymd) || []).slice();
+    const items = state.selectedRecordId
+      ? allItems.filter((r) => r.id === state.selectedRecordId)
+      : allItems;
     if (!ymd) {
       $("ccSelDate").textContent = "날짜를 선택하세요";
       $("ccSelCount").textContent = "";
@@ -320,7 +352,7 @@
       return;
     }
     const [y, m, d] = ymd.split("-").map(Number);
-    const dow = DOW[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+    const dow = DOW[weekdayIndex(new Date(Date.UTC(y, m - 1, d)))];
     const dd = ddayOf(ymd);
     $("ccSelDate").textContent = `${m}월 ${d}일 (${dow})`;
     $("ccSelCount").textContent = items.length
@@ -363,6 +395,7 @@
             <a class="btn btn-ghost" href="estimates?id=${encodeURIComponent(r.id)}">접수 상세</a>
             ${r.phone ? `<a class="btn btn-ghost" href="tel:${encodeURIComponent(r.phone)}">전화 걸기</a>` : ""}
             <button class="btn btn-ghost" type="button" data-cancel="${escapeHtml(r.id)}">${cancelled ? "취소 해제" : "예약 취소"}</button>
+            ${Number(r.consultBufferMinutes ?? r.ConsultBufferMinutes ?? 60) <= 0 ? `<button class="btn btn-ghost" type="button" data-buffer-restore="${escapeHtml(r.id)}">여유 1시간 복원</button>` : ""}
           </div>
         </div>`;
       })
@@ -372,6 +405,11 @@
       .querySelectorAll("[data-cancel]")
       .forEach((el) =>
         el.addEventListener("click", () => toggleCancel(el.dataset.cancel)),
+      );
+    $("ccSelList")
+      .querySelectorAll("[data-buffer-restore]")
+      .forEach((el) =>
+        el.addEventListener("click", () => setBuffer(el.dataset.bufferRestore, 60)),
       );
   }
 
@@ -395,7 +433,7 @@
       .map((r) => {
         const ymd = kstDateStr(r.consultAt);
         const [yy, m, d] = ymd.split("-").map(Number);
-        const dow = DOW[new Date(Date.UTC(yy, m - 1, d)).getUTCDay()];
+        const dow = DOW[weekdayIndex(new Date(Date.UTC(yy, m - 1, d)))];
         const dd = ddayOf(ymd);
         // 취소된 예약도 목록에 남긴다. 지우면 "취소된 줄 모르고" 나가게 된다.
         const cancelled = isCancelled(r);
@@ -439,25 +477,91 @@
       });
       toast(cancelled ? "예약을 되살렸습니다" : "예약을 취소로 표시했습니다");
       await Promise.all([load(true), loadUpcoming(true)]);
-    } catch {
-      toast(cancelled ? "되살리지 못했습니다" : "취소하지 못했습니다");
+    } catch (error) {
+      toast(error?.message === "HTTP 409" ? "다른 예약과 겹쳐 복원할 수 없습니다" : cancelled ? "되살리지 못했습니다" : "취소하지 못했습니다");
     }
   }
 
-  /* ---------- 월 이동 ---------- */
+  function openBufferDialog(r) {
+    document.querySelector(".cc-buffer-dialog")?.remove();
+    const dialog = document.createElement("div");
+    dialog.className = "cc-buffer-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.innerHTML = `<div class="cc-buffer-dialog-card">
+      <h3>여유시간 관리</h3>
+      <p>${escapeHtml(r.name || "이 고객")} · 미팅 후 1시간을 비워 두고 있습니다.</p>
+      <div class="cc-buffer-dialog-actions">
+        <button type="button" class="btn btn-ghost" data-buffer-close>닫기</button>
+        <button type="button" class="btn btn-primary" data-buffer-delete>여유시간 삭제</button>
+      </div>
+    </div>`;
+    document.body.append(dialog);
+    dialog.querySelector("[data-buffer-close]").onclick = () => dialog.remove();
+    dialog.querySelector("[data-buffer-delete]").onclick = () => {
+      dialog.remove();
+      setBuffer(r.id, 0);
+    };
+  }
+
+  async function setBuffer(id, minutes) {
+    try {
+      await api(`/api/estimates/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        json: { ConsultBufferMinutes: minutes },
+      });
+      toast(minutes ? "여유시간을 복원했습니다" : "여유시간을 삭제했습니다");
+      await Promise.all([load(true), loadUpcoming(true)]);
+    } catch (error) {
+      const detail = String(error?.message || "").toLowerCase();
+      toast(detail.includes("409") || detail.includes("conflict") || detail.includes("overlap") || detail.includes("겹") ? "다른 예약과 겹쳐 여유시간을 복원할 수 없습니다" : minutes ? "여유시간을 복원하지 못했습니다" : "여유시간을 삭제하지 못했습니다");
+    }
+  }
+
   function shiftMonth(delta) {
-    const [y, m] = state.ym.split("-").map(Number);
-    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-    state.ym = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`;
-    // 다른 달로 넘어가면 선택은 지운다(그 달에 없는 날짜가 선택된 채 남지 않게)
-    state.selected = "";
+    const [y, m, d] = state.weekStart.split("-").map(Number);
+    const next = new Date(Date.UTC(y, m - 1, d + delta * (isMobileCalendar() ? 3 : 7)));
+    state.weekStart = next.toISOString().slice(0, 10);
+    state.selected = state.weekStart;
+    state.selectedRecordId = "";
     load();
   }
   function goToday() {
     const t = todayKst();
-    state.ym = t.slice(0, 7);
+    const [y, m, d] = t.split("-").map(Number);
+    const monday = new Date(Date.UTC(y, m - 1, d - mondayOffset(new Date(Date.UTC(y, m - 1, d)))));
+    const startOffset = isMobileCalendar() ? Math.floor(mondayOffset(new Date(Date.UTC(y, m - 1, d))) / 3) * 3 : 0;
+    state.weekStart = new Date(Date.UTC(y, m - 1, d - mondayOffset(new Date(Date.UTC(y, m - 1, d))) + startOffset)).toISOString().slice(0, 10);
     state.selected = t;
+    state.selectedRecordId = "";
     load();
+  }
+
+  function bindMobileSwipe() {
+    const cal = $("ccGrid")?.parentElement;
+    if (!cal) return;
+    let start = null;
+    let suppressClickUntil = 0;
+    cal.addEventListener("pointerdown", (event) => {
+      if (!isMobileCalendar()) return;
+      start = { x: event.clientX, y: event.clientY };
+    });
+    cal.addEventListener("pointerup", (event) => {
+      if (!start || !isMobileCalendar()) return;
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      start = null;
+      if (Math.abs(dx) < 45 || Math.abs(dx) <= Math.abs(dy)) return;
+      suppressClickUntil = Date.now() + 400;
+      shiftMonth(dx < 0 ? 1 : -1);
+    });
+    cal.addEventListener("pointercancel", () => { start = null; });
+    cal.addEventListener("click", (event) => {
+      if (Date.now() < suppressClickUntil) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
   }
 
   /* ---------- 시작 ---------- */
@@ -467,11 +571,17 @@
     // 그 날짜의 달을 열고 해당 날짜를 펼쳐 준다.
     const want = new URLSearchParams(location.search).get("date") || "";
     const valid = /^\d{4}-\d{2}-\d{2}$/.test(want) ? want : "";
-    state.ym = (valid || t).slice(0, 7);
+    const base = valid || t;
+    const [y, m, d] = base.split("-").map(Number);
+    const offset = mondayOffset(new Date(Date.UTC(y, m - 1, d)));
+    const pageOffset = isMobileCalendar() ? Math.floor(offset / 3) * 3 : 0;
+    state.weekStart = new Date(Date.UTC(y, m - 1, d - offset + pageOffset)).toISOString().slice(0, 10);
     state.selected = valid || t;
+    state.selectedRecordId = "";
     $("ccPrev").addEventListener("click", () => shiftMonth(-1));
     $("ccNext").addEventListener("click", () => shiftMonth(1));
     $("ccToday2").addEventListener("click", goToday);
+    bindMobileSwipe();
     load();
     loadUpcoming();
   }

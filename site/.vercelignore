@@ -1,0 +1,6 @@
+.env
+.env.*
+.vercel
+.assetsignore
+.gitignore
+*.log

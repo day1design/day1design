@@ -1,0 +1,63 @@
+.admin-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  background: rgba(250, 249, 246, 0.93);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease, visibility 0s linear 120ms;
+}
+
+.admin-loading-overlay.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 180ms ease, visibility 0s;
+}
+
+.admin-loading-card {
+  display: flex;
+  width: min(220px, calc(100vw - 48px));
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 24px;
+  border: 1px solid #e5dfd3;
+  border-radius: 16px;
+  background: #fff;
+  color: #23231f;
+  box-shadow: 0 12px 36px rgba(35, 35, 31, 0.08);
+  transform: scale(0.98);
+  transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.admin-loading-overlay.is-visible .admin-loading-card {
+  transform: scale(1);
+}
+
+.admin-loading-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
+.admin-loading-title {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.admin-loading-status {
+  margin-top: 6px;
+  color: #68665f;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-loading-overlay,
+  .admin-loading-card { transition-duration: 1ms; }
+}

@@ -42,6 +42,8 @@ import {
   recordRejectToD1,
 } from "../lib/estimate-archive.js";
 import { ensureNewCustomerNotification } from "../lib/crm-automation.js";
+import { createContract, listContracts, validateMeetingBuffer } from "../lib/admin-meetings.js";
+import { adminMeetingOutboxAvailable, cancelStaleMeetingNotifications, enqueueMeetingNotifications } from "../lib/admin-meeting-notifications.js";
 
 const CACHE_TTL = 30;
 const ESTIMATE_RATE_LIMIT_PER_HOUR = 60;
@@ -483,6 +485,24 @@ export async function handleEstimates(
       return jsonError(401, "Unauthorized");
     return listConsultCalendar(request, env, ctx);
   }
+  const contractsMatch = path.match(/^\/([a-zA-Z0-9_-]+)\/contracts$/);
+  if (contractsMatch) {
+    if (!(await verifyAdmin(request, env))) return jsonError(401, "Unauthorized");
+    const estimateId = contractsMatch[1];
+    if (!env.DB) return jsonError(503, "Database unavailable");
+    if (request.method === "GET") return listContracts(env, estimateId, url);
+    if (request.method === "POST") {
+      if (Number(request.headers.get("content-length") || 0) > 32 * 1024) return jsonError(413, "Request too large");
+      let body; try { body = await request.json(); } catch { return jsonError(400, "Invalid JSON"); }
+      if (!body || typeof body !== "object" || Object.keys(body).length > 9) return jsonError(400, "Invalid contract fields");
+      body.idempotencyKey = body.idempotencyKey || request.headers.get("Idempotency-Key") || "";
+      const result = await createContract(env, estimateId, body, "admin");
+      if (result.response) return result.response;
+      await edgeCacheDeleteMany([listCacheNs(null), listCacheNs("Done"), listCacheNs("InProgress")], ctx);
+      return jsonOk(result);
+    }
+    return jsonError(405, "Method Not Allowed");
+  }
   const idMatch = path.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (idMatch) {
     if (!(await verifyAdmin(request, env)))
@@ -584,9 +604,10 @@ async function listConsultCalendar(request, env, ctx) {
     const res = await env.DB.prepare(
       `SELECT id AS Id, Name, Phone, Status, Assignee, ConsultAt, ConsultBranch,
               ConsultCancelledAt, Branch, SpaceType, SpaceSize, Address,
-              AddressDetail, Source
+              AddressDetail, Source, ConsultTypeId, ConsultTypeName,
+              ConsultDurationMinutes, ConsultBufferMinutes, ConsultColorKey
        FROM Estimates
-       WHERE ConsultAt >= ? AND ConsultAt < ?
+       WHERE CrmTenantId = 'day1design' AND ConsultAt >= ? AND ConsultAt < ?
        ORDER BY ConsultAt ASC
        LIMIT ?`,
     )
@@ -616,6 +637,11 @@ async function listConsultCalendar(request, env, ctx) {
         .filter(Boolean)
         .join(" "),
       source: r.Source || "",
+      consultTypeId: r.ConsultTypeId || "initial",
+      consultTypeName: r.ConsultTypeName || "이니셜미팅",
+      consultDurationMinutes: Number(r.ConsultDurationMinutes || 120),
+      consultBufferMinutes: Number(r.ConsultBufferMinutes ?? 60),
+      consultColorKey: r.ConsultColorKey || "blue",
     }));
     // 다음 쪽 시작점. 같은 시각에 여러 건이 몰려도 마지막 건을 포함해 다시
     // 읽으므로 빠지는 예약이 없다(중복은 클라이언트가 id 로 걸러낸다).
@@ -1078,7 +1104,7 @@ async function submitEstimate(request, env, ctx, services) {
     tenantId: 'day1design',
     estimateId: record.id,
     payload: { region: addressLine, available_budget: fields.budget || '' },
-    createdAt: submittedAt,
+    createdAt: submittedAt, env,
   }).catch(() => null);
   const notificationLines = [
     `[day1design/estimates] 새 상담신청${promoteId ? " (이탈팝업 경유)" : ""}`,
@@ -1477,6 +1503,7 @@ const REMIND_RULES = [
 
 export async function runConsultReminders(env, nowMs = Date.now()) {
   if (!env?.DB) return { sent: 0, checked: 0 };
+  if (await adminMeetingOutboxAvailable(env.DB)) return { sent: 0, checked: 0, skipped: "admin-meeting-outbox" };
   const botToken = String(env.CALENDAR_BOT_TOKEN || "").trim();
   const chatId = String(env.CALENDAR_CHAT_ID || "").trim();
   if (!botToken || !chatId)
@@ -1569,9 +1596,13 @@ async function patchEstimate(request, env, id, ctx, services) {
     "ConsultAt",
     "ConsultBranch",
     "ConsultCancelledAt",
+    "ConsultTypeId",
+    "ConsultTypeName",
+    "ConsultDurationMinutes",
+    "ConsultBufferMinutes",
+    "ConsultColorKey",
     "ContractAt",
     "ContractOwner",
-    "ContractAmount",
     "Memo",
     "EstimateAmount",
     // 고객 정보 (관리자 확인 후 수정)
@@ -1591,6 +1622,11 @@ async function patchEstimate(request, env, id, ctx, services) {
   const fields = {};
   for (const k of allowed) if (k in body) fields[k] = body[k];
   if (!Object.keys(fields).length) return jsonError(400, "No fields to update");
+  if ("ConsultBufferMinutes" in fields) {
+    const buffer = validateMeetingBuffer(fields.ConsultBufferMinutes);
+    if (buffer === null) return jsonError(400, "ConsultBufferMinutes must be 0 or 60");
+    fields.ConsultBufferMinutes = buffer;
+  }
 
   // 예약 일시를 손대면 리마인드 발송 기록을 지운다. 안 지우면 옮긴 일정에
   // 하루 전·2시간 전 알림이 영영 안 나간다(이미 보낸 것으로 남아 있으므로).
@@ -1620,6 +1656,7 @@ async function patchEstimate(request, env, id, ctx, services) {
     record = await services.estimates.update(id, fields);
   } catch (e) {
     if (e.notFound) return jsonError(404, "Estimate not found");
+    if (String(e.message || "").includes("meeting_conflict")) return jsonError(409, "Meeting time overlaps another active meeting");
     throw e;
   }
   // 상태 변경 가능성 → 모든 status 조합 invalidate
@@ -1658,17 +1695,19 @@ async function patchEstimate(request, env, id, ctx, services) {
       // 일시 없이 지점만 만지작거린 경우는 예약이 아니므로 알리지 않는다.
     }
     if (kind) {
-      notifyConsult(
-        env,
-        ctx,
-        consultNotifyText(
-          kind,
-          record.fields,
-          { at: prevAt, branch: prevBranch },
-          env,
-          id,
-        ),
-      );
+      const outboxReady = env.DB && await adminMeetingOutboxAvailable(env.DB);
+      const nextVersion = Number(record.fields?.ConsultVersion || before.fields?.ConsultVersion || 0) || 1;
+      const tenantId = String(record.fields?.CrmTenantId || "day1design");
+      if (outboxReady) {
+        await cancelStaleMeetingNotifications(env.DB, { tenantId, meetingId: id, currentVersion: nextVersion });
+        if (["created", "moved", "restored"].includes(kind) && nextAt) {
+          const settingsRow = await env.DB.prepare("SELECT notifications_json FROM AdminMeetingSettings WHERE id=?").bind(tenantId).first();
+          let settings; try { settings = JSON.parse(settingsRow?.notifications_json || "{}"); } catch { settings = null; }
+          if (settings) await enqueueMeetingNotifications(env.DB, { meeting: { ...record.fields, id, tenantId, version: nextVersion, startsAt: nextAt, meetingName: record.fields?.ConsultTypeName || "이니셜미팅", durationMinutes: Number(record.fields?.ConsultDurationMinutes || 120), bufferMinutes: Number(record.fields?.ConsultBufferMinutes ?? 60), typeMarker: record.fields?.ConsultColorKey || "blue", customerName: record.fields?.Name || "", location: record.fields?.ConsultBranch || "" }, settings, payload: { kind } });
+        }
+      } else {
+        notifyConsult(env, ctx, consultNotifyText(kind, record.fields, { at: prevAt, branch: prevBranch }, env, id));
+      }
       // 예약 변경은 흔적을 남긴다 — D1 에 메타, R2 에 이전·이후 원문.
       // 캘린더는 현재 값만 보여 주므로 "언제 누가 어떻게 바꿨나"는 여기에만
       // 남는다(어드민 감사 로그에서 조회).

@@ -20,6 +20,10 @@ bucket_name = "day1design-r2"
 binding = "CRM_CACHE"
 bucket_name = "day1design-crm-cache"
 
+[[r2_buckets]]
+binding = "CRM_CACHE"
+bucket_name = "day1design-crm-cache"
+
 # D1 database (데이터 저장 — Airtable 대체)
 [[d1_databases]]
 binding = "DB"
@@ -101,4 +105,4 @@ zone_name = "day1design.co.kr"
 # - "0 19 * * *"  매일 KST 04:00: meta-ads sync + analytics snapshot + 풀 헬스점검(다이제스트)
 # - "0 * * * *"   매시간 정각: 헬스 하트비트 점검(기록만, 오류 시 텔레그램). 전원 인디케이터용.
 [triggers]
-crons = ["0 19 * * *", "0 * * * *", "*/15 * * * *"]
+crons = ["0 19 * * *", "0 * * * *", "*/15 * * * *", "* * * * *"]

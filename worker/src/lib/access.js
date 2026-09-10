@@ -76,6 +76,10 @@ export function classifyAccess(request, opts = {}) {
   if (path === "/api/analytics/visit") {
     return { role: method === "POST" ? "main" : "unknown", method, path };
   }
+  if (["/api/meeting-settings", "/api/admin/dashboard", "/api/admin/kpi", "/api/admin/kpi/batches"].includes(path)) {
+    return { role: "admin", method, path };
+  }
+
   if (path.startsWith("/api/analytics")) {
     return { role: "admin", method, path };
   }
