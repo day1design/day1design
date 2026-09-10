@@ -443,7 +443,7 @@
         line-height: 1.7;
       }
 
-      /* ── 다가오는 상담 ── */
+      /* ── 다가오는 미팅일정 ── */
       .cc-up {
         margin-top: 16px;
         background: var(--c-surface);
@@ -618,7 +618,12 @@
         .page-header p { display:none; }
         .page-actions { gap:4px; }
         .page-actions .btn { min-height:34px; padding:5px 8px; font-size:12px; }
-        .cc-sum, .cc-up, .cc-filter { display:none; }
+        .cc-sum, .cc-filter { display:none; }
+        .cc-up { margin-top:14px; }
+        .cc-up-head { flex-wrap:wrap; gap:4px; padding:12px 14px; }
+        .cc-up-head .hint { width:100%; margin-left:0; font-size:11px; }
+        table.cc-up-t td { min-width:0; overflow-wrap:anywhere; }
+        table.cc-up-t td[colspan] { grid-column:1 / -1; }
         .cc-bar { margin-bottom:8px; padding-bottom:8px; }
         .cc-month { width:100%; justify-content:space-between; }
         .cc-month .m { min-width:0; font-size:15px; }
@@ -731,7 +736,7 @@
 
           <div class="cc-up">
             <div class="cc-up-head">
-              다가오는 상담
+              다가오는 미팅일정
               <span class="hint">오늘 이후 예약을 시간순으로 나열합니다</span>
             </div>
             <table class="cc-up-t">
@@ -754,6 +759,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
     <script defer src="admin.js?v=20260911-menu2"></script>
-    <script defer src="calendar.js?v=20260911-mobile3"></script>
+    <script defer src="calendar.js?v=20260911-mobile4"></script>
   </body>
 </html>

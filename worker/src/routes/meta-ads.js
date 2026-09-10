@@ -1223,7 +1223,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     const videoReconciliation = { platform: platformVideo.evidence, age_gender: ageGenderVideo.evidence };
     log.ErrorMessage = JSON.stringify({ videoReconciliation }).slice(0, 400);
 
-    for (const row of accountRows) {
+    for (const row of completeAccountInsightDays(accountRows, startDate, endDate)) {
       stmts.push(
         buildDailyStmt(env, {
           Date: row.date_start,
@@ -1393,7 +1393,20 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
 }
 
 // ─── Meta API 호출 ────────────────────────────────────────
-async function fetchInsights(token, accountId, startDate, endDate, level) {
+// Only called after the complete Insights request succeeds; omitted dates then mean no delivery.
+export function completeAccountInsightDays(rows, startDate, endDate) {
+  const start = Date.parse(startDate + "T00:00:00Z");
+  const end = Date.parse(endDate + "T00:00:00Z");
+  const count = (end - start) / 86400000 + 1;
+  if (!Number.isSafeInteger(count) || count < 1 || count > 732 || !Array.isArray(rows)) throw new Error("Invalid account insight range");
+  const byDay = new Map(rows.map(row => [row.date_start, row]));
+  return Array.from({length:count}, (_, index) => {
+    const day = new Date(start + index * 86400000).toISOString().slice(0,10);
+    return byDay.get(day) || {date_start:day,date_stop:day,impressions:"0",clicks:"0",spend:"0",inline_link_clicks:"0",actions:[]};
+  });
+}
+
+export async function fetchInsights(token, accountId, startDate, endDate, level) {
   let levelFields = "";
   if (level === "campaign") levelFields = "," + CAMPAIGN_FIELDS;
   else if (level === "ad") levelFields = "," + AD_FIELDS;
@@ -1421,10 +1434,24 @@ async function fetchInsights(token, accountId, startDate, endDate, level) {
       err.metaError = data?.error;
       throw err;
     }
-    all.push(...(data.data || []));
-    url = data?.paging?.next || null;
+    if (!Array.isArray(data?.data)) {
+      const err = new Error("Meta insights response missing data");
+      err.code = "meta_insights_invalid_response";
+      throw err;
+    }
+    all.push(...data.data);
+    const next = String(data?.paging?.next || "");
+    if (!next) return all;
+    if (page === MAX_PAGES - 1) {
+      const err = new Error("Meta insights page cap reached");
+      err.code = "meta_insights_pagination_cap";
+      throw err;
+    }
+    url = next;
   }
-  return all;
+  const err = new Error("Meta insights pagination incomplete");
+  err.code = "meta_insights_pagination_cap";
+  throw err;
 }
 
 async function fetchCampaignMeta(token, accountId) {
