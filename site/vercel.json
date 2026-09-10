@@ -234,6 +234,13 @@
   ],
   "headers": [
     {
+      "source": "/dayoneworkflow(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
+    {
       "source": "/:path*",
       "has": [{ "type": "host", "value": "admin.day1design.co.kr" }],
       "headers": [
