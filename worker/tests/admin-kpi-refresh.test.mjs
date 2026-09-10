@@ -6,7 +6,7 @@ import { enqueueAdminKpiBatch,enqueueDefaultAdminKpiWarmup,runAdminKpiBatch } fr
 const now = new Date('2026-09-10T00:00:00.000Z');
 function fixture() {
  const db = new DatabaseSync(':memory:');
- db.exec(`CREATE TABLE Estimates(id TEXT PRIMARY KEY,CrmTenantId TEXT,SubmittedAt TEXT,ConsultAt TEXT,ConsultCancelledAt TEXT,Status TEXT,Source TEXT,FirstSource TEXT,FirstReferrer TEXT,Referrer TEXT,FirstUtmSource TEXT,UtmSource TEXT,FirstUtmMedium TEXT,UtmMedium TEXT,MetaLeadId TEXT,MetaAdId TEXT,Fbclid TEXT,Detail TEXT);
+ db.exec(`CREATE TABLE Estimates(id TEXT PRIMARY KEY,CrmTenantId TEXT,SubmittedAt TEXT,ConsultAt TEXT,ConsultCancelledAt TEXT,Status TEXT,Source TEXT,FirstSource TEXT,FirstReferrer TEXT,FirstUtmSource TEXT,UtmSource TEXT,FirstUtmMedium TEXT,UtmMedium TEXT,MetaLeadId TEXT,MetaAdId TEXT,Fbclid TEXT,Detail TEXT);
  CREATE TABLE EstimateContractHistory(id TEXT PRIMARY KEY,estimate_id TEXT,saved_at TEXT,stage TEXT,amount REAL,previous_amount REAL);
  CREATE TABLE AdminKpiMonthly(tenant_id TEXT,month TEXT,metric TEXT,value REAL,source TEXT,coverage_status TEXT,source_revision TEXT,updated_at TEXT,PRIMARY KEY(tenant_id,month,metric)); CREATE TABLE CrmDataRevisions(tenant_id TEXT PRIMARY KEY,version INTEGER,updated_at TEXT); INSERT INTO CrmDataRevisions VALUES('day1design',0,''); CREATE TABLE AdminKpiDirtyDays(tenant_id TEXT,day TEXT,source TEXT,revision INTEGER,PRIMARY KEY(tenant_id,day,source)); CREATE TABLE AdminKpiDaily(tenant_id TEXT,day TEXT,metric TEXT,value REAL,source TEXT,coverage_status TEXT,source_revision TEXT,updated_at TEXT,PRIMARY KEY(tenant_id,day,metric));`);
  db.exec(readFileSync(new URL('../migrations/0096_admin_kpi_jobs.sql',import.meta.url),'utf8'));
@@ -127,4 +127,10 @@ test('tenant history index avoids visiting foreign customer event pages',async()
  const result=await runAdminKpiBatch(env,{now});assert.equal(result.processed,1);assert.equal(result.status,'complete');
  const plan=env.db.prepare(`EXPLAIN QUERY PLAN SELECT id FROM EstimateContractHistory INDEXED BY idx_admin_kpi_history_tenant_day WHERE tenant_id=? AND saved_at>=? AND saved_at<? AND (saved_at,id)>(?,?) ORDER BY saved_at,id LIMIT 101`).all('day1design','2026-09-08','2026-09-10','2026-09-08','');
  assert(plan.some(row=>/SEARCH.*idx_admin_kpi_history_tenant_day/.test(row.detail)));
+});
+
+test('queued business days complete sequentially across advancing scheduler ticks',async()=>{
+ const env=fixture();await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-07',endDate:'2026-09-09',now});
+ for(let step=0;step<9;step++){const result=await runAdminKpiBatch(env,{now:new Date(now.getTime()+step*900000)});assert.notEqual(result.status,'failed');}
+ assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiJobs WHERE status='complete'").get().n,3);
 });

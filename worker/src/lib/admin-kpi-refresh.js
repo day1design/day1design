@@ -59,7 +59,7 @@ async function readPage(db, job, phase, cursor) {
     const column = phase === 0 ? 'SubmittedAt' : 'ConsultAt';
     const index = phase === 0 ? 'idx_admin_kpi_estimate_intake' : 'idx_admin_kpi_estimate_meeting';
     return rows(await db.prepare(`SELECT id,SubmittedAt,ConsultAt,ConsultCancelledAt,Status,Source,FirstSource,
-      FirstReferrer,Referrer,FirstUtmSource,UtmSource,FirstUtmMedium,UtmMedium,MetaLeadId,MetaAdId,Fbclid,Detail
+      FirstReferrer,FirstUtmSource,UtmSource,FirstUtmMedium,UtmMedium,MetaLeadId,MetaAdId,Fbclid,Detail
       FROM Estimates INDEXED BY ${index} WHERE CrmTenantId=? AND ${column}>=? AND ${column}<?
       AND (${column},id)>(?,?) ORDER BY ${column},id LIMIT ?`).bind(TENANT,start,end,...after,PAGE+1).all());
   }
@@ -117,8 +117,8 @@ async function businessStep(db, job, now) {
       .bind(TENANT,job.start_date,metric,totals[metric],String(job.revision),now,job.revision));
   }
   if (nextPhase === 3) writes.push(db.prepare(`DELETE FROM AdminKpiDirtyDays WHERE tenant_id=? AND day=? AND source='business' AND revision<=? AND COALESCE((SELECT version FROM CrmDataRevisions WHERE tenant_id=?),0)=?`).bind(TENANT,job.start_date,job.revision,TENANT,job.revision));
-  writes.push(db.prepare(`UPDATE AdminKpiJobs SET status=CASE WHEN COALESCE((SELECT version FROM CrmDataRevisions WHERE tenant_id=?),0)=? THEN ? ELSE 'failed' END,cursor=?,payload_json=?,lease_until='',updated_at=? WHERE id=? AND status='running'`)
-    .bind(TENANT,job.revision,nextPhase === 3 ? 'complete' : 'queued',cursor,JSON.stringify({ phase:nextPhase,totals }),now,job.id));
+  writes.push(db.prepare(`UPDATE AdminKpiJobs SET status=(CASE WHEN COALESCE((SELECT version FROM CrmDataRevisions WHERE tenant_id=?),0)=? THEN ? ELSE 'failed' END),cursor=?,payload_json=?,lease_until='',updated_at=? WHERE id=? AND status='running'`)
+    .bind(TENANT,job.revision,nextPhase === 3 ? 'complete' : 'queued',cursor,JSON.stringify({ phase:nextPhase,totals }),nextPhase === 3 ? now : job.updated_at,job.id));
   await db.batch(writes);
   if (nextPhase === 3) {
     await db.prepare(`UPDATE CrmDataRevisions SET version=version+1,updated_at=? WHERE tenant_id=?`).bind(now,TENANT).run();
@@ -185,7 +185,6 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
     await db.prepare(`UPDATE AdminKpiJobs SET status='complete',lease_until='',updated_at=? WHERE id=?`).bind(stamp,job.id).run();
     return { status:'complete',externalRequests:2 };
   } catch (error) {
-    if (env.ADMIN_KPI_DEBUG_ERRORS === '1') console.error('[admin-kpi-debug]', String(error?.message || error).slice(0,500));
     const reason = /^kpi_[a-z0-9_]+$/.test(error?.message || '') ? error.message.slice(0,80) : 'batch_step_failed';
     await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code=?,attempts=attempts+1,lease_until='',updated_at=? WHERE id=?`).bind(reason,stamp,job.id).run();
     return { status:'failed',reason };
