@@ -73,6 +73,20 @@ test("keeps a 1000-ad 31-day source read within the 620-row page cap", async () 
   assert.equal(result.cards[0].daily.length, 31);
 });
 
+test("splits 31-day candidate CTEs into chunks of at most five dates", async () => {
+  const base = fixture();
+  const candidateQueries = [];
+  const db = { prepare(sql) {
+    const cteCount = (String(sql).match(/\bd\d+ AS \(/g) || []).length;
+    if (cteCount) candidateQueries.push(cteCount);
+    assert.ok(cteCount === 0 || cteCount <= 5);
+    return base.prepare(sql);
+  } };
+  const result = await readCrmMetaAdCards(db, { tenantId: "day1design", startDate: "2026-08-11", endDate: "2026-09-10", limit: 20 });
+  assert.equal(result.available, true);
+  assert.deepEqual(candidateQueries, [5, 5, 5, 5, 5, 5, 1]);
+});
+
 test("preserves null metrics while summing known values", async () => {
   const db = fixture();
   const add = db.prepare("INSERT INTO MetaAdsAd VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");

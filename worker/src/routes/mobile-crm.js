@@ -233,6 +233,7 @@ const allowedCustomerStatuses = new Set([
   "상담중", "견적완료", "취소", "작성중",
   "new", "contacted", "scheduled", "quoted", "contracted", "closed",
 ]);
+const customerSourceChannel = "CASE WHEN COALESCE(NULLIF(TRIM(MetaLeadId),''),'')<>'' OR lower(TRIM(COALESCE(Source,'')))='meta' THEN 'meta' ELSE 'homepage' END";
 
 function encodeCursor(value) {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -268,7 +269,10 @@ async function listCustomers(request, env, auth) {
   const groups={__pending:['접수대기','new'],__contract:['계약완료','contracted'],__progress:[...allowedCustomerStatuses].filter(value=>!['접수대기','new','계약완료','contracted'].includes(value))};
   const statuses=groups[status];
   if (status && !statuses) { predicates.push('Status=?'); binds.push(status); }
-  if (source) { predicates.push('Source=?'); binds.push(source); }
+  if (source === '__homepage' || source === '__meta') {
+    predicates.push(`${customerSourceChannel}=?`);
+    binds.push(source.slice(2));
+  } else if (source) { predicates.push('Source=?'); binds.push(source); }
   let result;
   if(statuses){
     const windows=statuses.map(()=>`SELECT * FROM (SELECT * FROM Estimates WHERE ${predicates.join(' AND ')} AND Status=? ORDER BY ${order} LIMIT 51)`);

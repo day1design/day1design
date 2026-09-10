@@ -117,7 +117,7 @@ public class MainActivity extends Activity {
         if ("analytics".equals(activeTab) && AnalyticsScreen.handleBack(analyticsView)) return true;
         if (customerDetailActive) {
             customerDetailActive = false;
-            if (isOwner()) showCustomers(""); else showNotifications();
+            if (isOwner()) showCustomers(customerQuery); else showNotifications();
             return true;
         }
         return false;
@@ -828,6 +828,19 @@ public class MainActivity extends Activity {
         root.addView(list);
         LinearLayout statusTabs=new LinearLayout(this);String[] groupNames={"전체","접수대기","진행중","계약완료"};String[] groupValues={"","__pending","__progress","__contract"};
         for(int i=0;i<groupNames.length;i++){final String group=groupValues[i];Button tab=secondary(groupNames[i]);tab.setTextSize(12);if(group.equals(customerStatus)){tab.setTextColor(ACTION);tab.setBackground(round(Color.rgb(251,242,227),6,Color.rgb(221,195,153)));}statusTabs.addView(tab,new LinearLayout.LayoutParams(0,dp(48),1));tab.setOnClickListener(v->{customerStatus=group;showCustomers(search.getText().toString().trim());});}root.addView(statusTabs,root.indexOfChild(list));
+        root.addView(label("접수 위치"),root.indexOfChild(list));
+        LinearLayout sourceTabs=new LinearLayout(this);
+        String[] sourceNames={"전체","홈페이지","Meta"};
+        String[] sourceValues={"","__homepage","__meta"};
+        for(int i=0;i<sourceNames.length;i++){
+            final String source=sourceValues[i];
+            Button tab=secondary(sourceNames[i]);
+            tab.setTextSize(12);
+            if(source.equals(customerSource)){tab.setTextColor(ACTION);tab.setBackground(round(Color.rgb(251,242,227),6,Color.rgb(221,195,153)));}
+            sourceTabs.addView(tab,new LinearLayout.LayoutParams(0,dp(48),1));
+            tab.setOnClickListener(v->{customerSource=source;showCustomers(search.getText().toString().trim());});
+        }
+        root.addView(sourceTabs,root.indexOfChild(list));
         final int searchGeneration=requestGeneration;
         android.os.Handler searchHandler=new android.os.Handler(android.os.Looper.getMainLooper());
         Runnable[] pendingSearch={null};
@@ -2170,7 +2183,7 @@ public class MainActivity extends Activity {
         root.addView(editor, blockParams());
         Button back = secondary(isOwner()?"고객 목록":"내 담당 업무");
         root.addView(back);
-        back.setOnClickListener(v -> {if(isOwner())showCustomers("");else showNotifications();});
+        back.setOnClickListener(v -> {if(isOwner())showCustomers(customerQuery);else showNotifications();});
         final int generation = requestGeneration;
         api.call("GET", "/api/mobile/message-templates", null, (body, status, error) -> runOnUiThread(() -> {
             if (!sameGeneration(generation)) return;
@@ -2702,7 +2715,7 @@ public class MainActivity extends Activity {
         root.removeAllViews();addHeader();
         Button back = secondary(isOwner()?"고객 목록":"내 담당 업무");
         root.addView(back);
-        back.setOnClickListener(v -> { customerDetailActive = false; if(isOwner())showCustomers("");else showNotifications(); });
+        back.setOnClickListener(v -> { customerDetailActive = false; if(isOwner())showCustomers(customerQuery);else showNotifications(); });
         root.addView(text("고객 상담카드",23,true));
         root.addView(label("접수번호 "+current.optString("id")));
         LinearLayout hero=fidelityColumn();hero.setPadding(dp(16),dp(12),dp(16),dp(12));hero.setBackground(round(Color.WHITE,6,LINE));root.addView(hero,blockParams());
@@ -3245,7 +3258,7 @@ public class MainActivity extends Activity {
     private void showSuspended() {
         String workspace = tenantName();
         try { store.clear(); } catch(Exception ignored) { }
-        api.setToken(null);me=null;current=null;members.clear();pendingCsv=null;
+        api.setToken(null);me=null;current=null;members.clear();pendingCsv=null;customerQuery="";customerStatus="";customerSource="";
         base();addLogo(R.drawable.polarad_logo,48);
         root.addView(text("서비스 이용이 중지되었습니다",26,true));
         root.addView(fidelityCaption(workspace + " 업무공간"));
@@ -3268,6 +3281,9 @@ public class MainActivity extends Activity {
 
     private void clearSessionAndShowLogin(String notice) {
         pendingCsv = null;
+        customerQuery = "";
+        customerStatus = "";
+        customerSource = "";
         try {
             store.clear();
         } catch (Exception ignored) {

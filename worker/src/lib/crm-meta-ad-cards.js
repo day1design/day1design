@@ -94,10 +94,16 @@ export async function readCrmMetaAdCards(db, options = {}) {
   if (missing.length) return { available: false, reason: "meta_ad_columns_missing", missing, cards: [], nextCursor: null };
   const creative = selectedCreativeColumns(columns);
   const dates = Array.from({ length: range.days }, (_, index) => new Date(Date.parse(`${range.startDate}T00:00:00Z`) + index * 86400000).toISOString().slice(0, 10));
-  const candidateCtes = dates.map((_, index) => `d${index} AS (SELECT AdId AS adId FROM MetaAdsAd WHERE Date=? AND AdId>? ORDER BY AdId ASC LIMIT ${limit + 1})`).join(",");
-  const candidateUnion = dates.map((_, index) => `SELECT adId FROM d${index}`).join(" UNION ALL ");
-  const idRows = rowsOf(await queryAll(db, `WITH ${candidateCtes} SELECT DISTINCT adId FROM (${candidateUnion}) ORDER BY adId ASC LIMIT ${limit + 1}`, dates.flatMap((date) => [date, cursor || ""])));
-  const ids = idRows.slice(0, limit).map((row) => String(row.adId || "")).filter(Boolean);
+  const candidateIds = new Set();
+  for (let offset = 0; offset < dates.length; offset += 5) {
+    const chunk = dates.slice(offset, offset + 5);
+    const candidateCtes = chunk.map((_, index) => `d${index} AS (SELECT AdId AS adId FROM MetaAdsAd WHERE Date=? AND AdId>? ORDER BY AdId ASC LIMIT ${limit + 1})`).join(",");
+    const candidateUnion = chunk.map((_, index) => `SELECT adId FROM d${index}`).join(" UNION ALL ");
+    const rows = rowsOf(await queryAll(db, `WITH ${candidateCtes} SELECT DISTINCT adId FROM (${candidateUnion}) ORDER BY adId ASC LIMIT ${limit + 1}`, chunk.flatMap((date) => [date, cursor || ""])));
+    for (const row of rows) { const adId = String(row.adId || ""); if (adId) candidateIds.add(adId); }
+  }
+  const idRows = [...candidateIds].sort().slice(0, limit + 1).map((adId) => ({ adId }));
+  const ids = idRows.slice(0, limit).map((row) => row.adId);
   const nextCursor = idRows.length > limit ? ids[ids.length - 1] : null;
   if (!ids.length) return { available: true, period: { start: range.startDate, end: range.endDate, timezone: "Asia/Seoul" }, limit, cards: [], nextCursor: null, creativeColumns: creative, currency };
   const selected = ids.map(() => "?").join(",");

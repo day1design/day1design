@@ -30,7 +30,8 @@ function database() {
     CREATE TABLE HeatmapEvents (id TEXT PRIMARY KEY, CrmTenantId TEXT, SessionId TEXT, Page TEXT, EventType TEXT, IsBot INTEGER, Device TEXT NOT NULL DEFAULT '', Referrer TEXT NOT NULL DEFAULT '', UtmSource TEXT, UtmMedium TEXT, UtmCampaign TEXT NOT NULL DEFAULT '', CreatedAt TEXT);
     CREATE INDEX heatmap_tenant_date ON HeatmapEvents(CrmTenantId, CreatedAt);
   `);
-  sqlite.exec("ALTER TABLE Estimates ADD COLUMN SessionId TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstSource TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN MetaFieldData TEXT NOT NULL DEFAULT ''; CREATE INDEX IF NOT EXISTS idx_heatmap_crm_tenant_session_event_bot_created_id ON HeatmapEvents(CrmTenantId,SessionId,EventType,IsBot,CreatedAt,id);");
+  sqlite.exec("ALTER TABLE Estimates ADD COLUMN SessionId TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstSource TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstPlatform TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstReferrer TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN FirstInflowApp TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN MetaFieldData TEXT NOT NULL DEFAULT ''; ALTER TABLE Estimates ADD COLUMN MetaLeadId TEXT NOT NULL DEFAULT ''; CREATE INDEX IF NOT EXISTS idx_heatmap_crm_tenant_session_event_bot_created_id ON HeatmapEvents(CrmTenantId,SessionId,EventType,IsBot,CreatedAt,id);");
+  sqlite.exec(readFileSync(new URL("../migrations/0083_crm_customer_source_channels.sql", import.meta.url), "utf8"));
   sqlite.prepare("INSERT INTO MetaAdsAd VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
     "2026-09-10", "1001", "실내광고", "set-1", "세트", "campaign-1", "캠페인", "creative-1", "image", "", "ACTIVE", 1000, 80, 70, 35, 5,
   );
@@ -187,5 +188,55 @@ test("visit history enforces assigned staff and paginates tenant-scoped page vie
     assert.equal((await handleMobileCrm(request("/api/mobile/customers/customer-route/visit-history", "GET", unauthorized), e)).status, 403);
     assert.equal((await handleMobileCrm(request("/api/mobile/customers/other-customer/visit-history", "GET", assigned), e)).status, 404);
     assert.equal((await handleMobileCrm(request("/api/mobile/customers/customer-route/visit-history?cursor=bad", "GET", assigned), e)).status, 400);
+  } finally { sqlite.close(); }
+});
+
+test("customer list source channels stay tenant-scoped across pages and preserve exact source filters", async () => {
+  const sqlite = database();
+  try {
+    for (let i = 0; i < 60; i += 1) {
+      sqlite.prepare(`INSERT INTO Estimates (id,CrmTenantId,Name,Status,Source,MetaLeadId,SubmittedAt,CrmVersion)
+        VALUES(?,?,?,?,?,?,?,?)`).run(`home-${String(i).padStart(3, "0")}`, "day1design", `homepage-${i}`, i % 2 ? "계약완료" : "접수대기", "google", "", `2026-09-10T00:${String(i).padStart(2, "0")}:00Z`, 1);
+      const isMetaLead = i % 2 === 0;
+      sqlite.prepare(`INSERT INTO Estimates (id,CrmTenantId,Name,Status,Source,MetaLeadId,SubmittedAt,CrmVersion)
+        VALUES(?,?,?,?,?,?,?,?)`).run(`meta-${String(i).padStart(3, "0")}`, "day1design", `meta-${i}`, i % 2 ? "계약완료" : "접수대기", isMetaLead ? "homepage" : "meta", isMetaLead ? `lead-${i}` : "", `2026-09-11T00:${String(i).padStart(2, "0")}:00Z`, 1);
+    }
+    sqlite.prepare(`INSERT INTO Estimates (id,CrmTenantId,Name,Status,Source,MetaLeadId,SubmittedAt,CrmVersion)
+      VALUES(?,?,?,?,?,?,?,?)`).run("foreign-home", "other-route", "foreign-home", "접수대기", "google", "", "2026-09-12T00:00:00Z", 1);
+    const e = env(sqlite);
+    const owner = await createSession(e.DB, "day1-owner");
+    const collect = async (source) => {
+      const found = [];
+      let cursor = "";
+      do {
+        const suffix = `&source=${source}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+        const response = await handleMobileCrm(request(`/api/mobile/customers?${suffix.slice(1)}`, "GET", owner), e);
+        assert.equal(response.status, 200);
+        const payload = await response.json();
+        found.push(...payload.customers);
+        cursor = payload.next_cursor || "";
+      } while (cursor);
+      return found;
+    };
+    const homepage = await collect("__homepage");
+    assert.equal(homepage.length, 60);
+    assert.equal(new Set(homepage.map((row) => row.id)).size, 60);
+    assert.equal(homepage.every((row) => row.id.startsWith("home-")), true);
+    const meta = await collect("__meta");
+    assert.equal(meta.length, 60);
+    assert.equal(new Set(meta.map((row) => row.id)).size, 60);
+    assert.equal(meta.every((row) => row.id.startsWith("meta-")), true);
+    const pendingHomepage = await (await handleMobileCrm(request("/api/mobile/customers?status=__pending&source=__homepage", "GET", owner), e)).json();
+    assert.equal(pendingHomepage.customers.length, 30);
+    assert.equal(pendingHomepage.customers.every((row) => row.id.startsWith("home-") && row.status === "접수대기"), true);
+    const searched = await (await handleMobileCrm(request("/api/mobile/customers?q=homepage-55&source=__homepage", "GET", owner), e)).json();
+    assert.deepEqual(searched.customers.map((row) => row.id), ["home-055"]);
+    const exact = await (await handleMobileCrm(request("/api/mobile/customers?source=google", "GET", owner), e)).json();
+    assert.equal(exact.customers.every((row) => row.id.startsWith("home-")), true);
+    assert.equal(exact.customers.length, 50);
+    const plan = sqlite.prepare(`EXPLAIN QUERY PLAN SELECT id FROM Estimates
+      WHERE CrmTenantId=? AND (CASE WHEN COALESCE(NULLIF(TRIM(MetaLeadId),''),'')<>'' OR lower(TRIM(COALESCE(Source,'')))='meta' THEN 'meta' ELSE 'homepage' END)=?
+      ORDER BY (CASE WHEN COALESCE(SubmittedAt,'')='' THEN 1 ELSE 0 END), SubmittedAt DESC, id DESC LIMIT 51`).all("day1design", "homepage");
+    assert.match(plan.map((row) => String(row.detail || "")).join(" "), /idx_estimates_crm_tenant_channel_submitted_desc/);
   } finally { sqlite.close(); }
 });
