@@ -1,7 +1,7 @@
 // ========== 공통 어드민 유틸 ==========
 const API_BASE = (window.ADMIN_API_BASE || "").replace(/\/$/, "");
 const TOKEN_KEY = "day1_admin_token";
-const ADMIN_LOGO_SRC = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone.webp";
+const ADMIN_LOGO_SRC = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/favicon/favicon-192.png";
 const apiInflight = new Map();
 const apiControllers = new Set();
 const apiMetrics = { requests: 0, deduped: 0, completed: 0, failed: 0, totalMs: 0 };
@@ -28,7 +28,6 @@ function ensureLoadingOverlay() {
   overlay.setAttribute("aria-busy", "false");
   overlay.innerHTML = `<div class="admin-loading-card" role="status">
     <img class="admin-loading-logo" src="${ADMIN_LOGO_SRC}" alt="데이원디자인" width="64" height="64" decoding="async">
-    <div class="admin-loading-title">DAYONE ADMIN</div>
     <div class="admin-loading-status">불러오는 중</div>
   </div>`;
   document.body.appendChild(overlay);
