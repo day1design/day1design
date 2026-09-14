@@ -199,3 +199,12 @@ test('budget-paused GA4 job resumes when a new KST request budget day opens',asy
  assert.equal(result.status,'complete');assert.equal(calls,2);
  assert.equal(env.db.prepare("SELECT retries FROM AdminKpiJobs").get().retries,1);
 });
+test('prior-day transient GA4 failure retries once when the current budget has headroom',async()=>{
+ const env=fixture();Object.assign(env,{GA4_PROPERTY_ID:'12345',GOOGLE_CLIENT_ID:'fixture',GOOGLE_CLIENT_SECRET:'fixture',GA4_REFRESH_TOKEN:'fixture',ADMIN_KPI_GA4_DAILY_REQUEST_BUDGET:'16'});
+ await enqueueAdminKpiBatch(env.DB,{kind:'ga4',startDate:'2026-08-01',endDate:'2026-08-31',now});
+ env.db.exec("UPDATE AdminKpiJobs SET status='failed',error_code='batch_step_failed',retries=1; INSERT INTO AdminKpiBatchBudget VALUES('day1design','2026-09-11',8)");
+ let calls=0;const fetchImpl=async()=>{calls++;return Response.json(calls===1?{access_token:'fixture'}:{metadata:{timeZone:'Asia/Seoul'},rowCount:1,metricHeaders:['activeUsers','sessions','screenPageViews'].map(name=>({name})),rows:[{metricValues:['1','2','3'].map(value=>({value}))}]});};
+ const result=await runAdminKpiBatch(env,{now:new Date('2026-09-11T00:00:00.000Z'),fetchImpl});
+ assert.equal(result.status,'complete');assert.equal(calls,2);
+ assert.equal(env.db.prepare("SELECT used FROM AdminKpiBatchBudget WHERE day='2026-09-11'").get().used,10);
+});

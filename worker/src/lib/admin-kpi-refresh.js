@@ -153,6 +153,12 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
       AND error_code IN ('daily_request_budget','request_budget_unconfigured') ORDER BY updated_at,id LIMIT 1)
       AND COALESCE((SELECT used FROM AdminKpiBatchBudget WHERE tenant_id=? AND day=?),0)+2<=?`)
       .bind(stamp,TENANT,TENANT,kstDay(now),configuredBudget).run();
+    await db.prepare(`UPDATE AdminKpiJobs SET status='queued',error_code='',updated_at=? WHERE id=(
+      SELECT id FROM AdminKpiJobs WHERE tenant_id=? AND kind='ga4' AND status='failed' AND updated_at<? AND
+      (error_code='batch_step_failed' OR error_code IN ('kpi_ga4_oauth_transport','kpi_ga4_report_transport','kpi_ga4_oauth_timeout','kpi_ga4_report_timeout','kpi_ga4_oauth_429','kpi_ga4_report_429')
+      OR error_code GLOB 'kpi_ga4_oauth_5??' OR error_code GLOB 'kpi_ga4_report_5??') ORDER BY updated_at,id LIMIT 1)
+      AND COALESCE((SELECT used FROM AdminKpiBatchBudget WHERE tenant_id=? AND day=?),0)+2<=?`)
+      .bind(stamp,TENANT,utcStart(kstDay(now)),TENANT,kstDay(now),configuredBudget).run();
   }
   // A crashed or timed-out job requires an explicit retry; cron cannot loop forever.
   await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code='lease_expired',lease_until='' WHERE tenant_id=? AND status='running' AND lease_until<?`).bind(TENANT,stamp).run();
