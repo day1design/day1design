@@ -40,7 +40,10 @@ export async function enqueueAdminKpiBatch(db, { kind, startDate, endDate = star
       VALUES(?,?,?,?,?,'queued',?) ON CONFLICT(id) DO UPDATE SET status='queued',cursor='',payload_json='{}',error_code='',
       retries=CASE WHEN AdminKpiJobs.status='failed' THEN AdminKpiJobs.retries+1 ELSE AdminKpiJobs.retries END,updated_at=excluded.updated_at WHERE
       (AdminKpiJobs.status='complete' AND (excluded.kind='ga4' OR (excluded.kind='business' AND EXISTS(SELECT 1 FROM AdminKpiDirtyDays WHERE tenant_id=excluded.tenant_id AND day=excluded.start_date AND source='business')))) OR
-      (AdminKpiJobs.status='failed' AND AdminKpiJobs.retries<1 AND (excluded.kind='ga4' OR (AdminKpiJobs.error_code='source_changed_during_batch' AND EXISTS(SELECT 1 FROM AdminKpiDirtyDays WHERE tenant_id=excluded.tenant_id AND day=excluded.start_date AND source='business'))))`)
+      (AdminKpiJobs.status='failed' AND ((excluded.kind='ga4' AND (AdminKpiJobs.retries<1 OR (AdminKpiJobs.attempts<3 AND
+      (AdminKpiJobs.error_code='batch_step_failed' OR AdminKpiJobs.error_code IN ('kpi_ga4_oauth_transport','kpi_ga4_report_transport','kpi_ga4_oauth_timeout','kpi_ga4_report_timeout','kpi_ga4_oauth_429','kpi_ga4_report_429')
+      OR AdminKpiJobs.error_code GLOB 'kpi_ga4_oauth_5??' OR AdminKpiJobs.error_code GLOB 'kpi_ga4_report_5??')))) OR
+      (excluded.kind='business' AND AdminKpiJobs.retries<1 AND AdminKpiJobs.error_code='source_changed_during_batch' AND EXISTS(SELECT 1 FROM AdminKpiDirtyDays WHERE tenant_id=excluded.tenant_id AND day=excluded.start_date AND source='business'))))`)
       .bind(`${TENANT}:${kind}:${day}:${end}`, TENANT, kind, day, end, now.toISOString());
   });
   const results = statements.length ? await db.batch(statements) : [];

@@ -113,11 +113,11 @@ test('dirty business job retries once after its source revision changed',async()
  assert.equal(retried.status,'queued');
  assert.equal(env.db.prepare("SELECT retries FROM AdminKpiJobs WHERE kind='business'").get().retries,1);
 });
-test('failed GA4 job is requeued once and then remains failed',async()=>{
+test('failed GA4 job records retry and stops after the attempt cap',async()=>{
  const env=fixture();
  const created=await enqueueAdminKpiBatch(env.DB,{kind:'ga4',startDate:'2026-08-01',endDate:'2026-08-31',now});
  assert.equal(created.queued,1);
- env.db.exec("UPDATE AdminKpiJobs SET status='failed',error_code='batch_step_failed'");
+ env.db.exec("UPDATE AdminKpiJobs SET status='failed',error_code='batch_step_failed',attempts=3");
  const firstRetry=await enqueueAdminKpiBatch(env.DB,{kind:'ga4',startDate:'2026-08-01',endDate:'2026-08-31',now});
  assert.equal(firstRetry.queued,1);
  const retried=env.db.prepare("SELECT status,retries,error_code FROM AdminKpiJobs").get();
@@ -214,4 +214,14 @@ test('explicit recovery processes the requested range before older queued work',
  const requested=JSON.parse(env.db.prepare("SELECT payload_json FROM AdminKpiJobs WHERE start_date='2026-09-09'").get().payload_json);
  const older=JSON.parse(env.db.prepare("SELECT payload_json FROM AdminKpiJobs WHERE start_date='2026-09-08'").get().payload_json);
  assert.equal(requested.phase,1);assert.equal(older.phase,undefined);
+});
+test('explicit transient GA4 retries stop after three failed attempts',async()=>{
+ const env=fixture(), range={kind:'ga4',startDate:'2026-08-01',endDate:'2026-08-31'};
+ await enqueueAdminKpiBatch(env.DB,{...range,now});
+ env.db.exec("UPDATE AdminKpiJobs SET status='failed',error_code='kpi_ga4_oauth_transport',attempts=2,retries=1");
+ const retry=await enqueueAdminKpiBatch(env.DB,{...range,now});
+ assert.equal(retry.queued,1);
+ env.db.exec("UPDATE AdminKpiJobs SET status='failed',error_code='kpi_ga4_oauth_transport',attempts=3");
+ const exhausted=await enqueueAdminKpiBatch(env.DB,{...range,now});
+ assert.equal(exhausted.queued,0);
 });

@@ -68,7 +68,7 @@ export async function collectAdminKpiGa4(env, { startDate, endDate }, { fetchImp
   if (!/^\d+$/.test(propertyId) || !env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !refreshToken)
     throw new Error('kpi_ga4_not_configured');
   const oauth = await fetchJson(fetchImpl, 'https://oauth2.googleapis.com/token', {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(4500),
+    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(12000),
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
       refresh_token: refreshToken, grant_type: 'refresh_token' }),
@@ -76,7 +76,7 @@ export async function collectAdminKpiGa4(env, { startDate, endDate }, { fetchImp
   if (typeof oauth.access_token !== 'string' || !oauth.access_token || oauth.access_token.length > 8192)
     throw new Error('kpi_ga4_oauth_invalid');
   const report = await fetchJson(fetchImpl, `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(4500),
+    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(12000),
     headers: { authorization: `Bearer ${oauth.access_token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ dateRanges: [{ startDate, endDate }], metrics: METRICS.map(name => ({ name })),
       limit: '1', keepEmptyRows: true, returnPropertyQuota: true }),
