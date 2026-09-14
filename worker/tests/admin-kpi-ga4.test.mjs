@@ -90,3 +90,8 @@ test('transport failures expose a safe stage-specific error code', async () => {
     /^Error: kpi_ga4_oauth_transport$/,
   );
 });
+test('configured transport timeout aborts the OAuth stage promptly', async () => {
+  const pending = collectAdminKpiGa4(env, range, { now, timeoutMs: 5, fetchImpl: async (_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })) }).catch(error => error.message);
+  const result = await Promise.race([pending, new Promise(resolve => setTimeout(() => resolve('still_pending'), 50))]);
+  assert.equal(result, 'kpi_ga4_oauth_timeout');
+});

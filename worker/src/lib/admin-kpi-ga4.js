@@ -43,22 +43,26 @@ async function boundedJson(response, code) {
       text += decoder.decode(value, { stream: true });
     }
     text += decoder.decode();
-    return JSON.parse(text);
+    try { return JSON.parse(text); }
+    catch { throw new Error(`${code}_json`); }
   } finally { await reader.cancel().catch(() => {}); }
 }
 
-async function fetchJson(fetchImpl, url, init, code) {
-  let response;
+async function fetchJson(fetchImpl, url, init, code, timeoutMs) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
-    response = await fetchImpl(url, init);
+    return await boundedJson(await fetchImpl(url,{...init,signal:controller.signal}),code);
   } catch (error) {
-    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw new Error(`${code}_timeout`);
+    if (String(error?.message || '').startsWith(`${code}_`)) throw error;
+    if (timedOut || error?.name === 'AbortError' || error?.name === 'TimeoutError') throw new Error(`${code}_timeout`);
     throw new Error(`${code}_transport`);
   }
-  return boundedJson(response, code);
+  finally { clearTimeout(timer); }
 }
 
-export async function collectAdminKpiGa4(env, { startDate, endDate }, { fetchImpl = fetch, now = new Date() } = {}) {
+export async function collectAdminKpiGa4(env, { startDate, endDate }, { fetchImpl = fetch, now = new Date(), timeoutMs = 12000 } = {}) {
   if (!dateValid(startDate) || !dateValid(endDate) || startDate > endDate ||
       (Date.parse(endDate) - Date.parse(startDate)) / 86400000 > 366) throw new Error('kpi_ga4_range');
   const today = new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
@@ -68,19 +72,19 @@ export async function collectAdminKpiGa4(env, { startDate, endDate }, { fetchImp
   if (!/^\d+$/.test(propertyId) || !env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !refreshToken)
     throw new Error('kpi_ga4_not_configured');
   const oauth = await fetchJson(fetchImpl, 'https://oauth2.googleapis.com/token', {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(12000),
+    method: 'POST', redirect: 'error',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
       refresh_token: refreshToken, grant_type: 'refresh_token' }),
-  }, 'kpi_ga4_oauth');
+  }, 'kpi_ga4_oauth',timeoutMs);
   if (typeof oauth.access_token !== 'string' || !oauth.access_token || oauth.access_token.length > 8192)
     throw new Error('kpi_ga4_oauth_invalid');
   const report = await fetchJson(fetchImpl, `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(12000),
+    method: 'POST', redirect: 'error',
     headers: { authorization: `Bearer ${oauth.access_token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ dateRanges: [{ startDate, endDate }], metrics: METRICS.map(name => ({ name })),
       limit: '1', keepEmptyRows: true, returnPropertyQuota: true }),
-  }, 'kpi_ga4_report');
+  }, 'kpi_ga4_report',timeoutMs);
   const meta = report.metadata || {};
   if (meta.timeZone !== 'Asia/Seoul') throw new Error('kpi_ga4_timezone_mismatch');
   if (meta.emptyReason || meta.subjectToThresholding || meta.dataLossFromOtherRow ||
