@@ -146,6 +146,14 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
   const db = env.DB;
   if (!db) return { skipped:'no_database' };
   const stamp = now.toISOString();
+  const configuredBudget = Number(env.ADMIN_KPI_GA4_DAILY_REQUEST_BUDGET || 0);
+  if (Number.isSafeInteger(configuredBudget) && configuredBudget >= 2 && configuredBudget <= 100) {
+    await db.prepare(`UPDATE AdminKpiJobs SET status='queued',error_code='',updated_at=? WHERE id=(
+      SELECT id FROM AdminKpiJobs WHERE tenant_id=? AND kind='ga4' AND status='paused'
+      AND error_code IN ('daily_request_budget','request_budget_unconfigured') ORDER BY updated_at,id LIMIT 1)
+      AND COALESCE((SELECT used FROM AdminKpiBatchBudget WHERE tenant_id=? AND day=?),0)+2<=?`)
+      .bind(stamp,TENANT,TENANT,kstDay(now),configuredBudget).run();
+  }
   // A crashed or timed-out job requires an explicit retry; cron cannot loop forever.
   await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code='lease_expired',lease_until='' WHERE tenant_id=? AND status='running' AND lease_until<?`).bind(TENANT,stamp).run();
   await warmupDefaultKpi(env, now);
