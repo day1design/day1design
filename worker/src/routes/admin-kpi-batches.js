@@ -26,7 +26,7 @@ export async function handleAdminKpiBatches(request, env, ctx) {
       }
       if (!body || Object.keys(body).some(key => !['kind','startDate','endDate'].includes(key))) return jsonError(400,'Invalid batch fields');
       const result = await enqueueAdminKpiBatch(env.DB,{...body,sourceId:body.kind === 'ga4' ? env.GA4_PROPERTY_ID || '' : ''});
-      if (ctx?.waitUntil) ctx.waitUntil(runAdminKpiBatch(env,{maxSteps:4}).catch(() => ({skipped:'kpi_batch_error'})));
+      if (ctx?.waitUntil) ctx.waitUntil(runAdminKpiBatch(env,{maxSteps:4,preferredKind:body.kind,preferredStartDate:body.startDate,preferredEndDate:body.endDate}).catch(() => ({skipped:'kpi_batch_error'})));
       return jsonOk({...result,processing:Boolean(ctx?.waitUntil)});
     } catch { return jsonError(400,'Invalid batch request'); }
   }

@@ -208,3 +208,10 @@ test('prior-day transient GA4 failure retries once when the current budget has h
  assert.equal(result.status,'complete');assert.equal(calls,2);
  assert.equal(env.db.prepare("SELECT used FROM AdminKpiBatchBudget WHERE day='2026-09-11'").get().used,10);
 });
+test('explicit recovery processes the requested range before older queued work',async()=>{
+ const env=fixture();await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-08',endDate:'2026-09-09',now});
+ await runAdminKpiBatch(env,{now,preferredKind:'business',preferredStartDate:'2026-09-09',preferredEndDate:'2026-09-09'});
+ const requested=JSON.parse(env.db.prepare("SELECT payload_json FROM AdminKpiJobs WHERE start_date='2026-09-09'").get().payload_json);
+ const older=JSON.parse(env.db.prepare("SELECT payload_json FROM AdminKpiJobs WHERE start_date='2026-09-08'").get().payload_json);
+ assert.equal(requested.phase,1);assert.equal(older.phase,undefined);
+});

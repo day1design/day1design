@@ -142,7 +142,7 @@ async function businessStep(db, job, now) {
   return { status: nextPhase === 3 ? 'complete' : 'queued', processed:page.length };
 }
 
-async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
+async function runBatchStep(env, { now = new Date(), fetchImpl = fetch, preferredKind = '', preferredStartDate = '', preferredEndDate = '' } = {}) {
   const db = env.DB;
   if (!db) return { skipped:'no_database' };
   const stamp = now.toISOString();
@@ -165,7 +165,13 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch } = {}) {
   await warmupDefaultKpi(env, now);
   const dirty = await db.prepare(`SELECT day FROM AdminKpiDirtyDays WHERE tenant_id=? AND source='business' AND day<=? ORDER BY day LIMIT 1`).bind(TENANT,addDays(kstDay(now),-1)).first();
   if (dirty) await enqueueAdminKpiBatch(db,{kind:'business',startDate:dirty.day,now});
-  const job = await db.prepare(`SELECT * FROM AdminKpiJobs WHERE tenant_id=? AND status='queued' ORDER BY updated_at,id LIMIT 1`).bind(TENANT).first();
+  let job = null;
+  if (['business','ga4'].includes(preferredKind) && validDate(preferredStartDate) && validDate(preferredEndDate)) {
+    job = await db.prepare(`SELECT * FROM AdminKpiJobs WHERE tenant_id=? AND kind=? AND status='queued'
+      AND start_date>=? AND end_date<=? ORDER BY start_date,end_date,id LIMIT 1`)
+      .bind(TENANT,preferredKind,preferredStartDate,preferredEndDate).first();
+  }
+  job ||= await db.prepare(`SELECT * FROM AdminKpiJobs WHERE tenant_id=? AND status='queued' ORDER BY updated_at,id LIMIT 1`).bind(TENANT).first();
   if (!job) return { skipped:'no_work' };
   const claim = await db.prepare(`UPDATE AdminKpiJobs SET status='running',lease_until=?,updated_at=? WHERE id=? AND status='queued' RETURNING id`)
     .bind(new Date(now.getTime()+60000).toISOString(),stamp,job.id).first();
