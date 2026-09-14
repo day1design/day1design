@@ -184,3 +184,9 @@ test('queued business days complete sequentially across advancing scheduler tick
  for(let step=0;step<9;step++){const result=await runAdminKpiBatch(env,{now:new Date(now.getTime()+step*900000)});assert.notEqual(result.status,'failed');}
  assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiJobs WHERE status='complete'").get().n,3);
 });
+test('explicit batch burst completes a low-volume business day within four bounded steps',async()=>{
+ const env=fixture();await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now});
+ const result=await runAdminKpiBatch(env,{now,maxSteps:4});
+ assert.equal(result.status,'complete');assert.equal(result.steps,3);
+ assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiDaily WHERE day='2026-09-09'").get().n,18);
+});

@@ -223,6 +223,17 @@ export async function runAdminKpiBatch(env, options = {}) {
   const now = options.now || new Date(), owner = crypto.randomUUID();
   const lease = await env.DB.prepare(`INSERT INTO AdminKpiBatchLease(tenant_id,owner,lease_until) VALUES(?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET owner=excluded.owner,lease_until=excluded.lease_until WHERE lease_until<? RETURNING owner`).bind(TENANT,owner,new Date(now.getTime()+120000).toISOString(),now.toISOString()).first();
   if (!lease || lease.owner!==owner) return {skipped:'batch_in_progress'};
-  try { return await runBatchStep(env,{...options,now}); }
+  try {
+    const maxSteps = Number.isSafeInteger(options.maxSteps) ? Math.min(4,Math.max(1,options.maxSteps)) : 1;
+    if (maxSteps===1) return await runBatchStep(env,{...options,now});
+    let result = {skipped:'no_work'}, steps = 0;
+    for (let index=0;index<maxSteps;index++) {
+      const next = await runBatchStep(env,{...options,now});
+      if (next.skipped) break;
+      result=next;steps++;
+      if (['failed','paused'].includes(next.status)) break;
+    }
+    return {...result,steps};
+  }
   finally { await env.DB.prepare('DELETE FROM AdminKpiBatchLease WHERE tenant_id=? AND owner=?').bind(TENANT,owner).run(); }
 }

@@ -214,7 +214,7 @@ async function handleApi(request, env, ctx, path) {
   } else if (path === "/api/meeting-settings") {
     res = await handleMeetingSettings(request, env);
   } else if (path === "/api/admin/kpi/batches") {
-    res = await handleAdminKpiBatches(request, env);
+    res = await handleAdminKpiBatches(request, env, ctx);
   } else if (path === "/api/admin/kpi") {
     res = await handleAdminKpi(request, env, ctx, services);
   } else if (path === "/api/admin/dashboard") {

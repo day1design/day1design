@@ -1,8 +1,8 @@
 import { verifyAdmin } from '../lib/auth.js';
 import { jsonError, jsonOk } from '../lib/response.js';
-import { enqueueAdminKpiBatch } from '../lib/admin-kpi-refresh.js';
+import { enqueueAdminKpiBatch, runAdminKpiBatch } from '../lib/admin-kpi-refresh.js';
 
-export async function handleAdminKpiBatches(request, env) {
+export async function handleAdminKpiBatches(request, env, ctx) {
   if (!(await verifyAdmin(request, env))) return jsonError(401,'Unauthorized');
   if (!env.DB) return jsonError(503,'KPI database unavailable');
   if (request.method === 'POST') {
@@ -25,7 +25,9 @@ export async function handleAdminKpiBatches(request, env) {
         return retried ? jsonOk({queued:true,id:retried.id}) : jsonError(409,'Batch retry unavailable');
       }
       if (!body || Object.keys(body).some(key => !['kind','startDate','endDate'].includes(key))) return jsonError(400,'Invalid batch fields');
-      return jsonOk(await enqueueAdminKpiBatch(env.DB,{...body,sourceId:body.kind === 'ga4' ? env.GA4_PROPERTY_ID || '' : ''}));
+      const result = await enqueueAdminKpiBatch(env.DB,{...body,sourceId:body.kind === 'ga4' ? env.GA4_PROPERTY_ID || '' : ''});
+      if (ctx?.waitUntil) ctx.waitUntil(runAdminKpiBatch(env,{maxSteps:4}).catch(() => ({skipped:'kpi_batch_error'})));
+      return jsonOk({...result,processing:Boolean(ctx?.waitUntil)});
     } catch { return jsonError(400,'Invalid batch request'); }
   }
   if (request.method !== 'GET') return jsonError(405,'Method Not Allowed');
