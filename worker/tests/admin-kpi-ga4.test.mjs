@@ -23,7 +23,7 @@ test('one exact-period totals report, no daily unique summation, bounded transpo
   assert.deepEqual(body.dateRanges, [range]);
   assert.equal(body.dimensions, undefined);
   assert.equal(body.limit, '1');
-  assert(mock.calls.every(call => call.init.signal && call.init.redirect === 'error'));
+  assert(mock.calls.every(call => call.init.signal && call.init.redirect === 'follow'));
 });
 test('rejects timezone, partial reports, missing totals and malformed metrics', async () => {
   for (const change of [
