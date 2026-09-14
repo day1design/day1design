@@ -25,7 +25,7 @@ export async function handleAdminKpiBatches(request, env) {
         return retried ? jsonOk({queued:true,id:retried.id}) : jsonError(409,'Batch retry unavailable');
       }
       if (!body || Object.keys(body).some(key => !['kind','startDate','endDate'].includes(key))) return jsonError(400,'Invalid batch fields');
-      return jsonOk(await enqueueAdminKpiBatch(env.DB,body));
+      return jsonOk(await enqueueAdminKpiBatch(env.DB,{...body,sourceId:body.kind === 'ga4' ? env.GA4_PROPERTY_ID || '' : ''}));
     } catch { return jsonError(400,'Invalid batch request'); }
   }
   if (request.method !== 'GET') return jsonError(405,'Method Not Allowed');

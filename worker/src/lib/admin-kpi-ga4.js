@@ -11,6 +11,7 @@ export function isReusableAdminKpiGa4Snapshot(payload, { tenantId, propertyId, s
   if (!isAdminKpiGa4PayloadBinding(payload, { tenantId, propertyId, startDate, endDate })) return false;
   const summary = payload.summary;
   if (!summary || ![summary.users ?? summary.visitors ?? summary.activeUsers, summary.sessions, summary.pageviews ?? summary.screenPageViews].every(validMetricValue)) return false;
+  if (summary.provisional === true || summary.complete === false) return false;
   const today = new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
   if (endDate !== today) return true;
   const age = Date.parse(now.toISOString()) - Date.parse(createdAt || '');
@@ -46,6 +47,17 @@ async function boundedJson(response, code) {
   } finally { await reader.cancel().catch(() => {}); }
 }
 
+async function fetchJson(fetchImpl, url, init, code) {
+  let response;
+  try {
+    response = await fetchImpl(url, init);
+  } catch (error) {
+    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw new Error(`${code}_timeout`);
+    throw new Error(`${code}_transport`);
+  }
+  return boundedJson(response, code);
+}
+
 export async function collectAdminKpiGa4(env, { startDate, endDate }, { fetchImpl = fetch, now = new Date() } = {}) {
   if (!dateValid(startDate) || !dateValid(endDate) || startDate > endDate ||
       (Date.parse(endDate) - Date.parse(startDate)) / 86400000 > 366) throw new Error('kpi_ga4_range');
@@ -55,20 +67,20 @@ export async function collectAdminKpiGa4(env, { startDate, endDate }, { fetchImp
   const refreshToken = env.GA4_REFRESH_TOKEN || env.GOOGLE_ANALYTICS_REFRESH_TOKEN || env.GOOGLE_REFRESH_TOKEN;
   if (!/^\d+$/.test(propertyId) || !env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !refreshToken)
     throw new Error('kpi_ga4_not_configured');
-  const oauth = await boundedJson(await fetchImpl('https://oauth2.googleapis.com/token', {
+  const oauth = await fetchJson(fetchImpl, 'https://oauth2.googleapis.com/token', {
     method: 'POST', redirect: 'error', signal: AbortSignal.timeout(4500),
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
       refresh_token: refreshToken, grant_type: 'refresh_token' }),
-  }), 'kpi_ga4_oauth');
+  }, 'kpi_ga4_oauth');
   if (typeof oauth.access_token !== 'string' || !oauth.access_token || oauth.access_token.length > 8192)
     throw new Error('kpi_ga4_oauth_invalid');
-  const report = await boundedJson(await fetchImpl(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
+  const report = await fetchJson(fetchImpl, `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
     method: 'POST', redirect: 'error', signal: AbortSignal.timeout(4500),
     headers: { authorization: `Bearer ${oauth.access_token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ dateRanges: [{ startDate, endDate }], metrics: METRICS.map(name => ({ name })),
       limit: '1', keepEmptyRows: true, returnPropertyQuota: true }),
-  }), 'kpi_ga4_report');
+  }, 'kpi_ga4_report');
   const meta = report.metadata || {};
   if (meta.timeZone !== 'Asia/Seoul') throw new Error('kpi_ga4_timezone_mismatch');
   if (meta.emptyReason || meta.subjectToThresholding || meta.dataLossFromOtherRow ||

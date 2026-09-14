@@ -30,7 +30,7 @@ export async function handleAdminKpi(request, env) {
   } catch (error) {
     const message = error?.message || "";
     const code = message === "kpi_rollup_limit" || message === "kpi_response_limit" || message === "kpi_period_too_large" ? 413
-      : message === "kpi_anchor_future" || message === "kpi_anchor_invalid" || message === "kpi_period_invalid" ? 400
+      : message === "kpi_anchor_future" || message === "kpi_anchor_incomplete" || message === "kpi_anchor_invalid" || message === "kpi_period_invalid" ? 400
         : 503;
     return jsonError(code, code === 413 ? "KPI source limit exceeded" : code === 400 ? "Invalid KPI query" : "KPI summary unavailable; retry later");
   }

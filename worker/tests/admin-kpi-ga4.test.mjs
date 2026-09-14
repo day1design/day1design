@@ -66,6 +66,11 @@ test('today snapshot reuse expires after the bounded freshness window', () => {
   assert.equal(fresh,true);
   assert.equal(stale,false);
 });
+test('provisional snapshot never becomes reusable after its day closes', () => {
+  const payload = { tenant_id:'day1design', source_kind:'ga4', source_id:'12345', start_date:'2026-09-07', end_date:'2026-09-13', summary:{ visitors:1, sessions:1, pageviews:1, complete:false, provisional:true } };
+  const reusable = isReusableAdminKpiGa4Snapshot(payload,{ tenantId:'day1design', propertyId:'12345', startDate:'2026-09-07', endDate:'2026-09-13', createdAt:'2026-09-13T00:00:00.000Z', now:new Date('2026-09-14T00:00:00.000Z') });
+  assert.equal(reusable,false);
+});
 test('zero totals remain zero only with a valid complete report', async () => {
   const data = report(); data.rows[0].metricValues.forEach(v => v.value = '0');
   const result = await collectAdminKpiGa4(env, range, { ...transport(data), now });
@@ -78,4 +83,10 @@ test('oversized and failed external response stops without automatic retry', asy
   } }), /kpi_ga4_oauth_size/);
   assert.equal(calls, 1);
   await assert.rejects(collectAdminKpiGa4(env, range, { now, fetchImpl: async () => new Response('secret', { status: 401 }) }), /^Error: kpi_ga4_oauth_401$/);
+});
+test('transport failures expose a safe stage-specific error code', async () => {
+  await assert.rejects(
+    collectAdminKpiGa4(env, range, { now, fetchImpl: async () => { throw new Error('socket closed'); } }),
+    /^Error: kpi_ga4_oauth_transport$/,
+  );
 });

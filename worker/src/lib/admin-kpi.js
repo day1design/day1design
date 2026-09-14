@@ -100,9 +100,11 @@ function assertPeriodBound(resolved) {
 
 export function normalizeAnchor(value, now = new Date()) {
   if (value != null && value !== "" && !validDate(value)) throw new Error("kpi_anchor_invalid");
-  const anchor = value == null || value === "" ? todayKst(now) : value;
+  const today = todayKst(now);
+  const anchor = value == null || value === "" ? addDays(today, -1) : value;
   if (!validDate(anchor)) throw new Error("kpi_anchor_invalid");
-  if (anchor > todayKst(now)) throw new Error("kpi_anchor_future");
+  if (anchor > today) throw new Error("kpi_anchor_future");
+  if (anchor === today) throw new Error("kpi_anchor_incomplete");
   return anchor;
 }
 
@@ -460,7 +462,7 @@ export async function buildAdminKpi(db, {
     metrics: buildMetricComparison(current.values, previous.values),
     organic: buildOrganic(organicBasis, current.values, current.coverage, previous.coverage),
     coverage: { ...coverageMap, status: statusFromCoverage(coverageMap) },
-    sourceStatus: { label: resolved.current.end === todayKst(now) ? "오늘 포함 · 출처별 마지막 갱신 시점 기준" : "저장된 지표 기준", sources: current.sources || [] },
+    sourceStatus: { label: resolved.current.end === addDays(todayKst(now), -1) ? "전일 마감 · 저장된 지표 기준" : "저장된 지표 기준", sources: current.sources || [] },
     budgetBands: buildBudgetBands(current.budget, previous.budget),
     limits: { maxSourceDays: MAX_SOURCE_DAYS, maxRollupRows: MAX_ROLLUP_ROWS, maxResponseBytes: MAX_RESPONSE_BYTES, cacheTtlSeconds: 60 },
     cache: { revision: rev, snapshot: "miss" },
@@ -486,8 +488,9 @@ export async function readAdminKpiRevision(db, tenant = TENANT) {
 export async function readAdminKpiCached(db, options = {}) {
   const tenantId = options.tenantId || TENANT;
   const role = options.role || "owner";
+  const anchor = normalizeAnchor(options.anchor, options.now);
   const rev = await readAdminKpiRevision(db, tenantId);
-  const key = `${tenantId}:${role}:${options.period || "7"}:${options.anchor || ""}:${rev}:${sanitizeBinding(options.metaAccountId)}:${sanitizeBinding(options.ga4PropertyId)}`;
+  const key = `${tenantId}:${role}:${options.period || "7"}:${anchor}:${rev}:${sanitizeBinding(options.metaAccountId)}:${sanitizeBinding(options.ga4PropertyId)}`;
   const cache = cacheFor(db);
   const now = Date.now();
   for (const [entryKey, entry] of cache) if (entry.expires <= now) cache.delete(entryKey);
@@ -495,7 +498,7 @@ export async function readAdminKpiCached(db, options = {}) {
   if (found?.value) return { ...found.value, cache: { ...(found.value.cache || {}), hit: true, revision: rev } };
   if (found?.pending) return { ...(await found.pending), cache: { hit: false, coalesced: true, revision: rev } };
   while (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value);
-  const entry = { pending: buildAdminKpi(db, { ...options, tenantId, role, revision: rev }) };
+  const entry = { pending: buildAdminKpi(db, { ...options, anchor, tenantId, role, revision: rev }) };
   cache.set(key, entry);
   try {
     entry.value = await entry.pending;

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
     <link rel="stylesheet" href="admin.css?v=20260903-branch" />
-    <link rel="stylesheet" href="kpi.css?v=20260911-thicker" />
+    <link rel="stylesheet" href="kpi.css?v=20260914-cjk" />
     <script>window.ADMIN_PAGE = { title: "KPI", nav: "kpi" };</script>
   </head>
   <body class="admin-body">
@@ -25,7 +25,7 @@
             <label for="anchorDate">기준일</label>
             <input id="anchorDate" type="date" />
             <button type="button" id="applyAnchor">적용</button>
-            <button type="button" id="todayAnchor">오늘</button>
+            <button type="button" id="latestAnchor">최신 전일</button>
           </div>
           <p class="kpi-range" id="rangeLabel">기간 확인 중</p>
         </section>
@@ -72,6 +72,6 @@
     </div>
     <div class="toast" id="toast"></div>
     <script defer src="admin.js?v=20260911-emblem"></script>
-    <script defer src="kpi.js?v=20260910-kpi"></script>
+    <script defer src="kpi.js?v=20260914-yesterday"></script>
   </body>
 </html>

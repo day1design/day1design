@@ -7,6 +7,7 @@ import {
   classifyOrganicLead,
   parseBudgetWon,
   readAdminKpiCached,
+  normalizeAnchor,
   resolveKpiPeriod,
 } from "../src/lib/admin-kpi.js";
 
@@ -94,14 +95,20 @@ async function read(sqlite, options = {}) {
   });
 }
 
-test("KPI rolling periods include the KST anchor without overlapping the prior period", () => {
-  const result = resolveKpiPeriod("7", "2026-09-10", new Date("2026-09-10T03:00:00.000Z"));
-  assert.deepEqual(result.current, { start: "2026-09-04", endExclusive: "2026-09-11", end: "2026-09-10", days: 7 });
-  assert.deepEqual(result.previous, { start: "2026-08-28", endExclusive: "2026-09-04", end: "2026-09-03", days: 7 });
+test("KPI rolling periods end on the latest completed KST day without overlap", () => {
+  const result = resolveKpiPeriod("7", "2026-09-09", new Date("2026-09-10T03:00:00.000Z"));
+  assert.deepEqual(result.current, { start: "2026-09-03", endExclusive: "2026-09-10", end: "2026-09-09", days: 7 });
+  assert.deepEqual(result.previous, { start: "2026-08-27", endExclusive: "2026-09-03", end: "2026-09-02", days: 7 });
+});
+
+test("KPI defaults to KST yesterday and rejects an incomplete today anchor", () => {
+  const now = new Date("2026-09-10T03:00:00.000Z");
+  assert.equal(normalizeAnchor(undefined, now), "2026-09-09");
+  assert.throws(() => normalizeAnchor("2026-09-10", now), /kpi_anchor_incomplete/);
 });
 
 test("monthly KPI periods use completed calendar months", () => {
-  const result = resolveKpiPeriod("month", "2026-09-10", new Date("2026-09-10T03:00:00.000Z"));
+  const result = resolveKpiPeriod("month", "2026-09-09", new Date("2026-09-10T03:00:00.000Z"));
   assert.equal(result.current.start, "2026-08-01");
   assert.equal(result.current.endExclusive, "2026-09-01");
   assert.equal(result.previous.start, "2026-07-01");
@@ -322,8 +329,8 @@ test("private R2 snapshot is written and read by exact period, role, tenant, and
   }
 });
 
-test("today inclusive 7 days crosses month boundary without gaps", () => {
- const r=resolveKpiPeriod("7","2026-09-01",new Date("2026-09-01T00:00:00Z"));
+test("latest completed seven days cross a month boundary without gaps", () => {
+ const r=resolveKpiPeriod("7","2026-09-01",new Date("2026-09-02T00:00:00Z"));
  assert.equal(r.current.start,"2026-08-26"); assert.equal(r.current.end,"2026-09-01");
  assert.equal(r.previous.start,"2026-08-19"); assert.equal(r.previous.end,"2026-08-25");
  assert.equal(r.previous.endExclusive,r.current.start);

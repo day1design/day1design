@@ -32,6 +32,8 @@
   window.adminKpiNormalize = normalizeKpiResponse;
   const state = { period: "7", scope: "all", anchor: "", request: 0, controller: null, data: null };
   const todayKst = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const latestKst = () => { const [year, month, day] = todayKst().split("-").map(Number); return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10); };
+  const addIsoDays = (value, amount) => { const [year, month, day] = value.split("-").map(Number); return new Date(Date.UTC(year, month - 1, day + amount)).toISOString().slice(0, 10); };
   const escText = (el, value) => { el.textContent = value == null ? "" : String(value); };
   const fmt = (value, unit) => {
     if (value == null || Number.isNaN(Number(value))) return "—";
@@ -86,13 +88,41 @@
     $("kpiAlert").hidden = !insufficient && !preparing; if (insufficient) escText($("kpiAlert"), "기준데이터 누적이 부족합니다. 다른기간을 비교해주세요"); else if (preparing) escText($("kpiAlert"), "저장 지표를 준비 중입니다. 잠시 후 다시 확인해주세요."); $("kpiError").hidden = true; $("retryButton").hidden = true;
     escText($("rangeLabel"), data?.range?.label || data?.period?.label || `${state.period} 기간 · 기준일 ${state.anchor} KST`); const source = data?.sourceStatus || {}; const sourceItems = Array.isArray(source.sources) ? source.sources.slice(0, 3).map((item) => [({business:"상담·계약 DB",meta:"Meta 광고",ga4:"GA4"}[item.name] || item.name), item.binding && `${item.name === "ga4" ? "속성" : "계정"} ${item.binding}`, item.fetchedAt && `갱신 ${new Date(item.fetchedAt).toLocaleString("ko-KR", {timeZone:"Asia/Seoul",hour12:false})} KST`].filter(Boolean).join(" · ")) : []; $("sourceState").replaceChildren(...[source.label || "저장된 지표 기준", ...sourceItems].filter(Boolean).map(text => { const line = document.createElement("span"); line.textContent = text; return line; })); $("metricSection").hidden = insufficient || preparing; $("kpiCards").hidden = insufficient || preparing; $("scopeTabs").hidden = insufficient || preparing; renderOrganic(data); renderCards(metrics); renderMetrics(metrics); renderBudget(insufficient || preparing ? [] : (data?.budgetBands || data?.budget || []));
   }
-  async function load() {
+  function missingBatches(data) {
+    const batches = [];
+    for (const key of ["current", "previous"]) {
+      const period = data?.period?.[key], coverage = data?.coverage?.[key];
+      if (!period || !coverage) continue;
+      if (coverage.business?.complete === false && ["dirty_business_days", "daily_rollup_missing", "daily_rollup_incomplete"].includes(coverage.business.reason)) {
+        for (let startDate = period.start; startDate <= period.end;) {
+          const candidate = addIsoDays(startDate, 30), endDate = candidate < period.end ? candidate : period.end;
+          batches.push({ kind: "business", startDate, endDate });
+          startDate = addIsoDays(endDate, 1);
+        }
+      }
+      if (coverage.ga4?.complete === false && String(coverage.ga4.reason || "").startsWith("ga4_snapshot_")) batches.push({ kind: "ga4", startDate: period.start, endDate: period.end });
+    }
+    return batches;
+  }
+  async function prepareMissing(data) {
+    const batches = missingBatches(data);
+    if (!batches.length) return false;
+    let queued = false, firstError = null;
+    for (let index = 0; index < batches.length; index += 3) {
+      const results = await Promise.allSettled(batches.slice(index, index + 3).map((json) => window.adminUtil.api("/api/admin/kpi/batches", { method: "POST", json })));
+      queued ||= results.some((result) => result.status === "fulfilled" && Number(result.value?.queued || 0) > 0);
+      firstError ||= results.find((result) => result.status === "rejected")?.reason || null;
+    }
+    if (!queued && firstError) throw firstError;
+    return queued;
+  }
+  async function load({ prepare = false } = {}) {
     const request = ++state.request; if (state.controller) state.controller.abort(); state.controller = new AbortController(); state.data = null; $("sourceState").textContent = "불러오는 중"; $("rangeLabel").textContent = "기간 확인 중"; $("organicValue").textContent = "불러오는 중"; $("organicDetail").replaceChildren(); $("organicSaving").replaceChildren(); $("kpiError").hidden = true; $("metricGroups").replaceChildren(); $("kpiCards").replaceChildren(); $("budgetRows").replaceChildren(); $("budgetSection").hidden = true;
     const query = new URLSearchParams({ period: state.period, anchor: state.anchor });
-    try { const data = await window.adminUtil.apiCached(`/api/admin/kpi?${query.toString()}`, { ttl: 60000, signal: state.controller.signal, dedupe: false }); if (request !== state.request) return; render(normalizeKpiResponse(data || {})); } catch (error) { if (request !== state.request) return; $("sourceState").textContent = "조회 실패"; escText($("kpiError"), "KPI 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."); $("kpiError").hidden = false; $("retryButton").hidden = false; }
+    try { const data = normalizeKpiResponse(await window.adminUtil.apiCached(`/api/admin/kpi?${query.toString()}`, { ttl: 60000, signal: state.controller.signal, dedupe: false }) || {}); if (request !== state.request) return; render(data); if (prepare && await prepareMissing(data) && request === state.request) { $("kpiAlert").hidden = false; escText($("kpiAlert"), "선택 기간의 저장 지표를 준비 중입니다. 완료 후 다시 확인해주세요."); } } catch (error) { if (request !== state.request) return; $("sourceState").textContent = "조회 실패"; escText($("kpiError"), "KPI 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."); $("kpiError").hidden = false; $("retryButton").hidden = false; }
   }
   function validDate(value) { if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false; const [year, month, day] = value.split("-").map(Number); const date = new Date(Date.UTC(year, month - 1, day)); return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day; }
-  function applyAnchor(value) { if (!validDate(value) || value > todayKst()) { escText($("kpiError"), "오늘(KST) 이전의 유효한 기준일을 선택해주세요."); $("kpiError").hidden = false; return; } state.anchor = value; load(); }
-  function init() { state.anchor = todayKst(); $("anchorDate").value = state.anchor; $("anchorDate").max = state.anchor; document.querySelectorAll("[data-period]").forEach((button) => button.addEventListener("click", () => { state.period = button.dataset.period; document.querySelectorAll("[data-period]").forEach((b) => b.setAttribute("aria-pressed", String(b === button))); load(); })); document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => { state.scope = button.dataset.scope; document.querySelectorAll("[data-scope]").forEach((b) => { const active = b === button; b.classList.toggle("active", active); b.setAttribute("aria-pressed", String(active)); }); render(state.data || {}); })); $("applyAnchor").addEventListener("click", () => applyAnchor($("anchorDate").value)); $("todayAnchor").addEventListener("click", () => { $("anchorDate").value = todayKst(); applyAnchor($("anchorDate").value); }); $("retryButton").addEventListener("click", load); $("basisToggle").addEventListener("click", () => { const expanded = $("basisToggle").getAttribute("aria-expanded") !== "true"; $("basisToggle").setAttribute("aria-expanded", String(expanded)); $("basisToggle").textContent = expanded ? "산정 근거 접기" : "산정 근거 보기"; $("organicKpi").classList.toggle("basis-expanded", expanded); }); load(); }
+  function applyAnchor(value) { if (!validDate(value) || value > latestKst()) { escText($("kpiError"), "전일(KST)까지의 유효한 기준일을 선택해주세요."); $("kpiError").hidden = false; return; } state.anchor = value; load({ prepare: true }); }
+  function init() { state.anchor = latestKst(); $("anchorDate").value = state.anchor; $("anchorDate").max = state.anchor; document.querySelectorAll("[data-period]").forEach((button) => button.addEventListener("click", () => { state.period = button.dataset.period; document.querySelectorAll("[data-period]").forEach((b) => b.setAttribute("aria-pressed", String(b === button))); load(); })); document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => { state.scope = button.dataset.scope; document.querySelectorAll("[data-scope]").forEach((b) => { const active = b === button; b.classList.toggle("active", active); b.setAttribute("aria-pressed", String(active)); }); render(state.data || {}); })); $("applyAnchor").addEventListener("click", () => applyAnchor($("anchorDate").value)); $("latestAnchor").addEventListener("click", () => { $("anchorDate").value = latestKst(); applyAnchor($("anchorDate").value); }); $("retryButton").addEventListener("click", load); $("basisToggle").addEventListener("click", () => { const expanded = $("basisToggle").getAttribute("aria-expanded") !== "true"; $("basisToggle").setAttribute("aria-expanded", String(expanded)); $("basisToggle").textContent = expanded ? "산정 근거 접기" : "산정 근거 보기"; $("organicKpi").classList.toggle("basis-expanded", expanded); }); load(); }
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", init) : init();
 })();
