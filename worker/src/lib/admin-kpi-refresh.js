@@ -44,7 +44,7 @@ export async function enqueueAdminKpiBatch(db, { kind, startDate, endDate = star
       (AdminKpiJobs.status='failed' AND ((excluded.kind='ga4' AND (AdminKpiJobs.retries<1 OR (AdminKpiJobs.attempts<3 AND
       (AdminKpiJobs.error_code='batch_step_failed' OR AdminKpiJobs.error_code IN ('kpi_ga4_oauth_transport','kpi_ga4_report_transport','kpi_ga4_oauth_timeout','kpi_ga4_report_timeout','kpi_ga4_oauth_429','kpi_ga4_report_429')
       OR AdminKpiJobs.error_code GLOB 'kpi_ga4_oauth_5??' OR AdminKpiJobs.error_code GLOB 'kpi_ga4_report_5??')))) OR
-      (excluded.kind='business' AND AdminKpiJobs.retries<1 AND AdminKpiJobs.error_code='source_changed_during_batch' AND EXISTS(SELECT 1 FROM AdminKpiDirtyDays WHERE tenant_id=excluded.tenant_id AND day=excluded.start_date AND source='business'))))`)
+      (excluded.kind='business' AND AdminKpiJobs.retries<${BUSINESS_REQUEUE_LIMIT} AND EXISTS(SELECT 1 FROM AdminKpiDirtyDays WHERE tenant_id=excluded.tenant_id AND day=excluded.start_date AND source='business'))))`)
       .bind(`${TENANT}:${kind}:${day}:${end}`, TENANT, kind, day, end, now.toISOString());
   });
   const results = statements.length ? await db.batch(statements) : [];
@@ -146,6 +146,50 @@ async function businessStep(db, job, now) {
   return { status: nextPhase === 3 ? 'complete' : 'queued', processed:page.length };
 }
 
+// 하루치 사업 지표 재집계는 한 회차에 끝까지 돌린다(하루 접수는 수십 건이라 몇 초면 된다).
+// 15분마다 한 단계씩 나눠 돌면 그 사이 Meta·GA4 저장이나 다른 날 재집계가 데이터 리비전을
+// 올려 "섞인 숫자 방지" 검사에 걸렸고, 재시도 1회까지 실패하면 그 날이 영구 대기가 되어
+// KPI 가 그 날이 낀 기간을 계속 가렸다(2026-09-14 → 9/15~9/30).
+// 도중에 리비전이 바뀌면 실패로 끝내지 않고 그 날을 처음부터 다시 센다. 한 회차에 3번까지
+// 다시 세고 그래도 바뀌면 다음 회차로 넘긴다. 누적 20번이 넘으면 실패로 두고 재대기(5회)에 맡긴다.
+const BUSINESS_STEPS_PER_RUN = 12;
+const BUSINESS_RESTARTS_PER_RUN = 3;
+const BUSINESS_RESTART_LIMIT = 20;
+const BUSINESS_REQUEUE_LIMIT = 5;
+async function runBusinessJob(db, job, stamp, now) {
+  let restarts = 0, result = { status:'queued', processed:0 };
+  for (let step = 0; step < BUSINESS_STEPS_PER_RUN; step++) {
+    const revision = Number((await db.prepare('SELECT version FROM CrmDataRevisions WHERE tenant_id=?').bind(TENANT).first())?.version || 0);
+    const state = JSON.parse(job.payload_json || '{}');
+    if (!state.phase && !job.cursor) {
+      job.revision = revision;
+      await db.prepare('UPDATE AdminKpiJobs SET revision=? WHERE id=?').bind(revision,job.id).run();
+    } else if (revision !== Number(job.revision)) {
+      if (Number(job.attempts || 0) >= BUSINESS_RESTART_LIMIT) {
+        await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code='source_changed_during_batch',lease_until='',updated_at=? WHERE id=?`).bind(stamp,job.id).run();
+        return { status:'failed',reason:'source_changed_during_batch' };
+      }
+      if (restarts >= BUSINESS_RESTARTS_PER_RUN) {
+        await db.prepare(`UPDATE AdminKpiJobs SET status='queued',cursor='',payload_json='{}',lease_until='' WHERE id=?`).bind(job.id).run();
+        return { status:'queued',reason:'source_changing' };
+      }
+      restarts++;
+      job = { ...job, cursor:'', payload_json:'{}', revision, attempts:Number(job.attempts || 0) + 1 };
+      await db.prepare(`UPDATE AdminKpiJobs SET cursor='',payload_json='{}',revision=?,attempts=? WHERE id=?`).bind(revision,job.attempts,job.id).run();
+    }
+    result = await businessStep(db,job,stamp);
+    const after = await db.prepare('SELECT status FROM AdminKpiJobs WHERE id=?').bind(job.id).first();
+    if (!after || after.status === 'complete') return result;
+    // 마지막 기록 순간에 리비전이 바뀌면 businessStep 이 'failed' 로 남긴다 → 다음 바퀴에서 처음부터 다시 센다
+    const claim = await db.prepare(`UPDATE AdminKpiJobs SET status='running',lease_until=? WHERE id=? AND status IN ('queued','failed') RETURNING *`)
+      .bind(new Date(now.getTime()+60000).toISOString(),job.id).first();
+    if (!claim) return result;
+    job = claim;
+  }
+  await db.prepare(`UPDATE AdminKpiJobs SET status='queued',lease_until='' WHERE id=? AND status='running'`).bind(job.id).run();
+  return result;
+}
+
 async function runBatchStep(env, { now = new Date(), fetchImpl = fetch, preferredKind = '', preferredStartDate = '', preferredEndDate = '' } = {}) {
   const db = env.DB;
   if (!db) return { skipped:'no_database' };
@@ -164,7 +208,8 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch, preferre
       AND COALESCE((SELECT used FROM AdminKpiBatchBudget WHERE tenant_id=? AND day=?),0)+2<=?`)
       .bind(stamp,TENANT,utcStart(kstDay(now)),TENANT,kstDay(now),configuredBudget).run();
   }
-  // A crashed or timed-out job requires an explicit retry; cron cannot loop forever.
+  // A crashed or timed-out job fails here. GA4 needs an explicit retry; a business day that
+  // still needs recounting is requeued by enqueueAdminKpiBatch up to BUSINESS_REQUEUE_LIMIT times.
   await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code='lease_expired',lease_until='' WHERE tenant_id=? AND status='running' AND lease_until<?`).bind(TENANT,stamp).run();
   await warmupDefaultKpi(env, now);
   await refreshStaleBudgetRows(db, stamp);
@@ -182,19 +227,7 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch, preferre
     .bind(new Date(now.getTime()+60000).toISOString(),stamp,job.id).first();
   if (!claim) return { skipped:'claimed_elsewhere' };
   try {
-    if (job.kind === 'business') {
-      const revision = Number((await db.prepare('SELECT version FROM CrmDataRevisions WHERE tenant_id=?').bind(TENANT).first())?.version || 0);
-      const state = JSON.parse(job.payload_json || '{}');
-      if ((state.phase || job.cursor) && revision !== job.revision) {
-        await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code='source_changed_during_batch',lease_until='',updated_at=? WHERE id=?`).bind(stamp,job.id).run();
-        return {status:'failed',reason:'source_changed_during_batch'};
-      }
-      if (!state.phase && !job.cursor) {
-        job.revision=revision;
-        await db.prepare('UPDATE AdminKpiJobs SET revision=? WHERE id=?').bind(revision,job.id).run();
-      }
-      return await businessStep(db,job,stamp);
-    }
+    if (job.kind === 'business') return await runBusinessJob(db,job,stamp,now);
     const propertyId = String(env.GA4_PROPERTY_ID || '').replace(/^properties\//,'');
     const existing = await db.prepare(`SELECT id,payload_json,created_at FROM CrmGa4AnalyticsSnapshots WHERE tenant_id=? AND source_kind='ga4' AND source_id=? AND start_date=? AND end_date=? LIMIT 1`)
       .bind(TENANT,propertyId,job.start_date,job.end_date).first();

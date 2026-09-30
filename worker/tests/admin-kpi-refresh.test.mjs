@@ -96,22 +96,44 @@ test('scheduled KPI batch warmup is gated by request budget configuration',async
  assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiJobs WHERE kind='business'").get().n,14);
  assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiJobs WHERE kind='ga4'").get().n,2);
 });
-test('revision change across resumable steps fails without publishing mixed totals',async()=>{
- const env=fixture();await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now});
- assert.equal((await runAdminKpiBatch(env,{now})).status,'queued');
- env.db.exec("UPDATE CrmDataRevisions SET version=version+1 WHERE tenant_id='day1design'");
- const result=await runAdminKpiBatch(env,{now});assert.equal(result.reason,'source_changed_during_batch');
- assert.equal(env.db.prepare('SELECT count(*) n FROM AdminKpiDaily').get().n,0);
+// [가드] 재집계 도중 데이터 리비전이 바뀌어도 그 날을 실패로 끝내지 않는다. 처음부터 다시 세고
+// 섞인 숫자는 기록하지 않는다. (2026-09-14: 실패 → 재시도 1회도 실패 → 영구 대기로 9/15~9/30 KPI 가림)
+test('revision change mid-recount restarts the day instead of failing, without mixed totals',async()=>{
+ const env=fixture();
+ for(let i=0;i<3;i++)env.db.prepare(`INSERT INTO Estimates(id,CrmTenantId,SubmittedAt,Source,Detail,Status) VALUES(?,'day1design','2026-09-08T16:00:00.000Z','homepage','가용예산: 5천만원','신규')`).run(`r${i}`);
+ await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now});
+ const batch=env.DB.batch;let calls=0;
+ env.DB.batch=async statements=>{const result=await batch(statements);if(calls++===0)env.db.exec("UPDATE CrmDataRevisions SET version=version+1 WHERE tenant_id='day1design'");return result;};
+ const result=await runAdminKpiBatch(env,{now});
+ assert.equal(result.status,'complete');
+ assert.deepEqual({...env.db.prepare("SELECT status,attempts,error_code FROM AdminKpiJobs WHERE kind='business'").get()},{status:'complete',attempts:1,error_code:''});
+ const get=k=>env.db.prepare('SELECT value FROM AdminKpiDaily WHERE metric=?').get(k).value;
+ assert.equal(get('inquiries'),3,'counted once, not mixed with the first pass');assert.equal(get('budget2'),3);
 });
-test('dirty business job retries once after its source revision changed',async()=>{
+test('a recount whose source keeps changing waits for the next tick and fails only after the restart limit',async()=>{
  const env=fixture();await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now});
- assert.equal((await runAdminKpiBatch(env,{now})).status,'queued');
- env.db.exec("UPDATE CrmDataRevisions SET version=version+1 WHERE tenant_id='day1design'");
- assert.equal((await runAdminKpiBatch(env,{now})).reason,'source_changed_during_batch');
- env.db.exec("INSERT INTO AdminKpiDirtyDays VALUES('day1design','2026-09-09','business',1)");
- const retried=await runAdminKpiBatch(env,{now:new Date(now.getTime()+900000)});
- assert.equal(retried.status,'queued');
- assert.equal(env.db.prepare("SELECT retries FROM AdminKpiJobs WHERE kind='business'").get().retries,1);
+ const batch=env.DB.batch;
+ env.DB.batch=async statements=>{const result=await batch(statements);env.db.exec("UPDATE CrmDataRevisions SET version=version+1 WHERE tenant_id='day1design'");return result;};
+ const first=await runAdminKpiBatch(env,{now});
+ assert.equal(first.status,'queued');assert.equal(first.reason,'source_changing');
+ assert.deepEqual({...env.db.prepare("SELECT status,attempts,payload_json FROM AdminKpiJobs WHERE kind='business'").get()},{status:'queued',attempts:3,payload_json:'{}'});
+ assert.equal(env.db.prepare('SELECT count(*) n FROM AdminKpiDaily').get().n,0,'no mixed totals');
+ env.db.exec("UPDATE AdminKpiJobs SET attempts=20");
+ const last=await runAdminKpiBatch(env,{now});
+ assert.equal(last.reason,'source_changed_during_batch');
+ assert.equal(env.db.prepare("SELECT status FROM AdminKpiJobs WHERE kind='business'").get().status,'failed');
+});
+test('a failed business day that still needs recounting is requeued up to five times',async()=>{
+ const env=fixture();await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now});
+ env.db.exec("UPDATE AdminKpiJobs SET status='failed',error_code='lease_expired'");
+ assert.equal((await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now})).queued,0,'not requeued without a pending recount');
+ env.db.exec("INSERT INTO AdminKpiDirtyDays VALUES('day1design','2026-09-09','business',0)");
+ for(let i=1;i<=5;i++){
+  assert.equal((await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now})).queued,1,`requeue ${i}`);
+  assert.equal(env.db.prepare("SELECT retries FROM AdminKpiJobs").get().retries,i);
+  env.db.exec("UPDATE AdminKpiJobs SET status='failed',error_code='batch_step_failed'");
+ }
+ assert.equal((await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now})).queued,0,'stops after five');
 });
 test('failed GA4 job records retry and stops after the attempt cap',async()=>{
  const env=fixture();
@@ -173,7 +195,7 @@ test('tenant history index avoids visiting foreign customer event pages',async()
  const insert=env.db.prepare("INSERT INTO EstimateContractHistory(id,estimate_id,saved_at,stage,amount,previous_amount) VALUES(?,?,'2026-09-09T00:00:00.000Z','최종확정',100,0)");
  for(let i=0;i<1000;i++)insert.run(`f${i}`,'foreign');insert.run('m','mine');
  await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now});
- for(let i=0;i<2;i++)await runAdminKpiBatch(env,{now});
+ // 하루치는 한 회차에 끝난다. 마지막 단계(계약 이력)가 자기 가게 1건만 읽었는지 본다.
  const result=await runAdminKpiBatch(env,{now});assert.equal(result.processed,1);assert.equal(result.status,'complete');
  const plan=env.db.prepare(`EXPLAIN QUERY PLAN SELECT id FROM EstimateContractHistory INDEXED BY idx_admin_kpi_history_tenant_day WHERE tenant_id=? AND saved_at>=? AND saved_at<? AND (saved_at,id)>(?,?) ORDER BY saved_at,id LIMIT 101`).all('day1design','2026-09-08','2026-09-10','2026-09-08','');
  assert(plan.some(row=>/SEARCH.*idx_admin_kpi_history_tenant_day/.test(row.detail)));
@@ -184,10 +206,10 @@ test('queued business days complete sequentially across advancing scheduler tick
  for(let step=0;step<9;step++){const result=await runAdminKpiBatch(env,{now:new Date(now.getTime()+step*900000)});assert.notEqual(result.status,'failed');}
  assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiJobs WHERE status='complete'").get().n,3);
 });
-test('explicit batch burst completes a low-volume business day within four bounded steps',async()=>{
+test('explicit batch burst completes a low-volume business day in one runner step',async()=>{
  const env=fixture();await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now});
  const result=await runAdminKpiBatch(env,{now,maxSteps:4});
- assert.equal(result.status,'complete');assert.equal(result.steps,3);
+ assert.equal(result.status,'complete');assert.equal(result.steps,1);
  assert.equal(env.db.prepare("SELECT COUNT(*) AS n FROM AdminKpiDaily WHERE day='2026-09-09'").get().n,18);
 });
 test('budget-paused GA4 job resumes when a new KST request budget day opens',async()=>{
@@ -213,7 +235,8 @@ test('explicit recovery processes the requested range before older queued work',
  await runAdminKpiBatch(env,{now,preferredKind:'business',preferredStartDate:'2026-09-09',preferredEndDate:'2026-09-09'});
  const requested=JSON.parse(env.db.prepare("SELECT payload_json FROM AdminKpiJobs WHERE start_date='2026-09-09'").get().payload_json);
  const older=JSON.parse(env.db.prepare("SELECT payload_json FROM AdminKpiJobs WHERE start_date='2026-09-08'").get().payload_json);
- assert.equal(requested.phase,1);assert.equal(older.phase,undefined);
+ assert.equal(requested.phase,3);assert.equal(older.phase,undefined);
+ assert.equal(env.db.prepare("SELECT status FROM AdminKpiJobs WHERE start_date='2026-09-08'").get().status,'queued');
 });
 test('explicit transient GA4 retries stop after three failed attempts',async()=>{
  const env=fixture(), range={kind:'ga4',startDate:'2026-08-01',endDate:'2026-08-31'};
