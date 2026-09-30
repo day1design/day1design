@@ -4048,6 +4048,79 @@
   pointer-events: none;
 }
 
+/* 포트폴리오 여러 개 선택 이동(A안) — 체크한 카드를 한 묶음으로 끌어 옮긴다 */
+.drag-card-check {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.drag-card-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--c-brand);
+}
+.drag-card-check:has(input:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.drag-card.is-selected {
+  border-color: var(--c-brand);
+  box-shadow: 0 0 0 2px var(--c-brand-soft);
+}
+.card-grid.group-drag .drag-card.is-selected {
+  opacity: 0.45;
+}
+.pf-select-bar {
+  position: sticky;
+  top: 8px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--c-brand);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 13px;
+}
+.pf-select-bar[hidden] {
+  display: none;
+}
+.pf-select-bar strong {
+  color: var(--c-brand);
+}
+.pf-select-hint {
+  flex: 1;
+  min-width: 200px;
+  color: var(--c-text-sub);
+}
+.pf-drag-ghost {
+  position: fixed;
+  top: -100px;
+  left: -100px;
+  padding: 6px 12px;
+  border-radius: 14px;
+  background: var(--c-brand);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
 .drag-card-actions {
   position: absolute;
   top: 8px;

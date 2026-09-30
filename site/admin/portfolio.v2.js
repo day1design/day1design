@@ -9,6 +9,11 @@ let modalThumbAfter = "";
 let modalImages = [];
 let folderManuallyEdited = false;
 
+// 여러 개 선택 이동(A안, 2026-09 관리자 요청서 #2): 카드를 여러 개 체크한 뒤 그중
+// 하나를 끌어 놓으면 체크한 카드가 지금 순서 그대로 한 묶음으로 옮겨진다.
+const selectedIds = new Set();
+let lastSelectedId = null;
+
 const grid = document.getElementById("pfGrid");
 const modal = document.getElementById("pfModal");
 const form = document.getElementById("pfForm");
@@ -67,6 +72,12 @@ function render() {
   const locked = isFilterActive();
   const lockMsg = document.getElementById("filterLockMsg");
   if (lockMsg) lockMsg.hidden = !locked;
+  // 필터 중에는 순서 변경이 잠기므로 선택도 푼다(보이지 않는 카드가 같이 옮겨지는 사고 방지)
+  if (locked) selectedIds.clear();
+  for (const id of [...selectedIds]) {
+    if (!records.some((r) => r.id === id)) selectedIds.delete(id);
+  }
+  renderSelectionBar();
 
   if (!list.length) {
     const empty = document.createElement("div");
@@ -78,7 +89,9 @@ function render() {
   list.forEach((r) => {
     const fullIdx = records.findIndex((x) => x.id === r.id);
     const card = document.createElement("div");
-    card.className = "drag-card" + (locked ? " locked" : "");
+    const selected = selectedIds.has(r.id);
+    card.className =
+      "drag-card" + (locked ? " locked" : "") + (selected ? " is-selected" : "");
     card.draggable = !locked;
     card.dataset.index = String(fullIdx);
     card.dataset.id = r.id;
@@ -96,6 +109,9 @@ function render() {
       <div ${thumbAttrs}>
         ${emptyHint}
         <button type="button" class="drag-card-badge" data-act="setpos" title="${badgeTitle}"${locked ? " disabled" : ""}>${fullIdx + 1}</button>
+        <label class="drag-card-check" title="${locked ? "필터/검색이 켜져 있어 선택할 수 없습니다" : "여러 개 선택해 한 번에 옮기기 (Shift+클릭: 구간 선택)"}">
+          <input type="checkbox" data-act="select" aria-label="${adminUtil.escapeHtml(r.name || "프로젝트")} 선택"${selected ? " checked" : ""}${locked ? " disabled" : ""} />
+        </label>
         <div class="drag-card-actions">
           <button type="button" class="drag-card-action" data-act="edit" title="편집">✎</button>
           <button type="button" class="drag-card-action danger" data-act="del" title="삭제">✕</button>
@@ -106,7 +122,7 @@ function render() {
         <div class="drag-card-tags">
           <span class="badge">${adminUtil.escapeHtml(r.category || "HOUSE")}</span>
           ${Array.isArray(r.images) && r.images.length ? `<span class="badge">사진 ${r.images.length}장</span>` : ""}
-          ${r.rightId || r.rightFolder ? `<span class="badge ref-badge">↗ ${adminUtil.escapeHtml(r.rightName || "참조")}${r.rightCount ? ` · 사진 ${r.rightCount}장` : ""}</span>` : ""}
+          ${r.rightId || r.rightFolder ? `<span class="badge ref-badge">${adminUtil.escapeHtml(r.rightName || "참조")}${r.rightCount ? ` · 사진 ${r.rightCount}장` : ""}</span>` : ""}
         </div>
       </div>
     `;
@@ -118,6 +134,11 @@ function render() {
       e.stopPropagation();
       doDelete(r.id);
     });
+    const check = card.querySelector('[data-act="select"]');
+    check.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleSelect(r.id, check.checked, e.shiftKey);
+    });
     const badgeBtn = card.querySelector('[data-act="setpos"]');
     if (badgeBtn && !locked) {
       badgeBtn.addEventListener("click", (e) => {
@@ -127,6 +148,40 @@ function render() {
     }
     grid.appendChild(card);
   });
+}
+
+function renderSelectionBar() {
+  const bar = document.getElementById("pfSelectBar");
+  if (!bar) return;
+  bar.hidden = selectedIds.size === 0;
+  const count = document.getElementById("pfSelectCount");
+  if (count) count.textContent = `${selectedIds.size}개 선택됨`;
+}
+
+// Shift+클릭이면 마지막으로 체크한 카드부터 이번 카드까지 같은 상태로 맞춘다
+function toggleSelect(id, checked, range) {
+  const ids = [id];
+  if (range && lastSelectedId && lastSelectedId !== id) {
+    const a = records.findIndex((r) => r.id === lastSelectedId);
+    const b = records.findIndex((r) => r.id === id);
+    if (a >= 0 && b >= 0) {
+      ids.length = 0;
+      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) ids.push(records[i].id);
+    }
+  }
+  for (const x of ids) {
+    if (checked) selectedIds.add(x);
+    else selectedIds.delete(x);
+  }
+  lastSelectedId = id;
+  render();
+}
+
+function clearSelection() {
+  if (!selectedIds.size) return;
+  selectedIds.clear();
+  lastSelectedId = null;
+  render();
 }
 
 async function moveByNumber(id) {
@@ -149,6 +204,101 @@ async function moveByNumber(id) {
 }
 
 const R2_PUBLIC_BASE = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev";
+
+// ─── 고유값 자동 박기 ───
+// 옮기기 직전 record의 Order(0~34) 기반 R2 fallback URL을 ThumbAfter/
+// ThumbBefore에 박아 record에 사진을 고정. 이 시점부터 그 카드는 위치와
+// 무관한 "고유값"을 보유 → 어디로 옮겨도 사진 그대로.
+function protectFields(r) {
+  const beforeOrder = Math.round(Number(r.order ?? 0));
+  const beforeNum = String(Math.max(1, beforeOrder + 1)).padStart(2, "0");
+  const protect = {};
+  if (!r.thumbAfter && beforeOrder >= 0 && beforeOrder <= 34) {
+    protect.thumbAfter = `${R2_PUBLIC_BASE}/images/portfolio-thumbs/${beforeNum}_after.webp`;
+  }
+  if (!r.thumbBefore && !r.rightFolder && beforeOrder >= 0 && beforeOrder <= 34) {
+    protect.thumbBefore = `${R2_PUBLIC_BASE}/images/portfolio-thumbs/${beforeNum}_before.webp`;
+  }
+  return protect;
+}
+
+/**
+ * 체크한 카드 묶음을 놓은 자리로 옮긴다(A안).
+ *  - 묶음 안의 순서는 지금 순서 그대로
+ *  - 아래로 끌면 놓은 카드 뒤, 위로 끌면 놓은 카드 앞(1장 이동과 같은 규칙)
+ *  - 묶음 카드의 Order 만 바꾼다. 앞뒤 틈이 모자라면 전체 순서키를 새로 매긴다
+ *  - 저장은 /api/portfolio/reorder 한 번
+ */
+async function moveSelectedToIndex(src, dest) {
+  const target = records[dest];
+  if (!target) return;
+  if (selectedIds.has(target.id)) {
+    adminUtil.toast("선택하지 않은 카드 위에 놓아 주세요", "error");
+    render();
+    return;
+  }
+  const group = records.filter((r) => selectedIds.has(r.id));
+  const rest = records.filter((r) => !selectedIds.has(r.id));
+  const at = rest.findIndex((r) => r.id === target.id) + (src < dest ? 1 : 0);
+  const prev = at > 0 ? rest[at - 1] : null;
+  const next = at < rest.length ? rest[at] : null;
+  const k = group.length;
+  let orders = null;
+  if (prev && next) {
+    const a = Number(prev.order ?? 0);
+    const step = (Number(next.order ?? 0) - a) / (k + 1);
+    if (step >= 1) orders = group.map((_, j) => Math.floor(a + step * (j + 1)));
+  } else if (prev) {
+    orders = group.map((_, j) => Number(prev.order ?? 0) + 1000 * (j + 1));
+  } else if (next) {
+    orders = group.map((_, j) => Number(next.order ?? 0) - 1000 * (k - j));
+  }
+  // 옮기기 전 Order 로 썸네일 고정값을 먼저 계산한다
+  const protects = group
+    .map((r) => ({ id: r.id, patch: protectFields(r) }))
+    .filter((p) => Object.keys(p.patch).length);
+  const arranged = [...rest.slice(0, at), ...group, ...rest.slice(at)];
+  let updates;
+  if (orders) {
+    group.forEach((r, j) => (r.order = orders[j]));
+    updates = group.map((r) => ({ id: r.id, order: r.order }));
+  } else {
+    // 틈이 모자라면 새 배열 전체를 1000 간격으로 다시 매긴다(요청은 여전히 1번)
+    arranged.forEach((r, i) => (r.order = (i + 1) * 1000));
+    updates = arranged.map((r) => ({ id: r.id, order: r.order }));
+  }
+  for (const { id, patch } of protects) {
+    Object.assign(records.find((r) => r.id === id), patch);
+  }
+  records = arranged;
+  const firstPos = records.findIndex((r) => r.id === group[0].id) + 1;
+  selectedIds.clear();
+  lastSelectedId = null;
+  render();
+
+  try {
+    await adminUtil.api("/api/portfolio/reorder", {
+      method: "POST",
+      json: { updates },
+    });
+    for (const { id, patch } of protects) {
+      await adminUtil.api(`/api/portfolio/${id}`, { method: "PATCH", json: patch });
+    }
+    adminUtil.cacheInvalidate("/api/portfolio");
+    for (const u of updates) {
+      const o = original.find((x) => x.id === u.id);
+      if (o) o.order = u.order;
+    }
+    for (const { id, patch } of protects) {
+      const o = original.find((x) => x.id === id);
+      if (o) Object.assign(o, patch);
+    }
+    adminUtil.toast(`${k}개를 ${firstPos}~${firstPos + k - 1}번 위치로 이동 · 자동 저장됨`);
+  } catch (e) {
+    adminUtil.toast("이동 저장 실패: " + e.message, "error");
+    await reloadFromServer();
+  }
+}
 
 /**
  * 카드 1장을 dest 위치로 이동.
@@ -190,24 +340,7 @@ async function moveCardToIndex(src, dest) {
     newOrder = 1000;
   }
 
-  // ─── 고유값 자동 박기 ───
-  // 옮기기 직전 record의 Order(0~34) 기반 R2 fallback URL을 ThumbAfter/
-  // ThumbBefore에 박아 record에 사진을 고정. 이 시점부터 그 카드는 위치와
-  // 무관한 "고유값"을 보유 → 어디로 옮겨도 사진 그대로.
-  const beforeOrder = Math.round(Number(moved.order ?? 0));
-  const beforeNum = String(Math.max(1, beforeOrder + 1)).padStart(2, "0");
-  const protect = {};
-  if (!moved.thumbAfter && beforeOrder >= 0 && beforeOrder <= 34) {
-    protect.thumbAfter = `${R2_PUBLIC_BASE}/images/portfolio-thumbs/${beforeNum}_after.webp`;
-  }
-  if (
-    !moved.thumbBefore &&
-    !moved.rightFolder &&
-    beforeOrder >= 0 &&
-    beforeOrder <= 34
-  ) {
-    protect.thumbBefore = `${R2_PUBLIC_BASE}/images/portfolio-thumbs/${beforeNum}_before.webp`;
-  }
+  const protect = protectFields(moved);
 
   // 클라이언트 즉시 반영
   Object.assign(moved, protect);
@@ -260,6 +393,11 @@ adminUtil.initDragSort({
       return;
     }
     if (src === dest) return;
+    const dragged = records[src];
+    if (dragged && selectedIds.has(dragged.id) && selectedIds.size > 1) {
+      await moveSelectedToIndex(src, dest);
+      return;
+    }
     await moveCardToIndex(src, dest);
   },
   onFileDrop: async (idx, file) => {
@@ -302,6 +440,25 @@ adminUtil.initDragSort({
 });
 
 filterCat.addEventListener("change", render);
+// 체크한 카드를 끌면 같이 옮겨질 카드를 흐리게 하고, 끄는 모양에 개수를 보여 준다
+grid.addEventListener("dragstart", (e) => {
+  const card = e.target.closest?.(".drag-card");
+  if (!card || !selectedIds.has(card.dataset.id) || selectedIds.size < 2) return;
+  grid.classList.add("group-drag");
+  const ghost = document.createElement("div");
+  ghost.className = "pf-drag-ghost";
+  ghost.textContent = `${selectedIds.size}개 이동`;
+  document.body.appendChild(ghost);
+  try {
+    e.dataTransfer.setDragImage(ghost, 16, 16);
+  } catch {}
+  setTimeout(() => ghost.remove(), 0);
+});
+grid.addEventListener("dragend", () => grid.classList.remove("group-drag"));
+document.getElementById("btnClearSelect")?.addEventListener("click", clearSelection);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && selectedIds.size && (!modal || modal.hidden)) clearSelection();
+});
 filterSearch.addEventListener("input", render);
 
 // ========== 모달 공통 ==========

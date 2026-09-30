@@ -36,7 +36,7 @@
     />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260903-branch" />
+    <link rel="stylesheet" href="admin.css?v=20260930-portfolio" />
     <script>
       window.ADMIN_PAGE = { title: "포트폴리오", nav: "portfolio" };
     </script>
@@ -54,7 +54,9 @@
         <section class="admin-section">
           <p class="admin-sub" style="margin-bottom: 16px">
             시공 프로젝트를 등록·편집합니다. 카드 드래그로 순서를 변경하거나
-            이미지를 카드에 드롭해 대표 썸네일을 교체할 수 있습니다.
+            이미지를 카드에 드롭해 대표 썸네일을 교체할 수 있습니다. 카드 왼쪽
+            아래 체크박스로 여러 개를 선택한 뒤 그중 하나를 끌어 놓으면 한 번에
+            옮겨집니다.
           </p>
 
           <div class="admin-toolbar">
@@ -75,6 +77,17 @@
           <div id="filterLockMsg" class="filter-lock-msg" hidden>
             필터/검색이 적용된 상태에서는 순서 변경이 잠겨 있습니다. 필터를 모두
             해제해야 카드를 드래그하거나 번호로 위치를 옮길 수 있습니다.
+          </div>
+
+          <div id="pfSelectBar" class="pf-select-bar" hidden>
+            <strong id="pfSelectCount">0개 선택됨</strong>
+            <span class="pf-select-hint"
+              >선택한 카드 중 하나를 끌어 원하는 위치에 놓으면 지금 순서 그대로
+              함께 옮겨집니다. (Esc: 선택 해제)</span
+            >
+            <button type="button" class="btn btn-ghost btn-sm" id="btnClearSelect">
+              선택 해제
+            </button>
           </div>
 
           <div class="card-grid" id="pfGrid"></div>
@@ -239,6 +252,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
     <script defer src="admin.js?v=20260911-emblem"></script>
-    <script defer src="portfolio.v2.js?v=20260903-pagination"></script>
+    <script defer src="portfolio.v2.js?v=20260930-multiselect"></script>
   </body>
 </html>
