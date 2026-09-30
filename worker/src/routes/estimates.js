@@ -485,6 +485,14 @@ export async function handleEstimates(
       return jsonError(401, "Unauthorized");
     return listConsultCalendar(request, env, ctx);
   }
+  // 관리자 수기 등록: 전화·방문·소개처럼 폼을 거치지 않은 고객을 직접 카드로 만든다.
+  // 공개 접수(POST /)와 경로를 나눈다 — 공개 접수의 보안·안전망 계층은 그대로 둔다.
+  // 아래 id 정규식이 "manual" 을 id 로 삼키므로 그보다 먼저 둔다.
+  if (path === "/manual" && request.method === "POST") {
+    if (!(await verifyAdmin(request, env)))
+      return jsonError(401, "Unauthorized");
+    return createManualEstimate(request, env, ctx, services);
+  }
   const contractsMatch = path.match(/^\/([a-zA-Z0-9_-]+)\/contracts$/);
   if (contractsMatch) {
     if (!(await verifyAdmin(request, env))) return jsonError(401, "Unauthorized");
@@ -653,6 +661,93 @@ async function listConsultCalendar(request, env, ctx) {
   } catch {
     return jsonError(500, "Calendar lookup failed");
   }
+}
+
+const MANUAL_ROUTES = ["전화 문의", "매장 방문", "지인 소개", "기타"];
+
+// 관리자가 직접 만든 카드는 Source='manual'(관리자 화면 표시 "직접 등록")로 남겨
+// 폼 접수와 섞이지 않게 한다. 저장이 확정된 뒤에만 성공을 돌려준다.
+async function createManualEstimate(request, env, ctx, services) {
+  if (!String(request.headers.get("content-type") || "").includes("application/json"))
+    return jsonError(415, "Content-Type must be application/json");
+  if (Number(request.headers.get("content-length") || 0) > 16 * 1024)
+    return jsonError(413, "Request too large");
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError(400, "Invalid JSON");
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return jsonError(400, "Invalid body");
+  const name = sanitizeText(body.name, 40);
+  const phone = sanitizeText(body.phone, 20);
+  if (!name) return jsonError(400, "name required");
+  if (!isValidPhone(phone)) return jsonError(400, "invalid phone");
+  const email = sanitizeText(body.email, 120);
+  if (email && !isValidEmail(email)) return jsonError(400, "invalid email");
+  const amount = Number(body.estimateAmount ?? 0);
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1e12)
+    return jsonError(400, "invalid estimateAmount");
+  const now = Date.now();
+  let submittedAt = new Date(now).toISOString();
+  if (body.submittedAt) {
+    const t = Date.parse(body.submittedAt);
+    if (!Number.isFinite(t) || t > now + 5 * 60 * 1000 || t < Date.parse("2020-01-01T00:00:00Z"))
+      return jsonError(400, "invalid submittedAt");
+    submittedAt = new Date(t).toISOString();
+  }
+  const route = MANUAL_ROUTES.includes(body.route) ? body.route : "기타";
+  const payload = {
+    Name: name,
+    Phone: phone,
+    Email: email,
+    SpaceType: sanitizeText(body.spaceType, 20),
+    SpaceSize: sanitizeText(body.spaceSize, 20),
+    Postcode: sanitizeText(body.postcode, 10),
+    Address: sanitizeText(body.address, 200),
+    AddressDetail: sanitizeText(body.addressDetail, 200),
+    Schedule: sanitizeText(body.schedule, 80),
+    Branch: sanitizeText(body.branch, 20),
+    Referral: route,
+    Detail: String(body.detail || "").trim().slice(0, 4000),
+    EstimateAmount: amount,
+    SubmittedAt: submittedAt,
+    Status: "접수대기",
+    Source: "manual",
+    Platform: "admin",
+    FormType: "manual",
+  };
+  let record;
+  try {
+    record = await services.estimates.create(payload);
+  } catch (e) {
+    ctx.waitUntil(
+      notifyTelegram(
+        env,
+        `[day1design/estimates-manual] 수기 등록 저장 실패\nIP: ${clientIP(request)}\n${String(e?.message || "").slice(0, 200)}`,
+      ),
+    );
+    return jsonError(500, "Save failed, please retry");
+  }
+  await edgeCacheDeleteMany(
+    [
+      listCacheNs(null),
+      listCacheNs("New"),
+      listCacheNs("InProgress"),
+      listCacheNs("Done"),
+      listCacheNs("Cancelled"),
+    ],
+    ctx,
+  );
+  queueAudit(ctx, env, request, {
+    type: "estimate_manual_create",
+    severity: "info",
+    status: 200,
+    message: `${name} · ${route}`,
+    payload: { estimateId: record.id, route, submittedAt },
+  });
+  return jsonOk({ id: record.id, record: { id: record.id, ...record.fields } });
 }
 
 async function deleteEstimate(env, id, ctx, services) {

@@ -143,6 +143,7 @@ function statusBadge(s) {
 
 const SOURCE_LABEL_MAP = {
   homepage: "홈페이지",
+  manual: "직접 등록",
   instagram_official: "인스타 오피셜",
   instagram_mkt: "인스타 마케팅",
   meta: "Meta",
@@ -1205,6 +1206,7 @@ function statusOptions(current) {
 // ===== CSV 다운로드 (UTF-8 BOM, 엑셀 호환) =====
 const SOURCE_LABELS_EXPORT = {
   homepage: "홈페이지",
+  manual: "직접 등록",
   instagram_official: "인스타 오피셜(오가닉)",
   instagram_mkt: "인스타 마케팅(오가닉)",
   meta: "Meta 광고",
@@ -1568,7 +1570,23 @@ function memoThreadHtml(memos) {
   return memos.map(memoItemHtml).join("");
 }
 
-function customerEditFormHtml(r) {
+// 수기 등록 때만 붙는 칸 — 폼을 거치지 않은 고객이 어디로 연락해 왔는지, 언제 받았는지
+const MANUAL_ROUTES = ["전화 문의", "매장 방문", "지인 소개", "기타"];
+function manualIntakeFieldsHtml() {
+  return `
+    <div class="field-row-2">
+      <div class="field">
+        <label for="cRoute">접수 경로</label>
+        <select id="cRoute">${MANUAL_ROUTES.map((x) => `<option value="${x}">${x}</option>`).join("")}</select>
+      </div>
+      <div class="field">
+        <label for="cSubmittedAt">접수 일시</label>
+        <input type="datetime-local" id="cSubmittedAt" value="${toLocalInputValue(new Date().toISOString())}" />
+      </div>
+    </div>`;
+}
+
+function customerEditFormHtml(r, opts = {}) {
   return `
     <div class="field-row-2">
       <div class="field">
@@ -1584,6 +1602,7 @@ function customerEditFormHtml(r) {
       <label>이메일</label>
       <input type="email" id="cEmail" value="${escapeHtml(r.Email || "")}" />
     </div>
+    ${opts.create ? manualIntakeFieldsHtml() : ""}
     <div class="field-row-2">
       <div class="field">
         <label>공간 유형</label>
@@ -1637,17 +1656,21 @@ function customerEditFormHtml(r) {
       <input type="text" id="cBudget" value="${escapeHtml(budgetInputValue(r))}" data-initial="${escapeHtml(budgetInputValue(r))}" placeholder="예: 5천만원, 1억 2천, 7000" autocomplete="off" />
       <p class="field-hint" id="cBudgetHint"></p>
     </div>
-    <div class="field">
+    ${
+      opts.create
+        ? ""
+        : `<div class="field">
       <label>유입 경로</label>
       <input type="text" id="cReferral" value="${escapeHtml(r.Referral || "")}" />
-    </div>
+    </div>`
+    }
     <div class="field">
       <label>상세 내용</label>
       <textarea id="cDetail" rows="5">${escapeHtml(r.Detail || "")}</textarea>
     </div>
     <div class="form-actions">
       <button class="btn btn-ghost" data-customer-close-form type="button">취소</button>
-      <button class="btn btn-primary" id="btnSaveCustomer" type="submit">고객 정보 저장</button>
+      <button class="btn btn-primary" id="btnSaveCustomer" type="submit">${opts.create ? "고객 등록" : "고객 정보 저장"}</button>
     </div>
   `;
 }
@@ -1677,6 +1700,105 @@ function openCustomerEdit(id) {
   showBudgetHint();
   openModal(customerModal);
   customerForm.querySelector("#cName")?.focus();
+}
+
+// 폼을 거치지 않은 고객(전화·방문·소개)을 관리자가 직접 카드로 만든다.
+// 고객정보 수정 창을 그대로 쓰고 접수 경로·접수 일시만 더한다.
+function openCustomerCreate() {
+  if (!customerForm) return;
+  const title = document.getElementById("customerModalTitle");
+  if (title) title.textContent = "고객 직접 등록";
+  customerForm.innerHTML = customerEditFormHtml({}, { create: true });
+  customerForm.onsubmit = (e) => {
+    e.preventDefault();
+    doCreateCustomer();
+  };
+  customerForm
+    .querySelector("[data-customer-close-form]")
+    ?.addEventListener("click", closeCustomerModal);
+  const budgetInput = customerForm.querySelector("#cBudget");
+  const budgetHint = customerForm.querySelector("#cBudgetHint");
+  const showBudgetHint = () => {
+    if (!budgetInput || !budgetHint) return;
+    const text = budgetInput.value.trim();
+    const hint = text
+      ? budgetInputHint({ SpaceSize: customerForm.querySelector("#cSpaceSize")?.value }, text)
+      : { ok: true, html: "비워 두면 금액 미기재로 셉니다" };
+    budgetHint.innerHTML = hint.html;
+    budgetHint.classList.toggle("is-error", !hint.ok);
+  };
+  budgetInput?.addEventListener("input", showBudgetHint);
+  customerForm.querySelector("#cSpaceSize")?.addEventListener("change", showBudgetHint);
+  showBudgetHint();
+  openModal(customerModal);
+  customerForm.querySelector("#cName")?.focus();
+}
+
+async function doCreateCustomer() {
+  const btn = customerForm?.querySelector("#btnSaveCustomer");
+  if (!customerForm || !btn) return;
+  const val = (sel) => customerForm.querySelector(sel)?.value?.trim() ?? "";
+  const name = val("#cName");
+  const phone = val("#cPhone");
+  if (!name || !phone) {
+    adminUtil.toast("이름·연락처는 필수입니다", "error");
+    return;
+  }
+  let estimateAmount = 0;
+  const budgetText = val("#cBudget");
+  if (budgetText) {
+    const hint = budgetInputHint({ SpaceSize: val("#cSpaceSize") }, budgetText);
+    if (!hint.ok) {
+      adminUtil.toast("가용 예산 금액을 읽지 못했습니다. 단위를 붙여 적어 주세요", "error");
+      customerForm.querySelector("#cBudget")?.focus();
+      return;
+    }
+    estimateAmount = hint.amount;
+  }
+  // 같은 연락처로 이미 카드가 있으면 한 번 확인한다(같은 고객 카드가 둘로 갈라지지 않게)
+  const digits = phone.replace(/\D/g, "");
+  const dup = records.find((x) => String(x.Phone || "").replace(/\D/g, "") === digits);
+  if (
+    dup &&
+    !confirm(
+      `같은 연락처로 접수된 고객이 있습니다.\n${dup.Name || "이름 없음"} · ${fmtDateTime(dup.SubmittedAt)}\n\n그래도 새 카드를 만들까요?`,
+    )
+  )
+    return;
+  const at = val("#cSubmittedAt");
+  btn.disabled = true;
+  try {
+    const d = await adminUtil.api("/api/estimates/manual", {
+      method: "POST",
+      json: {
+        name,
+        phone,
+        email: val("#cEmail"),
+        route: val("#cRoute"),
+        submittedAt: at ? kstLocalToIso(at) : "",
+        spaceType: val("#cSpaceType"),
+        spaceSize: val("#cSpaceSize"),
+        postcode: val("#cPostcode"),
+        address: val("#cAddress"),
+        addressDetail: val("#cAddressDetail"),
+        schedule: val("#cSchedule"),
+        branch: val("#cBranch"),
+        detail: customerForm.querySelector("#cDetail")?.value ?? "",
+        estimateAmount,
+      },
+    });
+    adminUtil.cacheInvalidate("/api/estimates");
+    records.push({ ...d.record, ConceptFiles: [], FloorPlans: [] });
+    records.sort((a, b) => new Date(b.SubmittedAt || 0) - new Date(a.SubmittedAt || 0));
+    closeCustomerModal();
+    render();
+    openDetail(d.id);
+    adminUtil.toast("고객 카드를 등록했습니다");
+  } catch (e) {
+    adminUtil.toast("등록 실패: " + e.message, "error");
+  } finally {
+    if (btn.isConnected) btn.disabled = false;
+  }
 }
 
 async function openDetail(id) {
@@ -1754,7 +1876,7 @@ async function openDetail(id) {
 
           <div class="nd-card">
             <div class="nd-card-h">
-              <b>요청 내용</b><span class="tail">고객이 직접 쓴 문장</span>
+              <b>요청 내용</b><span class="tail">${sourceKey(r.Source) === "manual" ? "직접 등록할 때 적은 내용" : "고객이 직접 쓴 문장"}</span>
             </div>
             <div class="nd-quote">${r.Detail ? escapeHtml(r.Detail) : '<span style="color:#cbd2da">접수내용 없음</span>'}</div>
           </div>
@@ -2464,6 +2586,7 @@ filterSearch.addEventListener("input", render);
 if (filterFrom) filterFrom.addEventListener("change", render);
 if (filterTo) filterTo.addEventListener("change", render);
 if (btnExportCsv) btnExportCsv.addEventListener("click", exportFilteredCsv);
+document.getElementById("btnCreateCustomer")?.addEventListener("click", openCustomerCreate);
 
 (async () => {
   await adminUtil.ensureAuth();
