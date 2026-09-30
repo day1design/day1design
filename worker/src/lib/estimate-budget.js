@@ -9,8 +9,8 @@
 // 🔴 같은 규칙이 site/admin/estimates.js 에 한 벌 더 있다(관리자 페이지는 번들러
 // 없는 정적 스크립트라 이 파일을 import 할 수 없다). 규칙을 고치면 두 곳을 같이
 // 고치고 BUDGET_RULE_VERSION 을 올린다 — tests/estimate-budget.test.mjs 가 같은
-// 문구표로 두 벌을 함께 돌려 어긋나면 실패하고, 버전이 오르면 KPI 저장 집계가
-// 옛 규칙으로 센 날짜를 스스로 다시 센다(admin-kpi-refresh.js).
+// 문구표로 두 벌을 함께 돌려 어긋나면 실패하고, 버전이 오르면 KPI 배치가 옛 규칙으로
+// 분류한 접수를 스스로 다시 분류한다(admin-kpi-refresh.js refreshStaleBudgetRows).
 
 export const BUDGET_RULE_VERSION = 2;
 

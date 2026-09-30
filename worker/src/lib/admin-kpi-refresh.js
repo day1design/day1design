@@ -167,7 +167,7 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch, preferre
   // A crashed or timed-out job requires an explicit retry; cron cannot loop forever.
   await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code='lease_expired',lease_until='' WHERE tenant_id=? AND status='running' AND lease_until<?`).bind(TENANT,stamp).run();
   await warmupDefaultKpi(env, now);
-  await markStaleBudgetDays(db, stamp);
+  await refreshStaleBudgetRows(db, stamp);
   const dirty = await db.prepare(`SELECT day FROM AdminKpiDirtyDays WHERE tenant_id=? AND source='business' AND day<=? ORDER BY day LIMIT 1`).bind(TENANT,addDays(kstDay(now),-1)).first();
   if (dirty) await enqueueAdminKpiBatch(db,{kind:'business',startDate:dirty.day,now});
   let job = null;
@@ -231,10 +231,13 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch, preferre
   }
 }
 
-// 예산 해석 규칙(estimate-budget.js)의 버전이 오르면 옛 규칙으로 센 날짜를 재집계
-// 대상으로 올린다. 한 번 올린 뒤 버전을 기록하므로 매 회차 전체를 훑지 않는다.
-// 아래 dirty 처리가 그 날짜들을 하루씩 다시 센다. 표가 없으면(마이그 0099 전) 건너뛴다.
-async function markStaleBudgetDays(db, stamp) {
+// 예산 해석 규칙(estimate-budget.js)의 버전이 오르면 옛 규칙으로 분류해 둔 접수를 회차마다
+// 조금씩 다시 분류하고, 그 날의 예산 구간 수만 옮긴다(옛 구간 -1, 새 구간 +1).
+// 날짜를 재집계 대상(dirty)으로 올리면 KPI 화면이 그 기간을 통째로 숨기므로 그렇게 하지
+// 않는다. 사업 지표 재집계가 돌고 있으면 그 작업이 새 규칙으로 세므로 끝난 뒤에 옮긴다.
+// 다 옮기면 버전을 기록해 이후 회차는 한 줄만 읽는다. 표가 없으면(마이그 0099 전) 건너뛴다.
+const BUDGET_REFRESH_ROWS = 100;
+async function refreshStaleBudgetRows(db, stamp) {
   let applied;
   try {
     applied = await db.prepare(`SELECT version FROM AdminKpiRuleVersions WHERE tenant_id=? AND rule='budget'`).bind(TENANT).first();
@@ -242,16 +245,41 @@ async function markStaleBudgetDays(db, stamp) {
     return;
   }
   if (Number(applied?.version || 0) >= BUDGET_RULE_VERSION) return;
-  await db.batch([
-    db.prepare(`INSERT INTO AdminKpiDirtyDays(tenant_id,day,source,revision)
-      SELECT DISTINCT tenant_id,submitted_day,'business',COALESCE((SELECT version FROM CrmDataRevisions WHERE tenant_id=?),0)
-      FROM AdminKpiNormalized WHERE tenant_id=? AND classification_version<? AND submitted_day<>''
-      ON CONFLICT(tenant_id,day,source) DO UPDATE SET revision=excluded.revision,dirty_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')`)
-      .bind(TENANT,TENANT,BUDGET_RULE_VERSION),
-    db.prepare(`INSERT INTO AdminKpiRuleVersions(tenant_id,rule,version,updated_at) VALUES(?,'budget',?,?)
-      ON CONFLICT(tenant_id,rule) DO UPDATE SET version=excluded.version,updated_at=excluded.updated_at`)
-      .bind(TENANT,BUDGET_RULE_VERSION,stamp),
-  ]);
+  const busy = await db.prepare(`SELECT 1 AS busy FROM AdminKpiJobs WHERE tenant_id=? AND kind='business' AND status IN ('queued','running','paused') LIMIT 1`).bind(TENANT).first();
+  if (busy) return;
+  const stale = rows(await db.prepare(`SELECT n.estimate_id,n.submitted_day,n.budget_band,e.id AS row_id,e.Status,e.Detail,e.EstimateAmount,e.SpaceSize
+    FROM AdminKpiNormalized n LEFT JOIN Estimates e ON e.id=n.estimate_id
+    WHERE n.tenant_id=? AND n.classification_version<?
+      AND NOT EXISTS(SELECT 1 FROM AdminKpiDirtyDays d WHERE d.tenant_id=n.tenant_id AND d.day=n.submitted_day AND d.source='business')
+    LIMIT ?`).bind(TENANT,BUDGET_RULE_VERSION,BUDGET_REFRESH_ROWS).all());
+  if (!stale.length) {
+    await db.prepare(`INSERT INTO AdminKpiRuleVersions(tenant_id,rule,version,updated_at) VALUES(?,'budget',?,?)
+      ON CONFLICT(tenant_id,rule) DO UPDATE SET version=excluded.version,updated_at=excluded.updated_at`).bind(TENANT,BUDGET_RULE_VERSION,stamp).run();
+    return;
+  }
+  const writes = [], months = new Set();
+  const moveDaily = (day, band, delta) => writes.push(db.prepare(`UPDATE AdminKpiDaily SET value=MAX(0,value+?),updated_at=?
+    WHERE tenant_id=? AND day=? AND source='business' AND metric=?`).bind(delta,stamp,TENANT,day,`budget${band}`));
+  for (const row of stale) {
+    // 지워졌거나 작성 중인 접수는 그 날 집계에 들어가 있지 않다 → 버전만 올린다
+    if (!row.row_id || row.Status === '작성중') {
+      writes.push(db.prepare(`UPDATE AdminKpiNormalized SET classification_version=?,updated_at=? WHERE tenant_id=? AND estimate_id=?`)
+        .bind(BUDGET_RULE_VERSION,stamp,TENANT,row.estimate_id));
+      continue;
+    }
+    const budget = normalizeKpiBudget(row), before = Number(row.budget_band);
+    writes.push(db.prepare(`UPDATE AdminKpiNormalized SET budget_raw=?,budget_band=?,budget_reason=?,classification_version=?,updated_at=? WHERE tenant_id=? AND estimate_id=?`)
+      .bind(budget.raw,budget.band,budget.reason,budget.version,stamp,TENANT,row.estimate_id));
+    if (budget.band !== before) {
+      moveDaily(row.submitted_day, before, -1);
+      moveDaily(row.submitted_day, budget.band, 1);
+      months.add(row.submitted_day.slice(0,7));
+    }
+  }
+  // KPI 화면 캐시는 이 리비전으로 갈린다. 숫자를 옮겼으면 올려서 새 값을 보이게 한다.
+  if (months.size) writes.push(db.prepare(`UPDATE CrmDataRevisions SET version=version+1,updated_at=? WHERE tenant_id=?`).bind(stamp,TENANT));
+  await db.batch(writes);
+  for (const month of months) await rebuildKpiMonth(db,month,stamp);
 }
 
 async function rebuildKpiMonth(db, month, now) {

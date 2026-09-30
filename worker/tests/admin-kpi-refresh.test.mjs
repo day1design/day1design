@@ -226,22 +226,52 @@ test('explicit transient GA4 retries stop after three failed attempts',async()=>
  assert.equal(exhausted.queued,0);
 });
 
-test('a newer budget rule re-marks days counted under the old rule once, then stays quiet',async()=>{
+// 규칙 버전이 오르면 옛 규칙으로 분류한 접수를 다시 분류하고 그 날의 예산 구간 수만 옮긴다.
+// 날짜를 재집계 대상(dirty)으로 올리지 않는다 — 올리면 KPI 화면이 그 기간을 통째로 숨긴다.
+function staleBudgetFixture() {
  const env=fixture();
  env.db.exec(readFileSync(new URL('../migrations/0099_admin_kpi_rule_versions.sql',import.meta.url),'utf8'));
- env.db.exec('ALTER TABLE AdminKpiDirtyDays ADD COLUMN dirty_at TEXT'); // 운영 표(0095)에는 있는 칸
- env.db.exec(`INSERT INTO AdminKpiNormalized(tenant_id,estimate_id,submitted_day,budget_band,classification_version) VALUES
+ env.db.exec(`INSERT INTO Estimates(id,CrmTenantId,SubmittedAt,Detail,Status,EstimateAmount,SpaceSize) VALUES
+  ('old-a','day1design','2026-07-31T16:00:00.000Z','가용예산: 6-7천','신규',0,'30~40평'),
+  ('old-b','day1design','2026-07-31T16:00:00.000Z','가용예산: 미정','신규',0,''),
+  ('old-c','day1design','2026-08-01T16:00:00.000Z','가용예산: 3천만원 미만','신규',0,''),
+  ('draft','day1design','2026-08-01T16:00:00.000Z','가용예산: 1억','작성중',0,'');
+  INSERT INTO AdminKpiNormalized(tenant_id,estimate_id,submitted_day,budget_band,classification_version) VALUES
   ('day1design','old-a','2026-08-01',6,1),('day1design','old-b','2026-08-01',6,1),('day1design','old-c','2026-08-02',1,1),
+  ('day1design','draft','2026-08-02',6,1),('day1design','gone','2026-08-02',6,1),
   ('day1design','new','2026-08-03',2,2),('other','x','2026-08-04',6,1);`);
+ const daily=env.db.prepare(`INSERT INTO AdminKpiDaily(tenant_id,day,metric,value,source,coverage_status,source_revision,updated_at) VALUES('day1design',?,?,?,'business','complete','0','')`);
+ for(let i=0;i<7;i++){daily.run('2026-08-01',`budget${i}`,i===6?2:0);daily.run('2026-08-02',`budget${i}`,i===1?1:0);}
+ return env;
+}
+const budgetDaily=(env,day)=>Object.fromEntries(env.db.prepare(`SELECT metric,value FROM AdminKpiDaily WHERE day=? AND metric LIKE 'budget%'`).all(day).filter(r=>r.value).map(r=>[r.metric,r.value]));
+
+test('a newer budget rule moves old-rule budget counts without hiding any KPI day',async()=>{
+ const env=staleBudgetFixture();
  await runAdminKpiBatch(env,{now});
- const dirty=env.db.prepare(`SELECT day FROM AdminKpiDirtyDays WHERE tenant_id='day1design' AND source='business' ORDER BY day`).all().map(r=>r.day);
- assert.deepEqual(dirty,['2026-08-01','2026-08-02']);
+ assert.equal(env.db.prepare('SELECT count(*) n FROM AdminKpiDirtyDays').get().n,0,'no day is hidden from the KPI page');
+ assert.deepEqual(budgetDaily(env,'2026-08-01'),{budget2:1,budget6:1},'6-7천 moves from unrecorded to 5~7천');
+ assert.deepEqual(budgetDaily(env,'2026-08-02'),{budget0:1},'3천만원 미만 moves to the lowest band');
+ const versions=Object.fromEntries(env.db.prepare(`SELECT estimate_id,classification_version v,budget_band b FROM AdminKpiNormalized WHERE tenant_id='day1design'`).all().map(r=>[r.estimate_id,[r.v,r.b]]));
+ assert.deepEqual(versions,{'old-a':[2,2],'old-b':[2,6],'old-c':[2,0],draft:[2,6],gone:[2,6],new:[2,2]},'drafts and deleted rows only get the new version');
+ assert.equal(env.db.prepare(`SELECT version FROM CrmDataRevisions WHERE tenant_id='day1design'`).get().version,1,'KPI cache revision advances');
+ assert.equal(env.db.prepare(`SELECT count(*) n FROM AdminKpiRuleVersions`).get().n,0,'version is recorded only after nothing is left');
+ await runAdminKpiBatch(env,{now});
  assert.equal(env.db.prepare(`SELECT version FROM AdminKpiRuleVersions WHERE tenant_id='day1design' AND rule='budget'`).get().version,2);
- env.db.exec('DELETE FROM AdminKpiDirtyDays');
  const before=env.queries.length;
  await runAdminKpiBatch(env,{now});
- assert.equal(env.db.prepare('SELECT count(*) n FROM AdminKpiDirtyDays').get().n,0);
- assert(!env.queries.slice(before).some(sql=>/FROM AdminKpiNormalized WHERE tenant_id=\? AND classification_version/.test(sql)),'no rescan after the version is recorded');
+ assert(!env.queries.slice(before).some(sql=>/FROM AdminKpiNormalized n LEFT JOIN/.test(sql)),'no rescan after the version is recorded');
+});
+
+test('budget refresh waits while a business recount is queued and skips days already marked for recount',async()=>{
+ const env=staleBudgetFixture();
+ env.db.exec(`INSERT INTO AdminKpiJobs(id,tenant_id,kind,start_date,end_date,status,updated_at) VALUES('day1design:business:2026-09-01:2026-09-01','day1design','business','2026-09-01','2026-09-01','paused','')`);
+ await runAdminKpiBatch(env,{now});
+ assert.deepEqual(budgetDaily(env,'2026-08-01'),{budget6:2},'untouched while a recount is pending');
+ env.db.exec(`DELETE FROM AdminKpiJobs; INSERT INTO AdminKpiDirtyDays(tenant_id,day,source,revision) VALUES('day1design','2026-08-02','business',0)`);
+ await runAdminKpiBatch(env,{now:new Date('2026-08-01T00:00:00.000Z')});
+ assert.deepEqual(budgetDaily(env,'2026-08-01'),{budget2:1,budget6:1});
+ assert.equal(env.db.prepare(`SELECT classification_version v FROM AdminKpiNormalized WHERE estimate_id='old-c'`).get().v,1,'a day waiting for recount is left to that recount');
 });
 
 test('without the rule-version table the KPI batch keeps running',async()=>{
