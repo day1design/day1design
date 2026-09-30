@@ -6,7 +6,7 @@ import { enqueueAdminKpiBatch,enqueueDefaultAdminKpiWarmup,runAdminKpiBatch } fr
 const now = new Date('2026-09-10T00:00:00.000Z');
 function fixture() {
  const db = new DatabaseSync(':memory:');
- db.exec(`CREATE TABLE Estimates(id TEXT PRIMARY KEY,CrmTenantId TEXT,SubmittedAt TEXT,ConsultAt TEXT,ConsultCancelledAt TEXT,Status TEXT,Source TEXT,FirstSource TEXT,FirstReferrer TEXT,FirstUtmSource TEXT,UtmSource TEXT,FirstUtmMedium TEXT,UtmMedium TEXT,MetaLeadId TEXT,MetaAdId TEXT,Fbclid TEXT,Detail TEXT);
+ db.exec(`CREATE TABLE Estimates(id TEXT PRIMARY KEY,CrmTenantId TEXT,SubmittedAt TEXT,ConsultAt TEXT,ConsultCancelledAt TEXT,Status TEXT,Source TEXT,FirstSource TEXT,FirstReferrer TEXT,FirstUtmSource TEXT,UtmSource TEXT,FirstUtmMedium TEXT,UtmMedium TEXT,MetaLeadId TEXT,MetaAdId TEXT,Fbclid TEXT,Detail TEXT,EstimateAmount INTEGER DEFAULT 0,SpaceSize TEXT);
  CREATE TABLE EstimateContractHistory(id TEXT PRIMARY KEY,estimate_id TEXT,saved_at TEXT,stage TEXT,amount REAL,previous_amount REAL);
  CREATE TABLE AdminKpiMonthly(tenant_id TEXT,month TEXT,metric TEXT,value REAL,source TEXT,coverage_status TEXT,source_revision TEXT,updated_at TEXT,PRIMARY KEY(tenant_id,month,metric)); CREATE TABLE CrmDataRevisions(tenant_id TEXT PRIMARY KEY,version INTEGER,updated_at TEXT); INSERT INTO CrmDataRevisions VALUES('day1design',0,''); CREATE TABLE AdminKpiDirtyDays(tenant_id TEXT,day TEXT,source TEXT,revision INTEGER,PRIMARY KEY(tenant_id,day,source)); CREATE TABLE AdminKpiDaily(tenant_id TEXT,day TEXT,metric TEXT,value REAL,source TEXT,coverage_status TEXT,source_revision TEXT,updated_at TEXT,PRIMARY KEY(tenant_id,day,metric));`);
  db.exec(readFileSync(new URL('../migrations/0096_admin_kpi_jobs.sql',import.meta.url),'utf8'));
@@ -224,4 +224,41 @@ test('explicit transient GA4 retries stop after three failed attempts',async()=>
  env.db.exec("UPDATE AdminKpiJobs SET status='failed',error_code='kpi_ga4_oauth_transport',attempts=3");
  const exhausted=await enqueueAdminKpiBatch(env.DB,{...range,now});
  assert.equal(exhausted.queued,0);
+});
+
+test('a newer budget rule re-marks days counted under the old rule once, then stays quiet',async()=>{
+ const env=fixture();
+ env.db.exec(readFileSync(new URL('../migrations/0099_admin_kpi_rule_versions.sql',import.meta.url),'utf8'));
+ env.db.exec('ALTER TABLE AdminKpiDirtyDays ADD COLUMN dirty_at TEXT'); // 운영 표(0095)에는 있는 칸
+ env.db.exec(`INSERT INTO AdminKpiNormalized(tenant_id,estimate_id,submitted_day,budget_band,classification_version) VALUES
+  ('day1design','old-a','2026-08-01',6,1),('day1design','old-b','2026-08-01',6,1),('day1design','old-c','2026-08-02',1,1),
+  ('day1design','new','2026-08-03',2,2),('other','x','2026-08-04',6,1);`);
+ await runAdminKpiBatch(env,{now});
+ const dirty=env.db.prepare(`SELECT day FROM AdminKpiDirtyDays WHERE tenant_id='day1design' AND source='business' ORDER BY day`).all().map(r=>r.day);
+ assert.deepEqual(dirty,['2026-08-01','2026-08-02']);
+ assert.equal(env.db.prepare(`SELECT version FROM AdminKpiRuleVersions WHERE tenant_id='day1design' AND rule='budget'`).get().version,2);
+ env.db.exec('DELETE FROM AdminKpiDirtyDays');
+ const before=env.queries.length;
+ await runAdminKpiBatch(env,{now});
+ assert.equal(env.db.prepare('SELECT count(*) n FROM AdminKpiDirtyDays').get().n,0);
+ assert(!env.queries.slice(before).some(sql=>/FROM AdminKpiNormalized WHERE tenant_id=\? AND classification_version/.test(sql)),'no rescan after the version is recorded');
+});
+
+test('without the rule-version table the KPI batch keeps running',async()=>{
+ const env=fixture();
+ const result=await runAdminKpiBatch(env,{now});
+ assert.equal(result.skipped,'no_work');
+});
+
+test('budget typed into the customer card is counted by the KPI batch',async()=>{
+ const env=fixture();
+ env.db.exec(`INSERT INTO Estimates(id,CrmTenantId,SubmittedAt,Source,Detail,Status,EstimateAmount,SpaceSize) VALUES
+  ('m','day1design','2026-09-08T16:00:00.000Z','homepage','가용예산: 미정','신규',80000000,'30~40평'),
+  ('p','day1design','2026-09-08T16:00:00.000Z','homepage','가용예산: 평당 300','신규',0,'30~40평'),
+  ('n','day1design','2026-09-08T16:00:00.000Z','homepage','가용예산: 미정','신규',0,'');`);
+ await enqueueAdminKpiBatch(env.DB,{kind:'business',startDate:'2026-09-09',now});
+ for(let i=0;i<6;i++){const r=await runAdminKpiBatch(env,{now});if(r.status==='complete')break;}
+ const get=k=>env.db.prepare('SELECT value FROM AdminKpiDaily WHERE metric=?').get(k).value;
+ assert.equal(get('budget3'),2);assert.equal(get('budget6'),1);
+ assert.equal(env.db.prepare(`SELECT budget_reason FROM AdminKpiNormalized WHERE estimate_id='m'`).get().budget_reason,'manual');
 });

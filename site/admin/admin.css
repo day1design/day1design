@@ -2356,6 +2356,73 @@
 .bar-bnone {
   background: #e5e7eb;
 }
+/* 금액은 적었으나 읽지 못한 건 — 직원이 확인해 직접 입력할 대상이라 눈에 띄게 둔다 */
+.bar-bcheck {
+  background: #f59e0b;
+}
+.est-channel-item.is-check .est-channel-name {
+  color: #b45309;
+  font-weight: 700;
+}
+/* 예산 막대는 누르면 그 구간 접수만 카드로 본다 */
+.est-channel-item.is-filter {
+  cursor: pointer;
+  border-radius: 6px;
+}
+.est-channel-item.is-filter:hover {
+  background: #f8fafc;
+}
+.est-channel-item.is-filter:focus-visible {
+  outline: 2px solid var(--c-brand);
+  outline-offset: 1px;
+}
+.est-channel-item.is-active {
+  background: #f3f1ec;
+  box-shadow: inset 3px 0 0 var(--c-brand);
+}
+.est-budget-note {
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--c-text-muted);
+}
+.est-budget-check {
+  color: #b45309;
+  font-weight: 700;
+}
+.est-budget-none {
+  color: var(--c-text-muted);
+}
+.nd-budget .nd-budget-said {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--c-text-muted);
+  word-break: break-word;
+}
+.nd-budget-edit {
+  margin-top: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--c-brand);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.nd-budget-edit:hover {
+  border-color: var(--c-brand);
+}
+.field-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--c-text-muted);
+}
+.field-hint.is-error {
+  color: #b91c1c;
+}
 @media (max-width: 900px) {
   .est-stat-cols {
     grid-template-columns: 1fr;

@@ -1,4 +1,5 @@
 import { normalizeKpiBudget, classifyKpiOrganic } from './admin-kpi-normalize.js';
+import { BUDGET_RULE_VERSION } from './estimate-budget.js';
 import { collectAdminKpiGa4, isReusableAdminKpiGa4Snapshot } from './admin-kpi-ga4.js';
 import { persistCrmGa4Snapshot } from './crm-traffic-summary.js';
 const TENANT = 'day1design';
@@ -77,7 +78,7 @@ async function readPage(db, job, phase, cursor) {
     const column = phase === 0 ? 'SubmittedAt' : 'ConsultAt';
     const index = phase === 0 ? 'idx_admin_kpi_estimate_intake' : 'idx_admin_kpi_estimate_meeting';
     return rows(await db.prepare(`SELECT id,SubmittedAt,ConsultAt,ConsultCancelledAt,Status,Source,FirstSource,
-      FirstReferrer,FirstUtmSource,UtmSource,FirstUtmMedium,UtmMedium,MetaLeadId,MetaAdId,Fbclid,Detail
+      FirstReferrer,FirstUtmSource,UtmSource,FirstUtmMedium,UtmMedium,MetaLeadId,MetaAdId,Fbclid,Detail,EstimateAmount,SpaceSize
       FROM Estimates INDEXED BY ${index} WHERE CrmTenantId=? AND ${column}>=? AND ${column}<?
       AND (${column},id)>(?,?) ORDER BY ${column},id LIMIT ?`).bind(TENANT,start,end,...after,PAGE+1).all());
   }
@@ -166,6 +167,7 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch, preferre
   // A crashed or timed-out job requires an explicit retry; cron cannot loop forever.
   await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code='lease_expired',lease_until='' WHERE tenant_id=? AND status='running' AND lease_until<?`).bind(TENANT,stamp).run();
   await warmupDefaultKpi(env, now);
+  await markStaleBudgetDays(db, stamp);
   const dirty = await db.prepare(`SELECT day FROM AdminKpiDirtyDays WHERE tenant_id=? AND source='business' AND day<=? ORDER BY day LIMIT 1`).bind(TENANT,addDays(kstDay(now),-1)).first();
   if (dirty) await enqueueAdminKpiBatch(db,{kind:'business',startDate:dirty.day,now});
   let job = null;
@@ -227,6 +229,29 @@ async function runBatchStep(env, { now = new Date(), fetchImpl = fetch, preferre
     await db.prepare(`UPDATE AdminKpiJobs SET status='failed',error_code=?,attempts=attempts+1,lease_until='',updated_at=? WHERE id=?`).bind(reason,stamp,job.id).run();
     return { status:'failed',reason };
   }
+}
+
+// 예산 해석 규칙(estimate-budget.js)의 버전이 오르면 옛 규칙으로 센 날짜를 재집계
+// 대상으로 올린다. 한 번 올린 뒤 버전을 기록하므로 매 회차 전체를 훑지 않는다.
+// 아래 dirty 처리가 그 날짜들을 하루씩 다시 센다. 표가 없으면(마이그 0099 전) 건너뛴다.
+async function markStaleBudgetDays(db, stamp) {
+  let applied;
+  try {
+    applied = await db.prepare(`SELECT version FROM AdminKpiRuleVersions WHERE tenant_id=? AND rule='budget'`).bind(TENANT).first();
+  } catch {
+    return;
+  }
+  if (Number(applied?.version || 0) >= BUDGET_RULE_VERSION) return;
+  await db.batch([
+    db.prepare(`INSERT INTO AdminKpiDirtyDays(tenant_id,day,source,revision)
+      SELECT DISTINCT tenant_id,submitted_day,'business',COALESCE((SELECT version FROM CrmDataRevisions WHERE tenant_id=?),0)
+      FROM AdminKpiNormalized WHERE tenant_id=? AND classification_version<? AND submitted_day<>''
+      ON CONFLICT(tenant_id,day,source) DO UPDATE SET revision=excluded.revision,dirty_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')`)
+      .bind(TENANT,TENANT,BUDGET_RULE_VERSION),
+    db.prepare(`INSERT INTO AdminKpiRuleVersions(tenant_id,rule,version,updated_at) VALUES(?,'budget',?,?)
+      ON CONFLICT(tenant_id,rule) DO UPDATE SET version=excluded.version,updated_at=excluded.updated_at`)
+      .bind(TENANT,BUDGET_RULE_VERSION,stamp),
+  ]);
 }
 
 async function rebuildKpiMonth(db, month, now) {

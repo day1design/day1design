@@ -1,3 +1,5 @@
+import { budgetBandIndex, readBudget, spaceSizePyeong } from "./estimate-budget.js";
+
 const MAX_WINDOW_DAYS = 366;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TENANT_COLUMNS = ["tenant_id", "TenantId", "TenantID", "CrmTenantId"];
@@ -9,7 +11,7 @@ const SOURCE_DEFINITIONS = {
     date: ["SubmittedAt"],
     refreshed: ["SubmittedAt"],
     required: ["Source", "Platform"],
-    optional: ["EstimateAmount", "Detail", "MetaLeadId", "Address", "Status", "Assignee", "Branch", "ConsultAt", "ContractAt", "ContractAmount"],
+    optional: ["EstimateAmount", "Detail", "SpaceSize", "MetaLeadId", "Address", "Status", "Assignee", "Branch", "ConsultAt", "ContractAt", "ContractAmount"],
   },
   meta_ads: {
     label: "Meta 광고 집계",
@@ -233,47 +235,24 @@ function analyticsRegion(value) {
   return first.replace(/[시군구]$/, "") || analyticsDimension(parts[0]);
 }
 
-function budgetAmount(value) {
-  let text = String(value ?? "").trim().replace(/,/g, "").replace(/\s/g, "");
-  if (!text || /평당|1평|한평/.test(text) || (/미정|상의|협의|결정|모르|문의|추후|생각중|고민/.test(text) && !/\d/.test(text))) return null;
-  const range = text.split(/[~\-–—]/);
-  if (range.length > 1) {
-    const rightUnit = range[1].match(/억|천만?|만원?/);
-    text = range[0] + (range[0].match(/억|천만?|만원?/) ? "" : rightUnit?.[0] || "");
-  }
-  text = text.replace(/일억/g, "1억").replace(/이억/g, "2억").replace(/삼억/g, "3억")
-    .replace(/일천/g, "1천").replace(/이천/g, "2천").replace(/삼천/g, "3천")
-    .replace(/사천/g, "4천").replace(/오천/g, "5천").replace(/육천/g, "6천")
-    .replace(/칠천/g, "7천").replace(/팔천/g, "8천").replace(/구천/g, "9천");
-  let match = text.match(/(\d+(?:\.\d+)?)억(?:([0-9]+)(천|백)?)?/);
-  if (match) return Math.round(Number(match[1]) * 10000 + (match[2] ? Number(match[2]) * (match[3] === "천" ? 1000 : 100) : 0));
-  match = text.match(/(\d+(?:\.\d+)?)천/);
-  if (match) return Math.round(Number(match[1]) * 1000);
-  match = text.match(/(\d+)만/);
-  if (match) return Number(match[1]);
-  match = text.match(/(\d{3,})원$/);
-  if (match) return Number(match[1]) / 10000;
-  match = text.match(/(\d{3,})/);
-  if (match) {
-    const number = Number(match[1]);
-    return number >= 100 && number <= 200000 ? number : null;
-  }
-  return null;
-}
-
+// 예산 해석은 estimate-budget.js 한 곳의 규칙을 쓴다(관리자 접수관리·KPI 와 같은 결과).
+// 직원이 고객카드에 직접 넣은 금액(EstimateAmount, 원)이 있으면 고객 문구보다 먼저다.
 function budgetCounts(rows) {
   const counts = { below_30m: 0, from_30m_to_50m: 0, from_50m_to_70m: 0, from_70m: 0, unknown: 0 };
   for (const row of rows) {
-    const stored = finite(row.EstimateAmount);
-    const detailText = String(row.budget_text ?? "").trim();
-    const hasBudgetLabel = Number(row.budget_has_label) > 0;
-    const amount = hasBudgetLabel ? budgetAmount(detailText) : (stored !== null && stored > 0 ? stored / 10000 : null);
     const count = Math.max(0, Math.floor(Number(row.count) || 0));
     if (!count) continue;
-    if (amount === null || amount <= 0) { counts.unknown += count; continue; }
-    if (amount < 3000) counts.below_30m += count;
-    else if (amount < 5000) counts.from_30m_to_50m += count;
-    else if (amount < 7000) counts.from_50m_to_70m += count;
+    const stored = finite(row.EstimateAmount);
+    let band = -1;
+    if (stored !== null && stored > 0) band = budgetBandIndex(stored / 10000);
+    else if (Number(row.budget_has_label) > 0) {
+      const read = readBudget(String(row.budget_text ?? ""), { area: spaceSizePyeong(row.space_size) });
+      band = budgetBandIndex(read.amount, read.upper);
+    }
+    if (band < 0) counts.unknown += count;
+    else if (band === 0) counts.below_30m += count;
+    else if (band === 1) counts.from_30m_to_50m += count;
+    else if (band === 2) counts.from_50m_to_70m += count;
     else counts.from_70m += count;
   }
   return counts;
@@ -320,7 +299,9 @@ async function readIntakeDetails(db, availability, range, tenantId, saved) {
       ? `trim(CASE WHEN instr(${normalizedDetail}, '가용예산:') > 0 THEN CASE WHEN instr(${afterLabel}, char(10)) > 0 THEN substr(${afterLabel}, 1, instr(${afterLabel}, char(10)) - 1) ELSE ${afterLabel} END ELSE '' END)`
       : "''";
     const budgetLabel = optional.has("Detail") ? `CASE WHEN instr(${normalizedDetail}, '가용예산:') > 0 THEN 1 ELSE 0 END` : "0";
-    const budgetRows = await queryMany(db, `SELECT ${amountColumn} AS EstimateAmount, ${budgetText} AS budget_text, ${budgetLabel} AS budget_has_label, COUNT(*) AS count FROM ${table} WHERE ${tenant} = ? AND ${date} >= ? AND ${date} < ? GROUP BY ${amountColumn}, ${budgetText} LIMIT 501`, [tenantId, range.startUtc, range.endExclusiveUtc]);
+    // 평당 단가로 적은 답만 면적이 필요하다. 모든 행에 면적을 붙이면 묶음 수가 늘어 한도(500)에 걸린다.
+    const areaColumn = optional.has("SpaceSize") && optional.has("Detail") ? `CASE WHEN instr(${budgetText}, '평') > 0 THEN ${safeIdentifier("SpaceSize")} ELSE '' END` : "''";
+    const budgetRows = await queryMany(db, `SELECT ${amountColumn} AS EstimateAmount, ${budgetText} AS budget_text, ${budgetLabel} AS budget_has_label, ${areaColumn} AS space_size, COUNT(*) AS count FROM ${table} WHERE ${tenant} = ? AND ${date} >= ? AND ${date} < ? GROUP BY ${amountColumn}, ${budgetText}, ${areaColumn} LIMIT 501`, [tenantId, range.startUtc, range.endExclusiveUtc]);
     if (budgetRows.length > 500) {
       detail.dimensions.budget = { available: false, reason: "budget_group_limit_exceeded", max_groups: 500 };
     } else {

@@ -285,15 +285,41 @@ test("D02 budget distribution falls back to the original Detail answer when Esti
   const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
   const result = await readCrmAnalytics(db, { tenantId: "day1", startDate: "2026-09-05", endDate: "2026-09-05" });
   const budget = result.sources.find((source) => source.key === "saved_estimates").metrics.intake.dimensions.budget;
+  // 직원이 고객카드에 직접 넣은 금액(stored·blank-label 의 5천만원)은 고객 문구보다 먼저다.
+  assert.deepEqual(budget.values, [
+    { label: "3천만 미만", count: 1 },
+    { label: "3~5천만", count: 1 },
+    { label: "5~7천만", count: 3 },
+    { label: "7천만 이상", count: 1 },
+    { label: "미확인", count: 2 },
+  ]);
+  assert.equal(budget.known, 6);
+  assert.equal(budget.unknown, 2);
+  sqlite.close();
+});
+
+test("D02 budget distribution reads per-pyeong answers with SpaceSize and upper-bound wording", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`
+    CREATE TABLE Estimates (id TEXT PRIMARY KEY, CrmTenantId TEXT, SubmittedAt TEXT, Source TEXT, Platform TEXT, EstimateAmount INTEGER, Detail TEXT, SpaceSize TEXT);
+    CREATE INDEX estimates_tenant_date ON Estimates(CrmTenantId, SubmittedAt);
+  `);
+  const add = (id, detail, size) => sqlite.prepare("INSERT INTO Estimates VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(id, "day1", "2026-09-05T01:00:00.000Z", "homepage", "web", 0, detail, size);
+  add("pyeong", "가용예산: 평당300", "30~40평");
+  add("pyeong-no-area", "가용예산: 평당300", "");
+  add("under-30", "가용예산: 3천만원 미만", "20~30평");
+  add("range", "가용예산: 3~5천만원", "20~30평");
+  add("bare", "가용예산: 5", "20~30평");
+  const db = { prepare(sql) { const statement = sqlite.prepare(sql); return { bind(...args) { return { all: async () => ({ results: statement.all(...args) }) }; }, all: async () => ({ results: statement.all() }) }; } };
+  const result = await readCrmAnalytics(db, { tenantId: "day1", startDate: "2026-09-05", endDate: "2026-09-05" });
+  const budget = result.sources.find((source) => source.key === "saved_estimates").metrics.intake.dimensions.budget;
   assert.deepEqual(budget.values, [
     { label: "3천만 미만", count: 1 },
     { label: "3~5천만", count: 1 },
     { label: "5~7천만", count: 1 },
     { label: "7천만 이상", count: 1 },
-    { label: "미확인", count: 4 },
+    { label: "미확인", count: 1 },
   ]);
-  assert.equal(budget.known, 4);
-  assert.equal(budget.unknown, 4);
   sqlite.close();
 });
 

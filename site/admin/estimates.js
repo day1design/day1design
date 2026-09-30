@@ -3,6 +3,7 @@ let records = [];
 let selectedId = null;
 let memoCache = {}; // { estimateId: [memos] }
 let historyCache = {}; // { estimateId: history }
+let budgetFilterKey = ""; // 예산 막대를 누르면 그 구간 접수만 카드로 본다
 
 const body = document.getElementById("estBody");
 const detail = document.getElementById("estDetail");
@@ -515,15 +516,27 @@ function fmtShare(count, total) {
   return `${Math.round(pct)}%`;
 }
 
-// 고객이 자유롭게 쓴 예산 문구에서 금액을 만원 단위로 읽는다.
+// BUDGET-RULES:BEGIN
+// 가용예산 해석 — 금액은 전부 만원 단위다.
 //
 // 예산은 따로 저장되지 않는다. 워커가 `가용예산: 5000만원\n(상세)` 처럼 Detail
-// 한 칸에 이어 붙이므로 여기서 다시 뽑아 쓴다. 게다가 폼이 고르는 방식이 아니라
-// 자유 입력이라 '1억3천'·'9000~1억'·'3,000'·'2천대'·'미정' 이 다 들어온다.
-// 라이브 593건 실측으로 514건(86%)을 읽는다. 못 읽은 것은 감추지 않고
-// '금액 미기재' 로 따로 세어 합이 100%가 되게 한다.
-const BUDGET_UNDECIDED = /미정|상의|협의|결정|모르|문의|추후|생각중|고민/;
-const BUDGET_PER_PYEONG = /평당|평 당|1평|한평/;
+// 한 칸에 이어 붙이므로 여기서 다시 읽는다. 폼이 자유 입력이라 '3~5천'·
+// '1억3천'·'평당 300'·'1.5'·'미정' 이 다 들어온다. 원칙: 금액을 적었으면 그
+// 금액을 통계에 넣고, 금액 표시가 전혀 없는 것만 미기재로 센다. 직원이
+// 고객카드에 직접 넣은 금액(EstimateAmount, 원 단위)이 있으면 그 값이 먼저다.
+//
+// 🔴 worker/src/lib/estimate-budget.js 와 같은 규칙이다(이 페이지는 번들러가 없어
+// import 할 수 없다). 한쪽을 고치면 다른 쪽도 고친다 — worker 의
+// tests/estimate-budget.test.mjs 가 이 BEGIN~END 구간을 읽어 두 벌을 같은
+// 문구표로 돌리고, 어긋나면 실패한다.
+const BUDGET_BANDS = [
+  { max: 3000, label: "3천만원 미만", key: "b1" },
+  { max: 5000, label: "3~5천만원", key: "b2" },
+  { max: 7000, label: "5~7천만원", key: "b3" },
+  { max: 10000, label: "7천~1억", key: "b4" },
+  { max: 15000, label: "1억~1억5천", key: "b5" },
+  { max: Infinity, label: "1억5천 이상", key: "b6" },
+];
 const BUDGET_HANGUL = {
   일: 1,
   이: 2,
@@ -536,75 +549,340 @@ const BUDGET_HANGUL = {
   구: 9,
   십: 10,
 };
-const BUDGET_BANDS = [
-  { max: 3000, label: "3천만원 미만", key: "b1" },
-  { max: 5000, label: "3~5천만원", key: "b2" },
-  { max: 7000, label: "5~7천만원", key: "b3" },
-  { max: 10000, label: "7천~1억", key: "b4" },
-  { max: 15000, label: "1억~1억5천", key: "b5" },
-  { max: Infinity, label: "1억5천 이상", key: "b6" },
-];
+const BUDGET_PER_PYEONG = /평당|(^|[^0-9])1평|한평/;
+const BUDGET_UNIT_AMOUNT =
+  /(\d+(?:\.\d+)?)억(?:(\d+(?:\.\d+)?)(천|백|만)?(?![\d.]*억))?|(\d+(?:\.\d+)?)천(?:(\d+)백)?|(\d+(?:\.\d+)?)백|(\d+(?:\.\d+)?)만/;
+// 금액 뒤 '미만·이하·안에서·내' 또는 앞 '최대·맥스' 는 상한이다. '내외·안팎' 은
+// '그 정도'라는 뜻이라 상한으로 보지 않는다.
+const BUDGET_UPPER_BOUND = /^(미만|이하|이내|까지|안(?!팎)|내(?!외)|아래|밑)/;
+const BUDGET_UPPER_PREFIX = /(최대|맥스|max)[^0-9]{0,8}$/i;
+// 숫자만 적은 답('1.5'·'5')의 단위를 고를 때 기준으로 삼는 평당 금액(만원).
+// 2026-09-30 라이브 접수 693건의 평당 금액 중앙값이다(p25 100 · p75 233).
+const BUDGET_TYPICAL_PER_PYEONG = 150;
+const BUDGET_DEFAULT_AREA = 30;
 
 function budgetTextOf(r) {
-  const m = /가용예산\s*:\s*([^\n\r]*)/.exec(String(r?.Detail || ""));
+  // 값이 비어 있으면 다음 줄로 넘어가 읽지 않는다(다른 항목을 예산으로 오인).
+  const m = /가용\s*예산[^\S\r\n]*[:：][^\S\r\n]*([^\n\r]*)/.exec(
+    String(r?.Detail || ""),
+  );
   return m ? m[1].trim() : "";
 }
 
-function parseBudget(raw) {
-  const s = String(raw || "").trim();
-  if (!s) return null;
-  if (BUDGET_PER_PYEONG.test(s)) return null; // 총액이 아니라 단가다
-  if (BUDGET_UNDECIDED.test(s) && !/\d/.test(s)) return null;
+// '20~30평'·'50평 이상'·'60평_이상' → 앞 숫자(평)
+function spaceSizePyeong(value) {
+  const m = String(value || "").match(/\d+(?:\.\d+)?/);
+  const n = m ? Number(m[0]) : NaN;
+  return n >= 5 && n <= 500 ? n : null;
+}
 
-  let t = s.replace(/,/g, "").replace(/\s/g, "");
-  if (/^0\d{8,12}$/.test(t)) return null; // 연락처를 잘못 넣은 것
+function budgetAreaPyeong(r) {
+  const fromSize = spaceSizePyeong(r?.SpaceSize);
+  if (fromSize) return fromSize;
+  const m = /면적[^\S\r\n]*[:：][^\S\r\n]*([^\n\r]*)/.exec(
+    String(r?.Detail || ""),
+  );
+  return m ? spaceSizePyeong(m[1]) : null;
+}
 
+function budgetNormalize(raw) {
+  let t = String(raw || "")
+    .normalize("NFC")
+    .replace(/[,\s]/g, "")
+    .replace(/[∼〜～]/g, "~");
   for (const [k, v] of Object.entries(BUDGET_HANGUL)) {
-    t = t.split(`${k}천`).join(`${v}천`).split(`${k}억`).join(`${v}억`);
+    for (const unit of ["억", "천", "백"]) t = t.split(k + unit).join(v + unit);
   }
-  t = t
-    .replace(/(^|[^0-9])천만/g, "$11000만")
-    .replace(/(^|[^0-9])천(?![만원])/g, "$11000");
+  // '2.~3억'·'1.억' 처럼 단위 앞에 남은 점, '천만원'·'억대' 처럼 앞 숫자가 빠진 단위.
+  // 단위 글자가 단어 속에 있을 때('천장'·'백색')는 금액으로 읽지 않는다.
+  return t
+    .replace(/\.(?=[억천백만~\-])/g, "")
+    .replace(
+      /(^|[^0-9.])억(?=$|[0-9]|원|대|만|천|이상|이하|미만|정도|내외|~|-)/g,
+      "$11억",
+    )
+    .replace(
+      /(^|[^0-9.])천(?=$|[0-9]|만|원|대|이상|이하|미만|정도|내외|~|-)/g,
+      "$11천",
+    )
+    .replace(/(^|[^0-9.])백(?=만|원)/g, "$11백");
+}
 
-  // 범위는 앞 값을 쓰되 '6-7000' 처럼 앞이 짧으면 뒤 자릿수에 맞춘다
-  const parts = t.split(/[~\-–—]/);
-  if (parts.length >= 2) {
-    const a = parts[0].match(/\d+/);
-    const b = parts[1].match(/\d+/);
-    if (a && b && a[0].length < b[0].length && !parts[0].includes("억")) {
-      t =
-        a[0] +
-        "0".repeat(b[0].length - a[0].length) +
-        parts[1].slice(b.index + b[0].length);
+function budgetIsUpper(t, index, length) {
+  const rest = t.slice(index + length).replace(/^만?원?/, "");
+  return (
+    BUDGET_UPPER_BOUND.test(rest) || BUDGET_UPPER_PREFIX.test(t.slice(0, index))
+  );
+}
+
+function budgetAmountOf(t) {
+  const m = BUDGET_UNIT_AMOUNT.exec(t);
+  if (m) {
+    let value;
+    if (m[1]) {
+      value = Number(m[1]) * 10000;
+      if (m[2]) {
+        const n = Number(m[2]);
+        // '1억5' 는 1억5천이다. 단위 없이 네 자리면 만원('1억5000').
+        value +=
+          m[3] === "천"
+            ? n * 1000
+            : m[3] === "백"
+              ? n * 100
+              : m[3] === "만" || n >= 10
+                ? n
+                : n * 1000;
+      }
+    } else if (m[4]) {
+      value = Number(m[4]) * 1000 + (m[5] ? Number(m[5]) * 100 : 0);
+      // '4000천만원' 은 4000만원을 적다 '천'이 더 붙은 것이다.
+      if (Number(m[4]) >= 100 && t[m.index + m[0].length] === "만") {
+        value = Number(m[4]);
+      }
+    } else if (m[6]) {
+      value = Number(m[6]) * 100;
     } else {
-      t = parts[0];
+      value = Number(m[7]);
     }
+    value = Math.round(value);
+    if (!(value > 0 && value <= 200000)) return null;
+    return { value, upper: budgetIsUpper(t, m.index, m[0].length) };
   }
-  t = t.split(/이상|이하|정도|내외|안팎/)[0];
+  const bare = t.match(/\d{3,}/);
+  if (!bare) return null;
+  let n = Number(bare[0]);
+  if (n >= 1000000) n = Math.floor(n / 10000); // 원 단위로 적은 것
+  if (!(n >= 100 && n <= 200000)) return null;
+  return { value: n, upper: budgetIsUpper(t, bare.index, bare[0].length) };
+}
 
-  let m = t.match(/(\d+(?:\.\d+)?)억\s*(\d+)?\s*(천|백)?/);
-  if (m) {
-    let v = parseFloat(m[1]) * 10000;
-    if (m[2]) {
-      const num = parseFloat(m[2]);
-      v += m[3] === "천" ? num * 1000 : m[3] === "백" ? num * 100 : num;
-    }
-    return Math.round(v);
+// 범위는 앞 값을 쓴다. 앞쪽 단위를 생략한 '3~5천'·'1~2억' 은 뒤 단위를 빌리고,
+// '6-7000' 처럼 앞이 짧으면 뒤 자릿수에 맞춘다. '9000~1억' 은 앞 값 그대로다.
+function budgetRangeFront(t) {
+  const parts = t.split(/[~\-–—]/).filter(Boolean);
+  if (parts.length < 2) return parts[0] || "";
+  const [front, back] = parts;
+  const fa = front.match(/\d+(?:\.\d+)?/);
+  const fb = back.match(/\d+(?:\.\d+)?/);
+  if (!fa || !fb || /[억천백만]/.test(front)) return front;
+  const unit =
+    back.slice(fb.index + fb[0].length).match(/^[억천백만]/)?.[0] || "";
+  if (unit && unit !== "만")
+    return Number(fa[0]) <= Number(fb[0]) ? fa[0] + unit : front;
+  if (
+    !fa[0].includes(".") &&
+    !fb[0].includes(".") &&
+    fa[0].length < fb[0].length
+  ) {
+    return (
+      fa[0] +
+      "0".repeat(fb[0].length - fa[0].length) +
+      back.slice(fb.index + fb[0].length)
+    );
   }
-  m = t.match(/(\d+(?:\.\d+)?)천/);
-  if (m) return Math.round(parseFloat(m[1]) * 1000);
-  m = t.match(/(\d+)만/);
-  if (m) {
-    const num = Number(m[1]);
-    return num <= 200000 ? num : null;
+  if (unit === "만" && Number(fa[0]) <= Number(fb[0])) return `${fa[0]}만`;
+  return front;
+}
+
+function budgetReadAmount(t) {
+  const upperOpen = /^~/.test(t) && !/~$/.test(t);
+  const front = budgetRangeFront(t);
+  const found =
+    budgetAmountOf(front) || (front !== t ? budgetAmountOf(t) : null);
+  if (!found) return null;
+  return { value: found.value, upper: found.upper || upperOpen };
+}
+
+// 숫자만 적은 답. 소수('1.5'·'0.8')는 억으로 적는 것이 보통이라 억으로 읽는다
+// (1,500만원이면 '1500'·'천오백'으로 적는다). 정수('5')는 억과 천만원 중 평당 금액이
+// 보통 수준에 가까운 쪽을 고른다: 20평에 '5' → 5천만원, 30평에 '1' → 1억.
+function budgetInferBareUnit(n, area, decimal) {
+  if (decimal) return Math.round(n * 10000);
+  const a = area || BUDGET_DEFAULT_AREA;
+  const distance = (value) =>
+    Math.abs(Math.log(value / a / BUDGET_TYPICAL_PER_PYEONG));
+  const eok = n * 10000;
+  const cheon = n * 1000;
+  return distance(eok) < distance(cheon) ? eok : cheon;
+}
+
+function budgetPerPyeong(t, area) {
+  const textArea = t.match(/(\d+(?:\.\d+)?)평(?!당)/);
+  const areaInText =
+    textArea && Number(textArea[1]) >= 5 ? Number(textArea[1]) : null;
+  const priceText = t
+    .replace(/(\d+(?:\.\d+)?)평(?!당)/g, "")
+    .replace(/한평당|1평당|평당|한평|1평/g, "");
+  let price = budgetReadAmount(priceText)?.value ?? null;
+  if (price === null) {
+    const m = priceText.match(/\d+(?:\.\d+)?/);
+    const n = m ? Number(m[0]) : NaN;
+    price = n >= 10 && n <= 2000 ? n : null;
   }
-  m = t.match(/(\d{3,})/);
-  if (m) {
-    let num = Number(m[1]);
-    if (num >= 1000000) num = Math.floor(num / 10000); // 원 단위로 적은 것
-    return num >= 100 && num <= 200000 ? num : null;
+  if (price !== null && price > 2000) price = null; // 평당 2천만원 넘는 값은 총액을 잘못 넣은 것
+  const useArea = areaInText || area;
+  if (price === null || !useArea)
+    return { amount: null, kind: "unclear", upper: false };
+  return { amount: Math.round(price * useArea), kind: "pyeong", upper: false };
+}
+
+// kind: amount(적은 금액) · pyeong(평당×면적) · inferred(숫자만 적어 단위 추정)
+//       · unclear(금액은 적었으나 읽지 못함) · none(금액 표시 없음)
+function readBudget(raw, { area = null } = {}) {
+  const t = budgetNormalize(raw);
+  const none = { amount: null, kind: "none", upper: false };
+  if (!/\d/.test(t)) return none; // '미정'·'상담 후 결정'·빈칸
+  // 인코딩이 깨진 답('5õ����')은 금액을 적었을 수 있으니 미기재로 버리지 않는다.
+  if (/�/.test(t)) return { amount: null, kind: "unclear", upper: false };
+  if (/^01\d{8,9}$/.test(t.replace(/[-.]/g, ""))) return none; // 연락처를 잘못 넣은 것
+  if (BUDGET_PER_PYEONG.test(t)) return budgetPerPyeong(t, area);
+  const bare = t.match(/^~?(\d+(?:\.\d+)?)(원)?~?$/);
+  if (bare && Number(bare[1]) < 100) {
+    const n = Number(bare[1]);
+    if (n <= 0) return none;
+    if (n < 10)
+      return {
+        amount: budgetInferBareUnit(n, area, bare[1].includes(".")),
+        kind: "inferred",
+        upper: false,
+      };
+    return { amount: null, kind: "unclear", upper: false };
   }
-  return null;
+  const found = budgetReadAmount(t);
+  if (found) return { amount: found.value, kind: "amount", upper: found.upper };
+  // 숫자는 있어도 금액 단위·자릿수가 없으면(면적·날짜·문의 문장) 금액 표시가 없는 것이다.
+  return /\d(억|천|백|만|원)|\d{3,}/.test(t.replace(/\d+평/g, ""))
+    ? { amount: null, kind: "unclear", upper: false }
+    : none;
+}
+
+// '3천만원 미만'·'5천 이하' 처럼 상한으로 적은 금액은 그 값을 넘지 않는 구간에 넣는다.
+function budgetBandIndex(amount, upper = false) {
+  if (
+    amount === null ||
+    amount === undefined ||
+    !Number.isFinite(Number(amount))
+  )
+    return -1;
+  return BUDGET_BANDS.findIndex((band) =>
+    upper ? amount <= band.max : amount < band.max,
+  );
+}
+
+// 접수 한 건의 예산. 직원이 직접 넣은 금액 → 고객 문구 순서로 본다.
+function estimateBudget(r = {}) {
+  const raw = budgetTextOf(r);
+  const manual = Number(r?.EstimateAmount);
+  if (Number.isFinite(manual) && manual > 0) {
+    // 구간 경계에서 어긋나지 않게 반올림하지 않는다(2,999만9,999원은 3천만원 미만).
+    const amount = manual / 10000;
+    return {
+      raw,
+      amount,
+      kind: "manual",
+      upper: false,
+      band: budgetBandIndex(amount),
+    };
+  }
+  const read = readBudget(raw, { area: budgetAreaPyeong(r) });
+  return { raw, ...read, band: budgetBandIndex(read.amount, read.upper) };
+}
+// BUDGET-RULES:END
+
+// 통계 막대·카드·상세·엑셀이 같은 이름을 쓴다
+const BUDGET_CHECK = { key: "bcheck", label: "금액 확인 필요" };
+const BUDGET_NONE = { key: "bnone", label: "금액 미기재" };
+const BUDGET_KIND_NOTE = {
+  manual: "직접 입력",
+  pyeong: "평당 단가×면적",
+  inferred: "숫자만 적어 단위 추정",
+};
+
+function budgetBucketKey(b) {
+  if (b.band >= 0) return BUDGET_BANDS[b.band].key;
+  return b.kind === "unclear" ? BUDGET_CHECK.key : BUDGET_NONE.key;
+}
+
+function budgetFiltered(list) {
+  if (!budgetFilterKey) return list;
+  return list.filter((r) => budgetBucketKey(estimateBudget(r)) === budgetFilterKey);
+}
+
+function fmtManwon(amount) {
+  const v = Math.round(Number(amount) || 0);
+  if (v >= 10000) {
+    const rest = v % 10000;
+    return `${Math.floor(v / 10000)}억${rest ? ` ${fmtInt(rest)}만원` : "원"}`;
+  }
+  return `${fmtInt(v)}만원`;
+}
+
+// 접수카드 한 칸: 구간과 그 구간을 어떻게 정했는지
+function budgetCardHtml(r) {
+  const b = estimateBudget(r);
+  if (b.band >= 0) {
+    const note = { manual: "직접입력", pyeong: "평당환산", inferred: "추정" }[b.kind];
+    return `${escapeHtml(BUDGET_BANDS[b.band].label)}${note ? ` <small class="est-budget-note">${note}</small>` : ""}`;
+  }
+  return b.kind === "unclear"
+    ? '<span class="est-budget-check">확인 필요</span>'
+    : '<span class="est-budget-none">미기재</span>';
+}
+
+// 상세 고객 정보 칸: 반영한 금액, 고객이 적은 답, 직접 입력 버튼
+function budgetDetailHtml(r) {
+  const b = estimateBudget(r);
+  let head;
+  let cls = "";
+  if (b.band >= 0) {
+    const note = BUDGET_KIND_NOTE[b.kind];
+    head = `${fmtManwon(b.amount)}${b.upper ? " 이하" : ""} · ${escapeHtml(BUDGET_BANDS[b.band].label)}${note ? ` <small class="est-budget-note">${note}</small>` : ""}`;
+  } else if (b.kind === "unclear") {
+    head = "금액 확인 필요";
+    cls = ' class="est-budget-check"';
+  } else {
+    head = "미기재";
+    cls = ' class="empty"';
+  }
+  const said = b.raw ? `고객 답 «${escapeHtml(b.raw)}»` : "고객이 적은 예산 없음";
+  return `<span${cls}>${head}</span><em class="nd-budget-said">${said}</em>
+                <button type="button" class="nd-budget-edit" data-budget-edit>${b.kind === "manual" ? "직접 입력 수정" : "가용 예산 직접 입력"}</button>`;
+}
+
+// 고객정보 수정 창의 직접 입력 칸. 빈칸이면 직접 입력을 지우고 고객 답으로 센다.
+function budgetInputValue(r) {
+  const won = Number(r?.EstimateAmount) || 0;
+  return won > 0 ? `${fmtInt(Math.round(won / 10000))}만원` : "";
+}
+
+function budgetInputHint(r, text) {
+  const area = budgetAreaPyeong(r);
+  const t = String(text || "").trim();
+  if (!t) {
+    const read = readBudget(budgetTextOf(r), { area });
+    const index = budgetBandIndex(read.amount, read.upper);
+    const tail =
+      index >= 0
+        ? `${fmtManwon(read.amount)} · ${escapeHtml(BUDGET_BANDS[index].label)}`
+        : read.kind === "unclear"
+          ? "금액 확인 필요"
+          : "미기재";
+    return { ok: true, amount: 0, html: `비워 두면 고객이 적은 답으로 셉니다 → ${tail}` };
+  }
+  const read = readBudget(t, { area });
+  if (read.amount === null) {
+    return {
+      ok: false,
+      amount: 0,
+      html: "금액을 읽지 못했습니다. «5천만원»·«1억 2천»처럼 단위를 붙여 적어 주세요",
+    };
+  }
+  const index = budgetBandIndex(read.amount);
+  return {
+    ok: true,
+    amount: Math.round(read.amount * 10000),
+    html: `${fmtManwon(read.amount)} · ${escapeHtml(BUDGET_BANDS[index].label)} 구간으로 셉니다`,
+  };
 }
 
 // 막대 한 줄. 채널·예산이 같은 모양을 쓰므로 함께 쓴다
@@ -627,53 +905,88 @@ function renderBudgetStats(list) {
   if (!wrap) return;
   const total = list.length;
   if (!total) {
+    budgetFilterKey = "";
     wrap.innerHTML =
       '<div class="est-channel-empty">해당 조건의 접수가 없습니다</div>';
     if (sub) sub.textContent = "가용 예산";
     return;
   }
-  const counts = new Map(BUDGET_BANDS.map((b) => [b.key, 0]));
-  let unknown = 0;
+  const counts = new Map([
+    ...BUDGET_BANDS.map((b) => [b.key, 0]),
+    [BUDGET_CHECK.key, 0],
+    [BUDGET_NONE.key, 0],
+  ]);
+  let manual = 0;
   for (const r of list) {
-    const amount = parseBudget(budgetTextOf(r));
-    if (amount === null) {
-      unknown += 1;
-      continue;
-    }
-    const band = BUDGET_BANDS.find((b) => amount < b.max);
-    counts.set(band.key, counts.get(band.key) + 1);
+    const b = estimateBudget(r);
+    if (b.kind === "manual") manual += 1;
+    const key = budgetBucketKey(b);
+    counts.set(key, counts.get(key) + 1);
   }
+  // 기간·상태를 바꿔 고른 구간이 비면 필터를 푼다(빈 목록만 남지 않게)
+  if (budgetFilterKey && !counts.get(budgetFilterKey)) budgetFilterKey = "";
+  const row = (key, label, extraClass, title) =>
+    statBarRow(
+      key,
+      escapeHtml(label),
+      counts.get(key),
+      total,
+      `is-filter${extraClass}${budgetFilterKey === key ? " is-active" : ""}`,
+      ` data-budget-key="${key}" role="button" tabindex="0" aria-pressed="${budgetFilterKey === key}" title="${escapeHtml(title)}"`,
+    );
   const rows = BUDGET_BANDS.filter((b) => counts.get(b.key) > 0)
     .sort((a, b) => counts.get(b.key) - counts.get(a.key))
     .map((b) =>
-      statBarRow(
+      row(
         b.key,
-        escapeHtml(b.label),
-        counts.get(b.key),
-        total,
+        b.label,
         "",
-        ` title="${escapeHtml(b.label)} ${fmtInt(counts.get(b.key))}건 · ${fmtShare(counts.get(b.key), total)}"`,
+        `${b.label} ${fmtInt(counts.get(b.key))}건 · ${fmtShare(counts.get(b.key), total)} — 누르면 이 구간 접수만 봅니다`,
       ),
     )
     .join("");
-  const unknownRow = unknown
-    ? statBarRow(
-        "bnone",
-        "금액 미기재",
-        unknown,
-        total,
-        "is-none",
-        ' title="금액을 적지 않았거나 «미정»·«협의 후»·평당 단가로 답한 건"',
+  const checkRow = counts.get(BUDGET_CHECK.key)
+    ? row(
+        BUDGET_CHECK.key,
+        BUDGET_CHECK.label,
+        " is-check",
+        "금액은 적었지만 단위를 읽을 수 없는 건 — 누르면 해당 접수만 보고, 상세의 «가용 예산 직접 입력»으로 금액을 넣을 수 있습니다",
+      )
+    : "";
+  const noneRow = counts.get(BUDGET_NONE.key)
+    ? row(
+        BUDGET_NONE.key,
+        BUDGET_NONE.label,
+        " is-none",
+        "금액을 적지 않았거나 «미정»·«상담 후 결정»처럼 금액 없이 답한 건",
       )
     : "";
   wrap.innerHTML =
-    rows || unknownRow
-      ? rows + unknownRow
+    rows || checkRow || noneRow
+      ? rows + checkRow + noneRow
       : '<div class="est-channel-empty">예산을 적은 접수가 없습니다</div>';
   if (sub) {
-    const read = total - unknown;
-    sub.textContent = `가용 예산 · ${fmtInt(read)}건 읽음`;
+    const active = [...BUDGET_BANDS, BUDGET_CHECK, BUDGET_NONE].find(
+      (b) => b.key === budgetFilterKey,
+    );
+    const read = total - counts.get(BUDGET_CHECK.key) - counts.get(BUDGET_NONE.key);
+    sub.textContent = active
+      ? `«${active.label}» 접수만 보는 중 · 다시 누르면 해제`
+      : `가용 예산 · ${fmtInt(read)}건 반영${manual ? ` (직접 입력 ${fmtInt(manual)})` : ""}`;
   }
+  wrap.querySelectorAll("[data-budget-key]").forEach((el) => {
+    const toggle = () => {
+      budgetFilterKey = budgetFilterKey === el.dataset.budgetKey ? "" : el.dataset.budgetKey;
+      render();
+    };
+    el.addEventListener("click", toggle);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
+    });
+  });
 }
 
 function renderChannelStats(list) {
@@ -908,7 +1221,7 @@ function csvEscape(v) {
   return s;
 }
 function exportFilteredCsv() {
-  const list = filtered();
+  const list = budgetFiltered(filtered());
   if (!list.length) {
     adminUtil.toast?.("내보낼 접수 데이터가 없습니다", "error");
     return;
@@ -935,6 +1248,9 @@ function exportFilteredCsv() {
     "상세주소",
     "희망일정",
     "가용예산",
+    "예산 반영액(만원)",
+    "예산 구간",
+    "예산 근거",
     "상담예약일시",
     "상담지점",
     "상태",
@@ -959,6 +1275,18 @@ function exportFilteredCsv() {
       r.AddressDetail || "",
       r.Schedule || "",
       r.Budget || r.Detail || "",
+      ...(() => {
+        const b = estimateBudget(r);
+        return [
+          b.amount === null ? "" : Math.round(b.amount),
+          b.band >= 0
+            ? BUDGET_BANDS[b.band].label
+            : b.kind === "unclear"
+              ? BUDGET_CHECK.label
+              : BUDGET_NONE.label,
+          BUDGET_KIND_NOTE[b.kind] || (b.band >= 0 ? "고객 답" : ""),
+        ];
+      })(),
       r.ConsultAt ? fmtConsultAt(r.ConsultAt) : "",
       r.ConsultBranch || "",
       r.Status || "",
@@ -1026,9 +1354,10 @@ function briefText(r, fallback = "접수내용 없음") {
 }
 
 function render() {
-  const list = filtered();
-  renderChannelStats(list);
-  renderBudgetStats(list);
+  const base = filtered();
+  renderChannelStats(base);
+  renderBudgetStats(base);
+  const list = budgetFiltered(base);
   if (!list.length) {
     body.innerHTML = '<div class="empty-state">접수 내역이 없습니다.</div>';
     return;
@@ -1075,6 +1404,10 @@ function render() {
         <span>
           <b>일정</b>
           <em>${escapeHtml(schedule)}</em>
+        </span>
+        <span>
+          <b>예산</b>
+          <em>${budgetCardHtml(r)}</em>
         </span>
         <span>
           <b>지점</b>
@@ -1300,6 +1633,11 @@ function customerEditFormHtml(r) {
       </div>
     </div>
     <div class="field">
+      <label for="cBudget">가용 예산 (직접 입력)</label>
+      <input type="text" id="cBudget" value="${escapeHtml(budgetInputValue(r))}" data-initial="${escapeHtml(budgetInputValue(r))}" placeholder="예: 5천만원, 1억 2천, 7000" autocomplete="off" />
+      <p class="field-hint" id="cBudgetHint"></p>
+    </div>
+    <div class="field">
       <label>유입 경로</label>
       <input type="text" id="cReferral" value="${escapeHtml(r.Referral || "")}" />
     </div>
@@ -1327,6 +1665,16 @@ function openCustomerEdit(id) {
   customerForm
     .querySelector("[data-customer-close-form]")
     ?.addEventListener("click", closeCustomerModal);
+  const budgetInput = customerForm.querySelector("#cBudget");
+  const budgetHint = customerForm.querySelector("#cBudgetHint");
+  const showBudgetHint = () => {
+    if (!budgetInput || !budgetHint) return;
+    const hint = budgetInputHint(r, budgetInput.value);
+    budgetHint.innerHTML = hint.html;
+    budgetHint.classList.toggle("is-error", !hint.ok);
+  };
+  budgetInput?.addEventListener("input", showBudgetHint);
+  showBudgetHint();
   openModal(customerModal);
   customerForm.querySelector("#cName")?.focus();
 }
@@ -1419,6 +1767,9 @@ async function openDetail(id) {
               </div>
               <div class="nd-f">
                 <b>희망 일정</b><span${r.Schedule ? "" : ' class="empty"'}>${escapeHtml(r.Schedule || "미입력")}</span>
+              </div>
+              <div class="nd-f nd-wide nd-budget">
+                <b>가용 예산</b>${budgetDetailHtml(r)}
               </div>
               <div class="nd-f nd-wide">
                 <b>주소</b><span${addressText ? "" : ' class="empty"'}>${escapeHtml(addressText || "미입력")}</span>
@@ -1587,6 +1938,10 @@ async function openDetail(id) {
       .catch(() => adminUtil.toast("복사하지 못했습니다", "error"));
   });
   detail.querySelector("#btnOpenCustomerEditInline")?.addEventListener("click", () => openCustomerEdit(id));
+  detail.querySelector("[data-budget-edit]")?.addEventListener("click", () => {
+    openCustomerEdit(id);
+    customerForm?.querySelector("#cBudget")?.focus();
+  });
 
   detail.querySelector("#btnContractAdd")?.addEventListener("click", () => {
     const panel = detail.querySelector("#contractPanel");
@@ -1880,6 +2235,23 @@ async function doSaveCustomer(id) {
     Referral: val("#cReferral"),
     Detail: customerForm.querySelector("#cDetail")?.value ?? "",
   };
+  const budgetInput = customerForm.querySelector("#cBudget");
+  if (
+    budgetInput &&
+    budgetInput.value.trim() !== (budgetInput.dataset.initial || "")
+  ) {
+    const hint = budgetInputHint(
+      records.find((x) => x.id === id),
+      budgetInput.value,
+    );
+    if (!hint.ok) {
+      adminUtil.toast("가용 예산 금액을 읽지 못했습니다. 단위를 붙여 적어 주세요", "error");
+      btn.disabled = false;
+      budgetInput.focus();
+      return;
+    }
+    payload.EstimateAmount = hint.amount;
+  }
   try {
     const d = await adminUtil.api(`/api/estimates/${id}`, {
       method: "PATCH",

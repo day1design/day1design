@@ -1627,6 +1627,15 @@ async function patchEstimate(request, env, id, ctx, services) {
     if (buffer === null) return jsonError(400, "ConsultBufferMinutes must be 0 or 60");
     fields.ConsultBufferMinutes = buffer;
   }
+  // 고객카드에서 직원이 직접 넣는 가용예산(원 단위 정수). 0 은 직접 입력을 지운 것이라
+  // 통계가 다시 고객이 적은 문구를 읽는다. 모바일 앱 고객카드의 "예산"과 같은 칸이다.
+  if ("EstimateAmount" in fields) {
+    const amount = Number(fields.EstimateAmount ?? 0);
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1e12) {
+      return jsonError(400, "EstimateAmount must be a whole number of won");
+    }
+    fields.EstimateAmount = amount;
+  }
 
   // 예약 일시를 손대면 리마인드 발송 기록을 지운다. 안 지우면 옮긴 일정에
   // 하루 전·2시간 전 알림이 영영 안 나간다(이미 보낸 것으로 남아 있으므로).
