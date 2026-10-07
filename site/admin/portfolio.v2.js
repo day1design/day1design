@@ -9,6 +9,11 @@ let modalThumbAfter = "";
 let modalImages = [];
 let folderManuallyEdited = false;
 
+// 갤러리 사진 여러 장 선택 이동: 카드 묶음 이동(A안)과 같은 규칙을 편집 창의 사진에 쓴다.
+// 사진에는 id 가 없어 주소로 구분한다.
+const gallerySelected = new Set();
+let lastGalleryUrl = null;
+
 // 여러 개 선택 이동(A안, 2026-09 관리자 요청서 #2): 카드를 여러 개 체크한 뒤 그중
 // 하나를 끌어 놓으면 체크한 카드가 지금 순서 그대로 한 묶음으로 옮겨진다.
 const selectedIds = new Set();
@@ -440,21 +445,27 @@ adminUtil.initDragSort({
 });
 
 filterCat.addEventListener("change", render);
-// 체크한 카드를 끌면 같이 옮겨질 카드를 흐리게 하고, 끄는 모양에 개수를 보여 준다
-grid.addEventListener("dragstart", (e) => {
-  const card = e.target.closest?.(".drag-card");
-  if (!card || !selectedIds.has(card.dataset.id) || selectedIds.size < 2) return;
-  grid.classList.add("group-drag");
+// 묶음을 끄는 동안 마우스 옆에 몇 개를 옮기는지 보여 준다(카드·갤러리 사진 공용)
+function setGroupDragGhost(e, label) {
   const ghost = document.createElement("div");
   ghost.className = "pf-drag-ghost";
-  ghost.textContent = `${selectedIds.size}개 이동`;
+  ghost.textContent = label;
   document.body.appendChild(ghost);
   try {
     e.dataTransfer.setDragImage(ghost, 16, 16);
   } catch {}
   setTimeout(() => ghost.remove(), 0);
+}
+// 체크한 카드를 끌면 같이 옮겨질 카드를 흐리게 하고, 끄는 모양에 개수를 보여 준다
+grid.addEventListener("dragstart", (e) => {
+  const card = e.target.closest?.(".drag-card");
+  if (!card || !selectedIds.has(card.dataset.id) || selectedIds.size < 2) return;
+  grid.classList.add("group-drag");
+  setGroupDragGhost(e, `${selectedIds.size}개 이동`);
 });
 grid.addEventListener("dragend", () => grid.classList.remove("group-drag"));
+// 놓는 순간 화면을 다시 그리면 끌던 카드가 사라져 dragend 가 올라오지 않으므로 drop 에서도 푼다
+grid.addEventListener("drop", () => grid.classList.remove("group-drag"));
 document.getElementById("btnClearSelect")?.addEventListener("click", clearSelection);
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && selectedIds.size && (!modal || modal.hidden)) clearSelection();
@@ -475,6 +486,8 @@ function closeModal() {
   modalThumbAfter = "";
   modalImages = [];
   folderManuallyEdited = false;
+  gallerySelected.clear();
+  lastGalleryUrl = null;
 }
 modal
   .querySelectorAll("[data-close]")
@@ -553,7 +566,49 @@ bindThumbSlot({
 });
 
 // ========== 갤러리 ==========
+function renderGallerySelectBar() {
+  const bar = document.getElementById("gallerySelectBar");
+  if (!bar) return;
+  bar.classList.toggle("has-selection", gallerySelected.size > 0);
+  const count = document.getElementById("gallerySelectCount");
+  if (count) count.textContent = `${gallerySelected.size}장 선택됨`;
+}
+
+// 체크 상태만 바뀔 때는 사진을 다시 그리지 않고 표시만 맞춘다(사진이 많으면 깜빡인다)
+function syncGallerySelection() {
+  galleryGrid.querySelectorAll(".gallery-item").forEach((item) => {
+    const on = gallerySelected.has(modalImages[Number(item.dataset.index)]);
+    item.classList.toggle("is-selected", on);
+    item.querySelector('[data-act="select"]').checked = on;
+  });
+  renderGallerySelectBar();
+}
+
+// Shift+클릭이면 마지막으로 체크한 사진부터 이번 사진까지 같은 상태로 맞춘다
+function toggleGallerySelect(url, checked, range) {
+  const b = modalImages.indexOf(url);
+  const a = range && lastGalleryUrl ? modalImages.indexOf(lastGalleryUrl) : -1;
+  for (let i = a < 0 ? b : Math.min(a, b); i <= Math.max(a, b); i++) {
+    if (checked) gallerySelected.add(modalImages[i]);
+    else gallerySelected.delete(modalImages[i]);
+  }
+  lastGalleryUrl = url;
+  syncGallerySelection();
+}
+
+function clearGallerySelection() {
+  if (!gallerySelected.size) return;
+  gallerySelected.clear();
+  lastGalleryUrl = null;
+  syncGallerySelection();
+}
+
 function renderGallery() {
+  // 지웠거나 다른 프로젝트로 바뀌어 지금 목록에 없는 사진은 선택에서 뺀다
+  for (const u of [...gallerySelected]) {
+    if (!modalImages.includes(u)) gallerySelected.delete(u);
+  }
+  renderGallerySelectBar();
   galleryGrid.innerHTML = "";
   if (!modalImages.length) {
     galleryGrid.innerHTML =
@@ -561,13 +616,17 @@ function renderGallery() {
     return;
   }
   modalImages.forEach((url, i) => {
+    const selected = gallerySelected.has(url);
     const item = document.createElement("div");
-    item.className = "gallery-item";
+    item.className = "gallery-item" + (selected ? " is-selected" : "");
     item.draggable = true;
     item.dataset.index = String(i);
     item.style.backgroundImage = `url('${url}')`;
     item.innerHTML = `
       <span class="gallery-item-order">${i + 1}</span>
+      <label class="gallery-item-check" title="여러 장 선택해 한 번에 옮기기 (Shift+클릭: 구간 선택)">
+        <input type="checkbox" data-act="select" aria-label="${i + 1}번 사진 선택"${selected ? " checked" : ""} />
+      </label>
       <button type="button" class="gallery-item-remove" data-act="del" title="제거">✕</button>
     `;
     item.querySelector('[data-act="del"]').addEventListener("click", (e) => {
@@ -575,18 +634,95 @@ function renderGallery() {
       modalImages.splice(i, 1);
       renderGallery();
     });
+    const check = item.querySelector('[data-act="select"]');
+    check.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleGallerySelect(url, check.checked, e.shiftKey);
+    });
     galleryGrid.appendChild(item);
   });
+}
+
+/**
+ * 체크한 사진 묶음을 한 번에 옮긴다. 묶음 안의 순서는 지금 순서 그대로 둔다.
+ * at 은 체크하지 않은 사진만 놓고 셌을 때 묶음이 들어갈 자리(0부터)다.
+ * 갤러리 순서는 편집 창의 [저장]을 눌러야 반영된다(1장 이동과 같다).
+ */
+function placeGallerySelected(at) {
+  const group = modalImages.filter((u) => gallerySelected.has(u));
+  const rest = modalImages.filter((u) => !gallerySelected.has(u));
+  modalImages = [...rest.slice(0, at), ...group, ...rest.slice(at)];
+  gallerySelected.clear();
+  lastGalleryUrl = null;
+  renderGallery();
+  const where = group.length > 1 ? `${at + 1}~${at + group.length}번` : `${at + 1}번`;
+  adminUtil.toast(
+    `${group.length}장을 ${where} 위치로 옮겼습니다 · [저장]을 눌러야 반영됩니다`,
+  );
+}
+
+// 끌어 놓기: 아래로 끌면 놓은 사진 뒤, 위로 끌면 놓은 사진 앞(카드 묶음 이동과 같은 규칙)
+function moveGallerySelected(src, dest) {
+  const target = modalImages[dest];
+  if (gallerySelected.has(target)) {
+    adminUtil.toast("선택하지 않은 사진 위에 놓아 주세요", "error");
+    return;
+  }
+  const rest = modalImages.filter((u) => !gallerySelected.has(u));
+  placeGallerySelected(rest.indexOf(target) + (src < dest ? 1 : 0));
+}
+
+// 번호로 옮기기: 사진이 많아 끌어서 닿기 어려운 자리로 보낼 때 쓴다(끌기가 안 되는
+// 모바일에서는 이 방법뿐이다). 입력한 번호부터 차례로 놓인다
+function moveGallerySelectedByNumber() {
+  const k = modalImages.filter((u) => gallerySelected.has(u)).length;
+  if (!k) return;
+  const max = modalImages.length - k + 1;
+  const input = prompt(
+    `선택한 ${k}장을 옮길 번호를 입력하세요 (1~${max})\n입력한 번호부터 지금 순서 그대로 놓입니다`,
+    "1",
+  );
+  if (input === null) return;
+  const n = parseInt(String(input).trim(), 10);
+  if (!Number.isFinite(n) || n < 1 || n > max) {
+    adminUtil.toast(`1~${max} 사이 숫자를 입력하세요`, "error");
+    return;
+  }
+  placeGallerySelected(n - 1);
 }
 
 adminUtil.initDragSort({
   container: galleryGrid,
   itemSelector: ".gallery-item",
   onReorder: (src, dest) => {
+    if (gallerySelected.has(modalImages[src]) && gallerySelected.size > 1) {
+      moveGallerySelected(src, dest);
+      return;
+    }
     const moved = modalImages.splice(src, 1)[0];
     modalImages.splice(dest, 0, moved);
     renderGallery();
   },
+});
+
+// 체크한 사진을 끌면 같이 옮겨질 사진을 흐리게 하고, 끄는 모양에 장수를 보여 준다
+galleryGrid.addEventListener("dragstart", (e) => {
+  const item = e.target.closest?.(".gallery-item");
+  if (!item || gallerySelected.size < 2) return;
+  if (!gallerySelected.has(modalImages[Number(item.dataset.index)])) return;
+  galleryGrid.classList.add("group-drag");
+  setGroupDragGhost(e, `${gallerySelected.size}장 이동`);
+});
+galleryGrid.addEventListener("dragend", () => galleryGrid.classList.remove("group-drag"));
+galleryGrid.addEventListener("drop", () => galleryGrid.classList.remove("group-drag"));
+document
+  .getElementById("btnClearGallerySelect")
+  ?.addEventListener("click", clearGallerySelection);
+document
+  .getElementById("btnMoveGalleryByNumber")
+  ?.addEventListener("click", moveGallerySelectedByNumber);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && modal && !modal.hidden) clearGallerySelection();
 });
 
 document.getElementById("btnAddGallery").addEventListener("click", () => {
@@ -601,21 +737,23 @@ document
     let ok = 0,
       fail = 0;
     for (const file of files) {
-      let pendingIdx = -1;
       let localUrl = "";
       try {
         const res = await adminUtil.uploadImage(file, {
           folder: "portfolio",
           onLocalPreview: (u) => {
             localUrl = u;
-            pendingIdx = modalImages.length;
             modalImages.push(u);
             renderGallery();
           },
         });
-        if (pendingIdx >= 0) {
-          modalImages[pendingIdx] = res.url;
-        } else {
+        // 올리는 동안 순서를 바꾸거나 지웠을 수 있으므로 미리보기 자리를 주소로 다시 찾는다
+        const at = localUrl ? modalImages.indexOf(localUrl) : -1;
+        if (at >= 0) {
+          modalImages[at] = res.url;
+          if (gallerySelected.delete(localUrl)) gallerySelected.add(res.url);
+          if (lastGalleryUrl === localUrl) lastGalleryUrl = res.url;
+        } else if (!localUrl) {
           modalImages.push(res.url);
         }
         renderGallery();
@@ -626,8 +764,9 @@ document
         }
         ok++;
       } catch {
-        if (pendingIdx >= 0) {
-          modalImages.splice(pendingIdx, 1);
+        const at = localUrl ? modalImages.indexOf(localUrl) : -1;
+        if (at >= 0) {
+          modalImages.splice(at, 1);
           renderGallery();
         }
         fail++;
@@ -885,9 +1024,10 @@ form.addEventListener("submit", async (e) => {
     }
     // 등록·편집 모두 응답 후 무조건 서버에서 다시 받아 records/original 동기
     // → "등록 직후 화면과 D1 불일치"로 인한 데이터 꼬임 사고 차단
+    const wasEdit = Boolean(editingId); // closeModal 이 editingId 를 비운다
     closeModal();
     await reloadFromServer();
-    adminUtil.toast(editingId ? "저장 완료" : "최상단에 추가됨");
+    adminUtil.toast(wasEdit ? "저장 완료" : "최상단에 추가됨");
   } catch (e2) {
     adminUtil.toast("저장 실패: " + e2.message, "error");
   } finally {

@@ -36,7 +36,7 @@
     />
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
-    <link rel="stylesheet" href="admin.css?v=20260930-portfolio" />
+    <link rel="stylesheet" href="admin.css?v=20261007-gallery" />
     <script>
       window.ADMIN_PAGE = { title: "포트폴리오", nav: "portfolio" };
     </script>
@@ -205,9 +205,31 @@
 
           <div class="field">
             <label>상세 갤러리 이미지</label>
-            <p class="hint" style="margin-top: 0; margin-bottom: 8px">
-              여러 장 선택 가능. 드래그로 순서 변경.
-            </p>
+            <div class="gallery-select-bar" id="gallerySelectBar">
+              <span class="gallery-select-hint when-idle"
+                >드래그로 순서 변경. 체크박스로 여러 장을 선택하면 한 번에 옮길
+                수 있습니다.</span
+              >
+              <strong class="when-selected" id="gallerySelectCount"></strong>
+              <span class="gallery-select-hint when-selected"
+                >하나를 끌어 놓거나 번호를 넣으면 지금 순서 그대로 함께
+                옮겨집니다.</span
+              >
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm when-selected"
+                id="btnMoveGalleryByNumber"
+              >
+                번호로 이동
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm when-selected"
+                id="btnClearGallerySelect"
+              >
+                선택 해제
+              </button>
+            </div>
             <div class="gallery-grid" id="galleryGrid"></div>
             <input
               type="file"
@@ -252,6 +274,6 @@
     <div class="toast" id="toast"></div>
     <script defer src="config.js"></script>
     <script defer src="admin.js?v=20260911-emblem"></script>
-    <script defer src="portfolio.v2.js?v=20260930-multiselect"></script>
+    <script defer src="portfolio.v2.js?v=20261007-gallery"></script>
   </body>
 </html>

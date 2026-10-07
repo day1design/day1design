@@ -4311,6 +4311,81 @@
 .gallery-item:hover .gallery-item-remove {
   opacity: 1;
 }
+/* 갤러리 사진 여러 장 선택 이동 — 카드 묶음 이동(A안)과 같은 규칙.
+   체크박스 label 이 .field label 규칙을 물려받지 않게 선택자를 한 단계 더 쓴다 */
+.gallery-item .gallery-item-check {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.gallery-item .gallery-item-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--c-brand);
+}
+.gallery-item .gallery-item-check input:focus-visible {
+  outline: 2px solid var(--c-brand);
+  outline-offset: 1px;
+}
+.gallery-item.is-selected {
+  border-color: var(--c-brand);
+  box-shadow: 0 0 0 2px var(--c-brand);
+}
+.gallery-grid.group-drag .gallery-item.is-selected {
+  opacity: 0.45;
+}
+.gallery-select-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  background: var(--c-surface);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--c-text-muted);
+}
+.gallery-select-bar strong {
+  font-size: 12px;
+  color: var(--c-brand);
+  white-space: nowrap;
+}
+.gallery-select-hint {
+  flex: 1;
+  min-width: 0;
+}
+.gallery-select-bar .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.gallery-select-bar:not(.has-selection) .when-selected,
+.gallery-select-bar.has-selection .when-idle {
+  display: none;
+}
+@media (max-width: 640px) {
+  /* 좁은 화면에서는 버튼 두 개가 한 줄을 차지하므로 끌기 안내는 감춘다 */
+  .gallery-select-bar.has-selection .gallery-select-hint {
+    display: none;
+  }
+  .gallery-select-bar strong {
+    flex: 1;
+  }
+}
 .gallery-empty {
   grid-column: 1 / -1;
   text-align: center;
