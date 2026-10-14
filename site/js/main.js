@@ -182,7 +182,28 @@ const HOUSE_INITIAL = 20;
 const HOUSE_INCREMENT = 10;
 let houseVisible = HOUSE_INITIAL;
 
+// 집 목록은 API(라이브 D1) 응답으로 처음 그린다. 하드코딩 projectData 로 먼저 그리면 곧바로
+// API 목록으로 바뀌면서 옛 사진(레거시 001.webp, 장당 최대 900KB)을 받고 버린다
+// (2026-10-14 실측: 홈 1.15MB·포트폴리오 1.9MB). 기다리는 동안은 빈 카드(스켈레톤)만 보이고,
+// API 가 실패하거나 HOUSE_API_WAIT_MS 안에 오지 않으면 하드코딩 목록으로 대신 그린다.
+let houseWaitingForApi = false;
+const HOUSE_API_WAIT_MS = 5000;
+
 const R2_BASE = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev";
+
+// 사진 크기: 화면에 보이는 크기에 맞춘 폭 한 가지씩 (config.js day1Img, 폭 종류 = 월 변환 수)
+//   카드 1080 = 폰 393px×3배 / PC 2열 약 540px×2배, 상세창 작은 칸 480 = 폰 108px×3배 / PC 4열 약 270px×2배,
+//   크게 보기는 폰만 1080 으로 줄이고 PC 는 원본(변환 없음).
+const IMG_W_CARD = 1080;
+const IMG_W_MODAL_THUMB = 480;
+const IMG_W_LIGHTBOX_MOBILE = 1080;
+const toImg =
+  typeof window.day1Img === "function" ? window.day1Img : (src) => src;
+function lightboxImg(src) {
+  return window.matchMedia("(max-width: 767px)").matches
+    ? toImg(src, IMG_W_LIGHTBOX_MOBILE)
+    : toImg(src);
+}
 
 // 이미지 로드 실패 시 사용할 중립 스켈레톤 (텍스트 없음, 1.6:1).
 // "이미지 준비 중" 같은 문구는 프로덕션에 노출되면 안 되므로 텍스트를 두지 않는다.
@@ -278,6 +299,10 @@ function renderHouse(size) {
     currentSize = size;
     houseVisible = HOUSE_INITIAL;
   }
+  if (houseWaitingForApi) {
+    renderHouseSkeleton();
+    return;
+  }
   grid.innerHTML = "";
   grid.className = "project-grid";
   const cards = buildHouseCards();
@@ -292,7 +317,7 @@ function renderHouse(size) {
         ? 'fetchpriority="high" decoding="async"'
         : 'loading="lazy" decoding="async"';
     card.innerHTML = `
-      <img class="img-after" src="${thumbUrl}" alt="${displayName}" ${loadAttr}>
+      <img class="img-after" src="${toImg(thumbUrl, IMG_W_CARD)}" alt="${displayName}" ${loadAttr}>
       <div class="project-overlay">
         <span class="project-name">${displayName}</span>
       </div>
@@ -321,6 +346,8 @@ function renderHouse(size) {
     }
     // 모달 첫 이미지 prefetch — hover/touch 시 미리 캐시에 올려 클릭 시 즉시 표시.
     // (모달 클릭 후 첫 장이 늦게 뜨던 지연 완화)
+    // 모달 작은 칸과 같은 크기로 받는다. 원본을 받으면 스크롤 중 손가락이 닿은 카드마다
+    // 수백 KB 가 새어 나간다(2026-10-14 실측: 스크롤만으로 원본 300KB·81KB 다운로드).
     let _prefetched = false;
     const prefetchModalFirst = () => {
       if (_prefetched) return;
@@ -333,7 +360,7 @@ function renderHouse(size) {
       if (first) {
         const pre = new Image();
         pre.decoding = "async";
-        pre.src = first;
+        pre.src = toImg(first, IMG_W_MODAL_THUMB);
       }
     };
     card.addEventListener("mouseenter", prefetchModalFirst, { once: true });
@@ -345,6 +372,27 @@ function renderHouse(size) {
     grid.appendChild(card);
   }
   renderHouseMoreBtn(cards.length);
+}
+
+// API 를 기다리는 동안의 빈 카드. 개수를 실제 첫 화면과 비슷하게 맞춰 도착 시 아래 내용이 밀리지 않게 한다.
+function renderHouseSkeleton() {
+  removeHouseMoreBtn();
+  grid.innerHTML = "";
+  grid.className = "project-grid";
+  const count = Math.min(houseVisible, buildHouseCards().length);
+  for (let k = 0; k < count; k++) {
+    const card = document.createElement("div");
+    card.className = "project-card";
+    card.setAttribute("aria-hidden", "true");
+    grid.appendChild(card);
+  }
+}
+
+// API 대기를 끝내고 지금 데이터(API 또는 하드코딩)로 그린다. 집 목록 화면일 때만.
+function finishHouseWait() {
+  if (!houseWaitingForApi) return;
+  houseWaitingForApi = false;
+  if (grid && !grid.classList.contains("office-grid")) renderHouse();
 }
 
 // Render OFFICE grid — 고정 컬럼 (round-robin 분배)
@@ -381,7 +429,8 @@ function renderOffice() {
       i <= 6
         ? 'fetchpriority="high" decoding="async"'
         : 'loading="lazy" decoding="async"';
-    card.innerHTML = `<img class="img-after" src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/office/${num}.webp" alt="Office ${i}" ${officeLoad}>`;
+    // 오피스 격자: 폰 2열 약 190px×3배, PC 3열 약 380px×2배 → 카드와 같은 1080 한 가지
+    card.innerHTML = `<img class="img-after" src="${toImg(`${R2_BASE}/images/office/${num}.webp`, IMG_W_CARD)}" alt="Office ${i}" ${officeLoad}>`;
     card.addEventListener("click", () => openOfficeLightbox(i - 1));
     cols[(i - 1) % COL_COUNT].appendChild(card);
   }
@@ -406,7 +455,9 @@ function openOfficeLightbox(index) {
   lbImages = [];
   for (let i = 1; i <= OFFICE_TOTAL; i++) {
     lbImages.push(
-      `https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/office/${String(i).padStart(3, "0")}.webp`,
+      lightboxImg(
+        `${R2_BASE}/images/office/${String(i).padStart(3, "0")}.webp`,
+      ),
     );
   }
   lbIndex = index;
@@ -479,6 +530,11 @@ if (grid) {
         : "");
   const urlSize = params.get("size");
 
+  if (window.DAY1_API_BASE) {
+    houseWaitingForApi = true;
+    setTimeout(finishHouseWait, HOUSE_API_WAIT_MS);
+  }
+
   if (urlCat === "office") {
     filterBtns.forEach((b) =>
       b.classList.toggle("active", b.dataset.filter === "office"),
@@ -521,7 +577,9 @@ function openProjectModal(proj) {
         );
   urls.forEach((src, i) => {
     const img = document.createElement("img");
-    img.src = src;
+    // 작은 칸에는 작은 사진, 크게 보기에는 큰 사진 (원본 1920px 를 108px 칸에 쓰던 구조 → 8.3MB)
+    img.src = toImg(src, IMG_W_MODAL_THUMB);
+    img.dataset.full = lightboxImg(src);
     img.alt = `${proj.name} ${i + 1}`;
     // 모달 첫 화면(상위 3장)은 즉시 로드 — lazy 면 모달을 열어도 빈 화면이 지연됨.
     // 나머지는 스크롤 시 lazy 로드.
@@ -535,7 +593,7 @@ function openProjectModal(proj) {
     img.onerror = function () {
       this.remove();
     };
-    img.addEventListener("click", () => openLightbox(img.src));
+    img.addEventListener("click", () => openLightbox(img.dataset.full));
     modalGrid.appendChild(img);
   });
   modal.classList.add("open");
@@ -624,7 +682,7 @@ function createLightbox() {
 
 function openLightbox(src) {
   const imgs = modalGrid.querySelectorAll("img");
-  lbImages = [...imgs].map((img) => img.src);
+  lbImages = [...imgs].map((img) => img.dataset.full || img.src);
   lbIndex = lbImages.indexOf(src);
   if (lbIndex < 0) lbIndex = 0;
   lbZoom = 1;
@@ -874,7 +932,11 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
       data = await res.json();
     }
     if (data.config) Object.assign(config, data.config);
-    slides = (data.slides || []).slice(0, config.maxSlides);
+    // 히어로는 크기를 줄이지 않고 주소만 바꾼다(모바일 cover 표시라 원본 해상도도 빠듯함).
+    // index.html <head> 선제 preload 도 같은 규칙으로 주소를 바꿔야 이중 다운로드가 없다.
+    slides = (data.slides || [])
+      .slice(0, config.maxSlides)
+      .map((s) => ({ ...s, image: toImg(s.image) }));
   } catch (e) {
     console.warn("[hero-slider] load failed:", e);
     signalHeroReady();
@@ -1098,9 +1160,9 @@ async function syncPortfolioFromApi() {
       const res = await fetch(
         `${API_BASE}/api/portfolio?page=${page}&limit=${LIMIT}&ts=${Date.now()}`,
       );
-      if (!res.ok) return;
+      if (!res.ok) return finishHouseWait();
       const d = await res.json();
-      if (!Array.isArray(d.records)) return;
+      if (!Array.isArray(d.records)) return finishHouseWait();
       records.push(...d.records);
       if (!d.hasMore) break;
     }
@@ -1113,7 +1175,7 @@ async function syncPortfolioFromApi() {
           `${r.id}|${r.order}|${r.thumbAfter || ""}|${(Array.isArray(r.images) && r.images.length) || 0}|${r.rightId || r.rightFolder || ""}`,
       )
       .join("||");
-    if (sig === _portfolioLastSig) return; // 변경 없음 → 그대로 둠
+    if (sig === _portfolioLastSig) return finishHouseWait(); // 변경 없음 → 그대로 둠
     _portfolioLastSig = sig;
 
     projectData.length = 0;
@@ -1138,6 +1200,7 @@ async function syncPortfolioFromApi() {
       projectData.push(o);
     });
     TOTAL_PROJECTS = projectData.length;
+    houseWaitingForApi = false;
 
     if (
       grid.classList.contains("project-grid") &&
@@ -1147,7 +1210,8 @@ async function syncPortfolioFromApi() {
       renderHouse();
     }
   } catch (e) {
-    // 조용히 fallback 유지
+    // 조용히 fallback 유지 (첫 화면이면 하드코딩 목록으로 그린다)
+    finishHouseWait();
   }
 }
 

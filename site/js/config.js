@@ -4,6 +4,39 @@
 // 빈 문자열이면 API 미사용 → 기존 정적 JSON / 하드코딩된 projectData 사용.
 window.DAY1_API_BASE = "https://day1design-api.day1design-co.workers.dev";
 
+// 사진·폰트 전송 주소. R2 버킷에 연결한 커스텀 도메인(Cloudflare 엣지 캐시·HTTP/2).
+// D1·정적 데이터에는 옛 r2.dev 주소가 그대로 저장돼 있으므로 화면에 그릴 때 day1Img 로 바꾼다.
+// 문제가 생기면 DAY1_IMG_HOST 를 r2.dev 주소로 되돌리면 크기 변환 없이 예전처럼 동작한다.
+window.DAY1_R2_PUBLIC = "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev";
+window.DAY1_IMG_HOST = "https://img.day1design.co.kr";
+
+// day1Img(src)        → 새 주소로만 바꾼다 (원본 그대로, 캐시 효과)
+// day1Img(src, width) → Cloudflare 이미지 변환으로 폭을 줄이고 WebP/AVIF 로 보낸다.
+//   변환이 실패하거나 월 무료 한도(고유 변환 5,000건)를 넘기면 onerror=redirect 로 원본이 나간다.
+//   폭 종류를 늘리면 고유 변환 수가 곱으로 늘어나므로 용도별로 한 가지씩만 쓴다.
+window.day1Img = function (src, width) {
+  var r2 = window.DAY1_R2_PUBLIC;
+  var host = window.DAY1_IMG_HOST;
+  if (typeof src !== "string" || src.indexOf(r2) !== 0 || host === r2) {
+    return src;
+  }
+  var path = src.slice(r2.length);
+  if (!width) return host + path;
+  return (
+    host +
+    "/cdn-cgi/image/width=" +
+    width +
+    ",quality=75,format=auto,onerror=redirect" +
+    path
+  );
+};
+
+// HTML 문자열 안의 r2.dev 이미지 주소를 새 주소로 바꾼다 (커뮤니티 본문처럼 HTML 로 오는 내용용).
+window.day1ImgHtml = function (html) {
+  if (typeof html !== "string") return html;
+  return html.split(window.DAY1_R2_PUBLIC).join(window.DAY1_IMG_HOST);
+};
+
 // GA4 Measurement ID — common.js 의 gtag 초기화가 이 값을 G-XXXXX 형식 검증 후
 // 활성. 비어 있으면 GA4 측정 자체가 안 됨.
 // Property 537274300 · 스트림 14863296006 (https://day1design.co.kr) 측정 ID.

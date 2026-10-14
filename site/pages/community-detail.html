@@ -61,12 +61,8 @@
       name="twitter:image"
       content="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/og-image-1200x630.png"
     />
-    <link
-      rel="preconnect"
-      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
-      crossorigin
-    />
-    <link rel="stylesheet" href="../css/fonts.css?v=20260715-r2woff2" />
+    <link rel="preconnect" href="https://img.day1design.co.kr" crossorigin />
+    <link rel="stylesheet" href="../css/fonts.css?v=core-9da0100af3" />
     <link rel="stylesheet" href="../css/variables.css?v=20260715-fontfix" />
     <link rel="stylesheet" href="../css/reset.css" />
     <link rel="stylesheet" href="../css/common.css?v=20260715-konav" />
@@ -99,7 +95,7 @@
         <div class="logo">
           <a href="../index.html"
             ><img
-              src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone-wordmark.webp"
+              src="https://img.day1design.co.kr/images/logo/logo-dayone-wordmark.webp"
               alt="DAYONE DESIGN"
               width="281"
               height="26"
@@ -108,14 +104,10 @@
         <nav>
           <ul class="nav-list">
             <li>
-              <a href="about.html" class="menu-item"
-                >회사소개</a
-              >
+              <a href="about.html" class="menu-item">회사소개</a>
             </li>
             <li>
-              <a href="project-flow.html" class="menu-item"
-                >진행절차</a
-              >
+              <a href="project-flow.html" class="menu-item">진행절차</a>
             </li>
             <li>
               <a href="portfolio.html" class="menu-item" data-menu="PORTFOLIO"
@@ -123,9 +115,7 @@
               >
             </li>
             <li>
-              <a href="estimates.html" class="menu-item"
-                >견적문의</a
-              >
+              <a href="estimates.html" class="menu-item">견적문의</a>
             </li>
           </ul>
         </nav>
@@ -157,7 +147,7 @@
         <div class="footer-top">
           <div class="footer-logo">
             <img
-              src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone-wordmark.webp"
+              src="https://img.day1design.co.kr/images/logo/logo-dayone-wordmark.webp"
               alt="DAYONE DESIGN"
               width="260"
               height="24"
@@ -192,7 +182,7 @@
               target="_blank"
               rel="noopener"
               ><img
-                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/icons/youtube.svg"
+                src="https://img.day1design.co.kr/images/icons/youtube.svg"
                 alt="YouTube"
                 width="40"
                 height="40"
@@ -202,7 +192,7 @@
               target="_blank"
               rel="noopener"
               ><img
-                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/icons/instagram.svg"
+                src="https://img.day1design.co.kr/images/icons/instagram.svg"
                 alt="Instagram"
                 width="40"
                 height="40"
@@ -212,7 +202,7 @@
               target="_blank"
               rel="noopener"
               ><img
-                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/icons/naver-blog.png"
+                src="https://img.day1design.co.kr/cdn-cgi/image/width=96,quality=85,format=auto,onerror=redirect/images/icons/naver-blog.png"
                 alt="Blog"
                 width="40"
                 height="40"
@@ -230,7 +220,7 @@
       <a href="estimates.html">견적문의</a>
     </nav>
 
-    <script src="../js/config.js?v=20260821-inflowapp"></script>
+    <script src="../js/config.js?v=20261014-imgcdn"></script>
     <script src="../js/tracker.js?v=20260821-inflowapp" defer></script>
     <script defer src="../js/common.js?v=20260821-inflowapp"></script>
     <!-- 이탈 시도(뒤로가기) 시 브리프 팝업 → 견적 폼 이어쓰기 -->
@@ -582,7 +572,10 @@
             </div>
           `;
 
-        mainEl.innerHTML = mainHtml;
+        // 본문 사진(r2.dev)을 사진 전용 주소로 — 엣지 캐시. 커뮤니티 사진은 이미 작아서(평균 44KB) 크기 변환은 안 한다.
+        mainEl.innerHTML = window.day1ImgHtml
+          ? window.day1ImgHtml(mainHtml)
+          : mainHtml;
 
         // Side panel - project info + CTA
         // Extract spec info from body text if possible
@@ -611,6 +604,7 @@
               // slim list: `thumb` is already an absolute URL.
               let src = rp.thumb || "";
               if (src && !src.startsWith("http")) src = "https:" + src;
+              if (window.day1Img) src = window.day1Img(src);
               return `<a href="${getCommunityDetailHref(rp)}" class="side-slide${ri === 0 ? " active" : ""}">
                 <img src="${src}" alt="${rp.title}" loading="lazy" decoding="async">
                 <div class="overlay">

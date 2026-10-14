@@ -81,13 +81,13 @@
     />
     <link
       rel="preconnect"
-      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+      href="https://img.day1design.co.kr"
       crossorigin
     />
     <!-- 히어로 LCP 최적화: 익명 이미지 연결 워밍 + 슬라이드 API/이미지 조기 로드 -->
     <link
       rel="preconnect"
-      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev"
+      href="https://img.day1design.co.kr"
     />
     <link
       rel="preconnect"
@@ -102,7 +102,7 @@
       rel="preload"
       as="image"
       fetchpriority="high"
-      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/hero/20260513-0fcu5zdt/2-1_보정본__사진_자른후_.webp"
+      href="https://img.day1design.co.kr/hero/20260513-0fcu5zdt/2-1_보정본__사진_자른후_.webp"
     />
     <script>
       // defer 스크립트가 모두 실행되길 기다리지 않고, 히어로 슬라이드 API를
@@ -118,6 +118,14 @@
             })
             .then(function (d) {
               var img = d && d.slides && d.slides[0] && d.slides[0].image;
+              // D1 에는 r2.dev 주소가 저장돼 있다. main.js(day1Img)와 같은 규칙으로
+              // 사진 전용 주소로 바꿔야 preload 와 실제 배경이 같은 파일이 된다.
+              if (img) {
+                img = img.replace(
+                  "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev",
+                  "https://img.day1design.co.kr",
+                );
+              }
               if (img) {
                 var l = document.createElement("link");
                 l.rel = "preload";
@@ -144,10 +152,10 @@
       rel="preload"
       as="font"
       type="font/woff2"
-      href="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/fonts/S-CoreDream-4Regular.woff2"
+      href="https://img.day1design.co.kr/fonts/core-9da0100af3/S-CoreDream-4Regular.woff2"
       crossorigin
     />
-    <link rel="stylesheet" href="css/fonts.css?v=20260715-r2woff2" />
+    <link rel="stylesheet" href="css/fonts.css?v=core-9da0100af3" />
     <link rel="stylesheet" href="css/variables.css?v=20260715-fontfix" />
     <link rel="stylesheet" href="css/reset.css" />
     <link rel="stylesheet" href="css/common.css?v=20260715-konav" />
@@ -295,7 +303,7 @@
         <div class="logo">
           <a href="index.html"
             ><img
-              src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone-wordmark.webp"
+              src="https://img.day1design.co.kr/images/logo/logo-dayone-wordmark.webp"
               alt="DAYONE DESIGN"
               width="281"
               height="26"
@@ -411,13 +419,13 @@
         <div class="brandfilm-media">
           <div
             class="brandfilm-video brandfilm-player"
-            data-video-src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/videos/brandfilm-960.mp4"
-            data-poster-src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/brandfilm-poster.webp"
+            data-video-src="https://img.day1design.co.kr/videos/brandfilm-960.mp4"
+            data-poster-src="https://img.day1design.co.kr/images/brandfilm-poster.webp"
             aria-label="DAYONE BRAND FILM"
           >
             <video
               class="brandfilm-element"
-              poster="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/brandfilm-poster.webp"
+              poster="https://img.day1design.co.kr/images/brandfilm-poster.webp"
               autoplay
               muted
               loop
@@ -497,7 +505,7 @@
         <div class="footer-top">
           <div class="footer-logo">
             <img
-              src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/logo/logo-dayone-wordmark.webp"
+              src="https://img.day1design.co.kr/images/logo/logo-dayone-wordmark.webp"
               alt="DAYONE DESIGN"
               width="260"
               height="24"
@@ -536,7 +544,7 @@
               aria-label="YouTube"
             >
               <img
-                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/icons/youtube.svg"
+                src="https://img.day1design.co.kr/images/icons/youtube.svg"
                 alt="YouTube"
                 width="40"
                 height="40"
@@ -549,7 +557,7 @@
               aria-label="Instagram"
             >
               <img
-                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/icons/instagram.svg"
+                src="https://img.day1design.co.kr/images/icons/instagram.svg"
                 alt="Instagram"
                 width="40"
                 height="40"
@@ -562,7 +570,7 @@
               aria-label="Blog"
             >
               <img
-                src="https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/icons/naver-blog.png"
+                src="https://img.day1design.co.kr/cdn-cgi/image/width=96,quality=85,format=auto,onerror=redirect/images/icons/naver-blog.png"
                 alt="Naver Blog"
                 width="40"
                 height="40"
@@ -581,11 +589,11 @@
       <a href="pages/estimates.html">견적문의</a>
     </nav>
 
-    <script src="js/config.js?v=20260821-inflowapp"></script>
+    <script src="js/config.js?v=20261014-imgcdn"></script>
     <script src="js/tracker.js?v=20260821-inflowapp" defer></script>
     <script src="js/common.js?v=20260821-inflowapp" defer></script>
     <!-- 이탈 시도(뒤로가기) 시 브리프 팝업 → 견적 폼 이어쓰기 -->
     <script src="js/exit-guard.js?v=20260825-exitguard3" defer></script>
-    <script src="js/main.js?v=20260903-pagination" defer></script>
+    <script src="js/main.js?v=20261014-imgcdn" defer></script>
   </body>
 </html>

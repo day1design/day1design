@@ -50,9 +50,11 @@ function renderCommunity() {
 
   grid.innerHTML = "";
   pageItems.forEach((post, i) => {
-    const thumbUrl =
+    const rawThumb =
       post.thumb ||
       "https://pub-7a0a5e1669f345bb8ae95ab3c7865149.r2.dev/images/hero/hero-main-bg.webp";
+    // 사진 전용 주소로 (엣지 캐시). 커뮤니티 썸네일은 이미 작아서 크기 변환은 안 한다.
+    const thumbUrl = window.day1Img ? window.day1Img(rawThumb) : rawThumb;
     const cleanTitle = (post.title || "").replace(/\s+/g, " ").trim();
     const rawExcerpt = (post.excerpt || post.body_text || "")
       .replace(/\s+/g, " ")
