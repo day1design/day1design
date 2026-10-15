@@ -1079,11 +1079,17 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
       data = await res.json();
     }
     if (data.config) Object.assign(config, data.config);
-    // 히어로는 크기를 줄이지 않고 주소만 바꾼다(모바일 cover 표시라 원본 해상도도 빠듯함).
+    // 히어로 주소 규칙은 config.js day1HeroImg 한 곳에 있다: 예전 1920px 사진(hero/)은 주소만 바꾸고,
+    // 고해상도 원본(hero-hd/)은 폰 1296×2160·PC 1920 으로 Cloudflare 가 잘라 준다.
     // index.html <head> 선제 preload 도 같은 규칙으로 주소를 바꿔야 이중 다운로드가 없다.
+    const heroMobile = window.matchMedia("(max-width: 767px)").matches;
+    const heroImg =
+      typeof window.day1HeroImg === "function"
+        ? (src) => window.day1HeroImg(src, heroMobile)
+        : toImg;
     slides = (data.slides || [])
       .slice(0, config.maxSlides)
-      .map((s) => ({ ...s, image: toImg(s.image) }));
+      .map((s) => ({ ...s, image: heroImg(s.image) }));
   } catch (e) {
     console.warn("[hero-slider] load failed:", e);
     signalHeroReady();

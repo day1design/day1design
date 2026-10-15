@@ -31,6 +31,25 @@ window.day1Img = function (src, width) {
   );
 };
 
+// 히어로 사진 주소. 고해상도 원본(hero-hd/ 폴더)으로 올린 사진만 Cloudflare 가 화면에 맞게 잘라 준다.
+//   폰: 히어로가 393×720 처럼 세로로 길어 가로 사진의 가운데만 보인다. 1920px 사진으로는 그 부분이
+//       699×1280 픽셀뿐이라 1.69배 늘어나 흐렸다(2026-10-15 실측). 원본에서 같은 가운데를 1296×2160 으로 받는다.
+//   PC: 가로 1920 으로 줄여 받는다.
+// 1920px 로 올린 예전 사진(hero/)은 변환하면 확대만 되므로 예전처럼 주소만 바꾼다.
+// ⚠ index.html <head> 의 첫 슬라이드 preload 가 같은 옵션 문자열을 쓴다. 바꾸면 두 곳을 함께 바꿀 것.
+window.day1HeroImg = function (src, mobile) {
+  var url = window.day1Img(src);
+  var host = window.DAY1_IMG_HOST;
+  if (host === window.DAY1_R2_PUBLIC) return url;
+  if (typeof url !== "string" || url.indexOf(host + "/hero-hd/") !== 0) {
+    return url;
+  }
+  var opt = mobile
+    ? "width=1296,height=2160,fit=cover,quality=78,format=auto,onerror=redirect"
+    : "width=1920,quality=82,format=auto,onerror=redirect";
+  return host + "/cdn-cgi/image/" + opt + url.slice(host.length);
+};
+
 // HTML 문자열 안의 r2.dev 이미지 주소를 새 주소로 바꾼다 (커뮤니티 본문처럼 HTML 로 오는 내용용).
 window.day1ImgHtml = function (html) {
   if (typeof html !== "string") return html;

@@ -126,6 +126,17 @@
                   "https://img.day1design.co.kr",
                 );
               }
+              // 고해상도 원본(hero-hd/)은 config.js day1HeroImg 와 같은 옵션으로 화면에 맞춘 주소를 쓴다.
+              var hd = "https://img.day1design.co.kr/hero-hd/";
+              if (img && img.indexOf(hd) === 0) {
+                var opt = window.matchMedia("(max-width: 767px)").matches
+                  ? "width=1296,height=2160,fit=cover,quality=78,format=auto,onerror=redirect"
+                  : "width=1920,quality=82,format=auto,onerror=redirect";
+                img = img.replace(
+                  "https://img.day1design.co.kr/",
+                  "https://img.day1design.co.kr/cdn-cgi/image/" + opt + "/",
+                );
+              }
               if (img) {
                 var l = document.createElement("link");
                 l.rel = "preload";
@@ -575,11 +586,11 @@
       <a href="pages/estimates.html">견적문의</a>
     </nav>
 
-    <script src="js/config.js?v=20261014-imgcdn"></script>
+    <script src="js/config.js?v=20261015-herohd"></script>
     <script src="js/tracker.js?v=20260821-inflowapp" defer></script>
     <script src="js/common.js?v=20261015-apicache" defer></script>
     <!-- 이탈 시도(뒤로가기) 시 브리프 팝업 → 견적 폼 이어쓰기 -->
     <script src="js/exit-guard.js?v=20260825-exitguard3" defer></script>
-    <script src="js/main.js?v=20261015-apicache" defer></script>
+    <script src="js/main.js?v=20261015-herohd" defer></script>
   </body>
 </html>

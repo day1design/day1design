@@ -1,5 +1,39 @@
 // ========== 히어로 슬라이드 (그리드 + DnD + 업로드만) ==========
 const MAX_SLIDES = 10;
+
+// 히어로는 폰에서 사진 가운데를 크게 확대해 보여 준다. 기본 업로드(5MB 넘으면 가로 1920px 로 축소)를
+// 쓰면 폰에서 흐려지므로, 세로 1800px 이상인 큰 사진은 가로 3840px 까지 hero-hd/ 폴더에 보관한다.
+// 공개 화면은 이 폴더의 사진만 Cloudflare 가 PC·폰 크기에 맞게 잘라 쓴다(site/js/config.js day1HeroImg).
+const HERO_HD_MIN_HEIGHT = 1800;
+function readImageSize(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      resolve(null);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
+}
+async function uploadHeroImage(file) {
+  const size = await readImageSize(file);
+  if (size && size.height >= HERO_HD_MIN_HEIGHT) {
+    return adminUtil.uploadImage(file, {
+      folder: "hero-hd",
+      maxWidth: 3840,
+      quality: 0.86,
+    });
+  }
+  return adminUtil.uploadImage(file, {
+    folder: "hero",
+    skipCompressUnder: 5 * 1024 * 1024,
+  });
+}
 let slides = [];
 let original = [];
 let dirty = false;
@@ -124,10 +158,7 @@ editThumbFile.addEventListener("change", async () => {
   if (!f) return;
   try {
     adminUtil.toast("이미지 업로드 중...");
-    const res = await adminUtil.uploadImage(f, {
-      folder: "hero",
-      skipCompressUnder: 5 * 1024 * 1024,
-    });
+    const res = await uploadHeroImage(f);
     editingImage = res.url;
     editingLqip = await adminUtil.makeLqipDataUrl(f);
     renderEditThumb(editingImage);
@@ -171,10 +202,7 @@ document.getElementById("slideEditForm").addEventListener("submit", (e) => {
 async function handleImageReplace(index, file) {
   try {
     adminUtil.toast("이미지 업로드 중...");
-    const res = await adminUtil.uploadImage(file, {
-      folder: "hero",
-      skipCompressUnder: 5 * 1024 * 1024,
-    });
+    const res = await uploadHeroImage(file);
     slides[index].image = res.url;
     slides[index].lqip = await adminUtil.makeLqipDataUrl(file);
     setDirty(true);
@@ -224,10 +252,7 @@ uploadInput?.addEventListener("change", async () => {
   if (!file) return;
   try {
     adminUtil.toast("업로드 중...");
-    const res = await adminUtil.uploadImage(file, {
-      folder: "hero",
-      skipCompressUnder: 5 * 1024 * 1024,
-    });
+    const res = await uploadHeroImage(file);
     pendingAddUrl = res.url;
     pendingAddLqip = await adminUtil.makeLqipDataUrl(file);
     setPreview(res.url);
