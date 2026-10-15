@@ -235,6 +235,51 @@
     }
   };
 
+  // ===== 외부 추적 스크립트는 페이지 로드가 끝난 뒤 받는다 =====
+  // gtag·fbevents·Clarity 를 합치면 약 500KB 다. 처음부터 받으면 느린 폰 회선에서 히어로 사진·
+  // 폰트와 대역을 다퉈 첫 화면이 늦게 뜬다(2026-10-14 실측). fbq·gtag·clarity 는 큐 함수를
+  // 먼저 만들어 두므로 스크립트가 도착하기 전에 부른 이벤트도 도착한 뒤 그대로 전송된다.
+  // 로드 뒤 브라우저가 한가할 때(최대 1.5초 대기) 받고, 로드가 늦어져도 6초 뒤에는 받는다.
+  // 견적 페이지는 전환 측정이 우선이라 예전처럼 바로 받는다.
+  const trackerQueue = [];
+  let trackerReady = /\/estimates(\/|$)/.test(location.pathname);
+  function addTrackerScript(src) {
+    const s = document.createElement("script");
+    s.async = true;
+    s.src = src;
+    document.head.appendChild(s);
+  }
+  function releaseTrackers() {
+    if (trackerReady) return;
+    trackerReady = true;
+    trackerQueue.splice(0).forEach(addTrackerScript);
+  }
+  function loadTrackerScript(src) {
+    if (trackerReady) addTrackerScript(src);
+    else trackerQueue.push(src);
+  }
+  if (!trackerReady) {
+    const whenIdle = () => {
+      if ("requestIdleCallback" in window) {
+        requestIdleCallback(releaseTrackers, { timeout: 1500 });
+      } else {
+        setTimeout(releaseTrackers, 1000);
+      }
+    };
+    if (document.readyState === "complete") whenIdle();
+    else window.addEventListener("load", whenIdle, { once: true });
+    setTimeout(releaseTrackers, 6000);
+  }
+
+  // ===== Microsoft Clarity — 예전에는 9개 페이지 <head> 에 같은 코드로 들어 있었다 =====
+  // head 에서 바로 받으면 첫 화면 사진·폰트와 대역을 다투므로 여기로 옮겨 로드 뒤에 받는다.
+  window.clarity =
+    window.clarity ||
+    function () {
+      (window.clarity.q = window.clarity.q || []).push(arguments);
+    };
+  loadTrackerScript("https://www.clarity.ms/tag/wty53osevq");
+
   // ===== Meta Pixel (fbq) 로더 — GA4 활성 여부와 독립 =====
   if (pixelEnabled) {
     /* eslint-disable */
@@ -250,11 +295,8 @@
       n.loaded = !0;
       n.version = "2.0";
       n.queue = [];
-      t = b.createElement(e);
-      t.async = !0;
-      t.src = v;
-      s = b.getElementsByTagName(e)[0];
-      s.parentNode.insertBefore(t, s);
+      // 스크립트 본체는 페이지 로드 뒤에 받는다(큐에 쌓인 이벤트는 도착 뒤 전송된다).
+      loadTrackerScript(v);
     })(
       window,
       document,
@@ -284,10 +326,9 @@
       window.dataLayer.push(arguments);
     };
 
-  const script = document.createElement("script");
-  script.async = true;
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(tagId)}`;
-  document.head.appendChild(script);
+  loadTrackerScript(
+    `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(tagId)}`,
+  );
 
   window.gtag("js", new Date());
   // page_path 를 같이 보내지 않는다. page_location 이 이미 쿼리를 담고 있어서

@@ -475,6 +475,41 @@
   transition: transform 0.2s;
   user-select: none;
 }
+/* 폰: 좌우 80px 고정 여백 때문에 사진 폭이 233px 로 줄던 문제 → 화면 폭을 다 쓰고, 화살표는
+   사진 위에 얹는다. 좌우로 밀어 넘기기는 JS 가 처리하므로 가로 제스처를 브라우저에 넘기지 않는다
+   (확대 중에는 사진 안에서 움직여야 하므로 되돌린다). 뒤 페이지가 비치지 않게 배경을 불투명하게. */
+@media (max-width: 767px) {
+  #lightbox {
+    background: #000;
+  }
+  .lb-img-wrap {
+    left: 0;
+    right: 0;
+    bottom: 16px;
+    touch-action: pan-y pinch-zoom;
+  }
+  #lightbox.lb-zoomed .lb-img-wrap {
+    touch-action: auto;
+  }
+  .lb-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.85);
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 50%;
+  }
+  .lb-prev {
+    left: 6px;
+  }
+  .lb-next {
+    right: 6px;
+  }
+}
 
 /* ========== RESPONSIVE ========== */
 @media (max-width: 991px) {

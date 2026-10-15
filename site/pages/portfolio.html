@@ -137,27 +137,38 @@
       href="https://img.day1design.co.kr"
       crossorigin
     />
+    <link
+      rel="preconnect"
+      href="https://day1design-api.day1design-co.workers.dev"
+      crossorigin
+    />
+    <script>
+      // 포트폴리오 목록을 HTML 을 읽는 즉시 받기 시작한다. main.js(defer)가 실행된 뒤에 부르면
+      // 스크립트를 받고 실행하는 동안 약 1초 늦게 출발했다(2026-10-15 실측, 느린 4G).
+      // 1·2페이지를 동시에 받고(현재 106건), 더 있으면 main.js 가 이어서 받는다.
+      (function () {
+        var API = "https://day1design-api.day1design-co.workers.dev";
+        try {
+          window.__portfolioPages = [1, 2].map(function (p) {
+            return fetch(API + "/api/portfolio?page=" + p + "&limit=60")
+              .then(function (r) {
+                return r.ok ? r.json() : null;
+              })
+              .catch(function () {
+                return null;
+              });
+          });
+        } catch (e) {
+          window.__portfolioPages = null;
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="../css/fonts.css?v=core-9da0100af3" />
     <link rel="stylesheet" href="../css/variables.css?v=20260715-fontfix" />
     <link rel="stylesheet" href="../css/reset.css" />
     <link rel="stylesheet" href="../css/common.css?v=20260715-konav" />
-    <link rel="stylesheet" href="../css/main.css" />
+    <link rel="stylesheet" href="../css/main.css?v=20261015-lightbox" />
     <link rel="stylesheet" href="../css/portfolio.css" />
-    <!-- Microsoft Clarity -->
-    <script type="text/javascript">
-      (function (c, l, a, r, i, t, y) {
-        c[a] =
-          c[a] ||
-          function () {
-            (c[a].q = c[a].q || []).push(arguments);
-          };
-        t = l.createElement(r);
-        t.async = 1;
-        t.src = "https://www.clarity.ms/tag/" + i;
-        y = l.getElementsByTagName(r)[0];
-        y.parentNode.insertBefore(t, y);
-      })(window, document, "clarity", "script", "wty53osevq");
-    </script>
   </head>
   <body>
     <!-- HEADER -->
@@ -338,12 +349,12 @@
 
     <script src="../js/config.js?v=20261014-imgcdn"></script>
     <script src="../js/tracker.js?v=20260821-inflowapp" defer></script>
-    <script defer src="../js/common.js?v=20260821-inflowapp"></script>
+    <script defer src="../js/common.js?v=20261015-lazytrack"></script>
     <!-- 이탈 시도(뒤로가기) 시 브리프 팝업 → 견적 폼 이어쓰기 -->
     <script defer src="../js/exit-guard.js?v=20260825-exitguard3"></script>
     <script>
       const IMG_PREFIX = "../";
     </script>
-    <script defer src="../js/main.js?v=20261014-imgcdn"></script>
+    <script defer src="../js/main.js?v=20261015-preload"></script>
   </body>
 </html>

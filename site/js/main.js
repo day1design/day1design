@@ -453,6 +453,7 @@ function renderOffice() {
 // Office lightbox (no modal, direct lightbox)
 function openOfficeLightbox(index) {
   lbImages = [];
+  lbThumbs = []; // 오피스 카드는 크게 보기(폰 1080)와 같은 사진이라 이미 받아 둔 상태다
   for (let i = 1; i <= OFFICE_TOTAL; i++) {
     lbImages.push(
       lightboxImg(
@@ -645,8 +646,44 @@ window.addEventListener("popstate", () => {
 
 // Lightbox 뷰어 (원본 동일 UI)
 let lbImages = [];
+let lbThumbs = [];
 let lbIndex = 0;
 let lbZoom = 1;
+const LB_MOBILE = window.matchMedia("(max-width: 767px)");
+
+// 크게 보기 사진 미리 받기. 처음 보는 사진은 Cloudflare 가 크기를 변환하느라 0.6~1.4초가
+// 걸린다(2026-10-15 실측, 같은 사진 두 번째부터는 0.2초). 넘길 때마다 그만큼 멈추지 않도록
+// 앞뒤 사진을 미리 받고, 아직 도착하지 않은 사진은 상세창에서 받아 둔 작은 사진을 먼저 띄운다.
+const lbReady = new Set();
+const lbPending = new Map();
+function lbLoad(url) {
+  if (!url || lbReady.has(url)) return Promise.resolve(true);
+  if (lbPending.has(url)) return lbPending.get(url);
+  const loading = new Promise((resolve) => {
+    const pre = new Image();
+    const ok = () => {
+      lbPending.delete(url);
+      lbReady.add(url);
+      resolve(true);
+    };
+    pre.onload = () => {
+      if (typeof pre.decode === "function") pre.decode().then(ok, ok);
+      else ok();
+    };
+    pre.onerror = () => {
+      lbPending.delete(url);
+      resolve(false);
+    };
+    pre.src = url;
+  });
+  lbPending.set(url, loading);
+  return loading;
+}
+function lbPreloadAround(idx) {
+  [idx + 1, idx - 1, idx + 2].forEach((i) => {
+    if (i >= 0 && i < lbImages.length) lbLoad(lbImages[i]);
+  });
+}
 
 function createLightbox() {
   const lb = document.createElement("div");
@@ -676,13 +713,85 @@ function createLightbox() {
   lb.querySelector(".lb-img-wrap").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closeLightbox();
   });
+  bindLightboxSwipe(lb);
   document.body.appendChild(lb);
   return lb;
+}
+
+// 폰에서 좌우로 밀어 넘기기. 확대 중에는 사진 안에서 움직여야 하므로 넘기지 않는다.
+function bindLightboxSwipe(lb) {
+  const wrap = lb.querySelector(".lb-img-wrap");
+  const img = wrap.querySelector("img");
+  let x0 = 0;
+  let y0 = 0;
+  let dx = 0;
+  let tracking = false;
+  let horizontal = null;
+  wrap.addEventListener(
+    "touchstart",
+    (e) => {
+      tracking = lbZoom <= 1 && e.touches.length === 1;
+      if (!tracking) return;
+      horizontal = null;
+      dx = 0;
+      x0 = e.touches[0].clientX;
+      y0 = e.touches[0].clientY;
+    },
+    { passive: true },
+  );
+  wrap.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!tracking) return;
+      if (e.touches.length !== 1) {
+        tracking = false;
+        img.style.transition = "";
+        img.style.transform = "scale(1)";
+        return;
+      }
+      const mx = e.touches[0].clientX - x0;
+      const my = e.touches[0].clientY - y0;
+      if (horizontal === null && Math.abs(mx) + Math.abs(my) > 8) {
+        horizontal = Math.abs(mx) > Math.abs(my);
+      }
+      if (!horizontal) return;
+      dx = mx;
+      img.style.transition = "none";
+      img.style.transform = `translateX(${dx}px)`;
+    },
+    { passive: true },
+  );
+  const end = () => {
+    if (!tracking) return;
+    tracking = false;
+    const dir = dx < 0 ? 1 : -1;
+    const target = lbIndex + dir;
+    if (
+      horizontal &&
+      Math.abs(dx) > 50 &&
+      target >= 0 &&
+      target < lbImages.length
+    ) {
+      // 끌던 사진 자리에 다음 사진이 바로 서도록 전환 없이 바꾼다.
+      lbNav(dir);
+      requestAnimationFrame(() => {
+        img.style.transition = "";
+      });
+      return;
+    }
+    img.style.transition = "";
+    img.style.transform = "scale(1)";
+  };
+  wrap.addEventListener("touchend", end);
+  wrap.addEventListener("touchcancel", end);
 }
 
 function openLightbox(src) {
   const imgs = modalGrid.querySelectorAll("img");
   lbImages = [...imgs].map((img) => img.dataset.full || img.src);
+  // 폰에서만 상세창의 작은 사진(480)을 자리표시로 쓴다. 폰은 사진이 화면 폭에 맞춰 줄어
+  // 작은 사진과 큰 사진이 같은 크기로 보이지만, PC 는 작은 사진이 작게 떴다가 커진다.
+  lbThumbs = LB_MOBILE.matches ? [...imgs].map((img) => img.src) : [];
   lbIndex = lbImages.indexOf(src);
   if (lbIndex < 0) lbIndex = 0;
   lbZoom = 1;
@@ -694,9 +803,22 @@ function openLightbox(src) {
 function lbShow() {
   const lb = document.getElementById("lightbox");
   const img = lb.querySelector(".lb-img-wrap img");
-  img.src = lbImages[lbIndex];
+  const full = lbImages[lbIndex];
+  const thumb = lbThumbs[lbIndex];
+  const shown = lbIndex;
+  if (lbReady.has(full) || !thumb || thumb === full) {
+    img.src = full;
+  } else {
+    // 큰 사진이 아직이면 작은 사진을 먼저 띄우고, 도착하면 바꾼다(그사이 넘겼으면 그대로 둔다).
+    img.src = thumb;
+    lbLoad(full).then((ok) => {
+      if (ok && lbIndex === shown && lbImages[shown] === full) img.src = full;
+    });
+  }
+  lbPreloadAround(lbIndex);
   img.style.transform = "scale(1)";
   lbZoom = 1;
+  lb.classList.remove("lb-zoomed");
   lb.querySelector(".lb-current").textContent = lbIndex + 1;
   lb.querySelector(".lb-total").textContent = lbImages.length;
   lb.querySelector(".lb-zoom-out").disabled = true;
@@ -716,6 +838,7 @@ function lbSetZoom(z) {
   lbZoom = Math.max(1, Math.min(5, z));
   lb.querySelector(".lb-img-wrap img").style.transform = `scale(${lbZoom})`;
   lb.querySelector(".lb-zoom-out").disabled = lbZoom <= 1;
+  lb.classList.toggle("lb-zoomed", lbZoom > 1);
 }
 
 function lbFitToggle() {
@@ -752,11 +875,14 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
   const video = player.querySelector(".brandfilm-element");
   const playBtn = player.querySelector(".brandfilm-play-toggle");
   const soundBtn = player.querySelector(".brandfilm-sound-toggle");
-  const src = player.dataset.videoSrc;
   const poster = player.dataset.posterSrc;
   const isMobileMuted = window.matchMedia(
     "(max-width: 767px), (pointer: coarse)",
   ).matches;
+  // 모바일은 소리를 켤 수 없으므로(isMobileMuted) 오디오를 뺀 파일을 받는다.
+  // 영상 스트림은 원본을 그대로 복사한 것이라 화질이 같고 1.1MB 가볍다(6.57MB → 5.45MB).
+  const src =
+    (isMobileMuted && player.dataset.videoSrcMobile) || player.dataset.videoSrc;
   let loaded = false;
   let loadStarted = false;
   let controlsTimer = null;
@@ -817,10 +943,13 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
     if (shouldPlay) playVideo();
   };
 
+  // 66초 영상을 통째로 받으므로 화면 가까이(200px) 왔을 때 받기 시작한다.
+  // 700px 이던 때는 영상이 두 화면 가까이 아래에 있을 때부터 받아, 거기까지 내려오지 않는
+  // 방문자도 영상을 받았다.
+  const NEAR_PX = 200;
   const isNearViewport = () => {
     const rect = player.getBoundingClientRect();
-    const margin = Math.min(window.innerHeight, 700);
-    return rect.top < window.innerHeight + margin && rect.bottom > -margin;
+    return rect.top < window.innerHeight + NEAR_PX && rect.bottom > -NEAR_PX;
   };
 
   const loadWhenNear = () => {
@@ -837,9 +966,27 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
           }
         });
       },
-      { rootMargin: "700px 0px", threshold: 0.01 },
+      { rootMargin: `${NEAR_PX}px 0px`, threshold: 0.01 },
     );
     observer.observe(player);
+  }
+
+  // 화면을 벗어나면 멈추고 돌아오면 다시 재생한다(보이지 않는 동안 디코딩하지 않게).
+  // 방문자가 직접 멈춘 영상은 다시 틀지 않는다.
+  let pausedOffscreen = false;
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!loaded) return;
+        if (!entry.isIntersecting && !video.paused) {
+          pausedOffscreen = true;
+          video.pause();
+        } else if (entry.isIntersecting && pausedOffscreen) {
+          pausedOffscreen = false;
+          playVideo();
+        }
+      });
+    }).observe(player);
   }
 
   let fallbackTimer = null;
@@ -1029,16 +1176,24 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
   const slideEls = track.querySelectorAll(".hero-slide");
   const dotEls = dotsEl ? dotsEl.querySelectorAll(".hero-dot") : [];
   let current = 0;
+  // 마지막으로 요청한 장. 사진을 기다리는 동안 화살표를 여러 번 누르면 current 는 아직
+  // 그대로라 같은 장만 반복 요청됐다(누른 횟수가 씹힘). 다음·이전은 이 값을 기준으로 센다.
+  let requested = 0;
   let timer = null;
 
   // L2: 슬라이드 이미지 디코드 완료까지 대기 후 backgroundImage 세팅.
   // URL만 세팅하고 바로 .active 부여하던 기존 방식은 느린 네트워크에서
   // 투명 div가 페이드인 → pop-in 플래시 유발. Promise 기반으로 로드 보장.
+  // 미리 받기와 넘기기가 같은 슬라이드를 동시에 기다려도 요청은 한 번만 나가도록
+  // 슬라이드별 Promise 를 재사용한다. decode() 까지 기다리는 이유: 1920px 사진의
+  // 디코드가 크로스페이드 첫 프레임에 몰리면 폰에서 전환이 끊겨 보인다.
+  const slideLoads = new Map();
   function waitForSlideImage(el) {
     if (!el) return Promise.resolve();
     const url = el.dataset.bg;
     if (!url) return Promise.resolve(); // 이미 세팅된 슬라이드
-    return new Promise((resolve) => {
+    if (slideLoads.has(el)) return slideLoads.get(el);
+    const loading = new Promise((resolve) => {
       const img = new Image();
       let settled = false;
       const done = () => {
@@ -1046,14 +1201,30 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
         settled = true;
         el.style.backgroundImage = `url('${url}')`;
         el.removeAttribute("data-bg");
+        slideLoads.delete(el);
         resolve();
       };
-      img.onload = done;
+      img.onload = () => {
+        if (typeof img.decode === "function") img.decode().then(done, done);
+        else done();
+      };
       img.onerror = done;
       img.src = url;
       // 무한 hang 방어 — 4초 안에 onload/onerror 둘 다 안 오면 진행
       setTimeout(done, 4000);
     });
+    slideLoads.set(el, loading);
+    return loading;
+  }
+
+  // 다음 장은 항상 미리 받고, 이전 장은 방문자가 화살표·점을 한 번이라도 누른 뒤부터 받는다.
+  // 다음 장만 받아 두던 때는 '이전'을 누를 때마다 사진이 도착할 때까지 멈췄다.
+  // 자동 넘김만 보는 방문자에게는 쓰지 않을 사진을 받게 하지 않는다.
+  let userNavigated = false;
+  function preloadAround(idx) {
+    const n = slides.length;
+    waitForSlideImage(slideEls[(idx + 1) % n]);
+    if (userNavigated) waitForSlideImage(slideEls[(idx - 1 + n) % n]);
   }
 
   function clearPreviousSlides() {
@@ -1064,10 +1235,13 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
   // 이 방식은 전환 중 뒤쪽 고정 배경이나 바탕색이 비치는 순간을 막는다.
   function goTo(idx) {
     const target = (idx + slides.length) % slides.length;
+    requested = target;
     if (target === current && slideEls[target]?.classList.contains("active"))
       return;
 
     waitForSlideImage(slideEls[target]).then(() => {
+      // 사진을 기다리는 사이 다른 장을 눌렀으면 이 전환은 건너뛴다(마지막 요청만 반영).
+      if (requested !== target) return;
       const prevIndex = current;
       const previous = slideEls[prevIndex];
       if (previous && prevIndex !== target) previous.classList.add("prev");
@@ -1085,22 +1259,21 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
           const done = () => clearPreviousSlides();
           active?.addEventListener("transitionend", done, { once: true });
           setTimeout(done, 900);
-          // 다음 슬라이드 백그라운드 preload
-          waitForSlideImage(slideEls[(target + 1) % slides.length]);
+          preloadAround(target);
         }),
       );
     });
   }
   function next() {
-    goTo(current + 1);
+    goTo(requested + 1);
   }
   function prev() {
-    goTo(current - 1);
+    goTo(requested - 1);
   }
 
   // 슬라이드 #2 idle 프리로드 — 첫 오토어드밴스가 즉시 부드럽게
   if (slides.length > 1) {
-    const preloadNext = () => waitForSlideImage(slideEls[1]);
+    const preloadNext = () => preloadAround(0);
     if ("requestIdleCallback" in window) {
       requestIdleCallback(preloadNext, { timeout: 2000 });
     } else {
@@ -1116,16 +1289,19 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
   const nextBtn = document.getElementById("heroNext");
   if (prevBtn)
     prevBtn.addEventListener("click", () => {
+      userNavigated = true;
       prev();
       resetTimer();
     });
   if (nextBtn)
     nextBtn.addEventListener("click", () => {
+      userNavigated = true;
       next();
       resetTimer();
     });
   dotEls.forEach((dot) =>
     dot.addEventListener("click", (e) => {
+      userNavigated = true;
       goTo(parseInt(e.currentTarget.dataset.idx, 10));
       resetTimer();
     }),
@@ -1145,7 +1321,18 @@ document.querySelectorAll(".brandfilm-player").forEach((player) => {
 // (사용자가 "더 보기"로 늘려놓은 카드 리스트가 8초 polling 마다 깜빡임/초기화
 //  되는 사고 차단). signature 비교로 진짜 변경 있을 때만 renderHouse().
 let _portfolioLastSig = "";
-async function syncPortfolioFromApi() {
+// 진행 중인 동기화. 탭 복귀 때 focus 와 visibilitychange 가 함께 불러 같은 목록을
+// 동시에 두 번씩 받던 문제를 막는다(2026-10-15 실측, 4건 동시 요청).
+let _portfolioSyncing = null;
+function syncPortfolioFromApi() {
+  if (!_portfolioSyncing) {
+    _portfolioSyncing = syncPortfolioOnce().finally(() => {
+      _portfolioSyncing = null;
+    });
+  }
+  return _portfolioSyncing;
+}
+async function syncPortfolioOnce() {
   const API_BASE =
     (typeof window !== "undefined" && window.DAY1_API_BASE) || "";
   if (!API_BASE || !grid) return;
@@ -1155,14 +1342,24 @@ async function syncPortfolioFromApi() {
     // 페이지마다 따로 캐시되므로 대부분은 D1 을 거치지 않는다.
     const LIMIT = 60;
     const MAX_PAGES = 10; // 안전망 — hasMore 가 잘못 와도 무한히 돌지 않게
+    // 첫 동기화는 portfolio.html <head> 가 미리 시작한 1·2페이지 요청을 이어 쓴다.
+    const early = window.__portfolioPages || null;
+    window.__portfolioPages = null;
     const records = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const res = await fetch(
-        `${API_BASE}/api/portfolio?page=${page}&limit=${LIMIT}&ts=${Date.now()}`,
-      );
-      if (!res.ok) return finishHouseWait();
-      const d = await res.json();
-      if (!Array.isArray(d.records)) return finishHouseWait();
+      let d = early && early[page - 1] ? await early[page - 1] : null;
+      if (!d) {
+        const res = await fetch(
+          `${API_BASE}/api/portfolio?page=${page}&limit=${LIMIT}&ts=${Date.now()}`,
+        );
+        if (!res.ok) {
+          return finishHouseWait();
+        }
+        d = await res.json();
+      }
+      if (!Array.isArray(d.records)) {
+        return finishHouseWait();
+      }
       records.push(...d.records);
       if (!d.hasMore) break;
     }
@@ -1216,30 +1413,11 @@ async function syncPortfolioFromApi() {
 }
 
 syncPortfolioFromApi();
-// 라이브 탭이 띄워진 상태에서도 admin 변경이 반영되도록 폴링.
-// 활성 탭일 때만 폴링(백그라운드 탭은 멈춤). 탭 복귀(focus/visibilitychange)
-// 시에는 즉시 갱신하므로, 보고 있던 사용자는 항상 최신. 따라서 유휴 폴링은
-// 30초로 충분 — Worker 요청/D1 read 부하를 8초 대비 ~73% 절감(기능 동일).
-let _portfolioPollTimer = null;
-function startPortfolioPolling() {
-  if (_portfolioPollTimer) return;
-  _portfolioPollTimer = setInterval(() => {
-    if (!document.hidden) syncPortfolioFromApi();
-  }, 30000);
-}
-function stopPortfolioPolling() {
-  if (_portfolioPollTimer) {
-    clearInterval(_portfolioPollTimer);
-    _portfolioPollTimer = null;
-  }
-}
-startPortfolioPolling();
+// 관리자 변경은 탭으로 돌아오거나(visibilitychange) 창을 누를 때(focus) 다시 받아 반영한다.
+// 30초마다 목록 전체(2페이지·약 22KB, JSON 255KB)를 다시 받던 주기 갱신은 2026-10-15 사용자
+// 승인으로 없앴다 — 열어 둔 탭 하나가 1시간에 240건·2.6MB 를 받고 있었다.
+// 둘이 함께 불려도 syncPortfolioFromApi 가 진행 중인 요청을 재사용하므로 한 번만 받는다.
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    syncPortfolioFromApi();
-    startPortfolioPolling();
-  } else {
-    stopPortfolioPolling();
-  }
+  if (!document.hidden) syncPortfolioFromApi();
 });
 window.addEventListener("focus", syncPortfolioFromApi);
