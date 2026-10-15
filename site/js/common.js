@@ -660,7 +660,8 @@ if (hamburger) {
     });
   }
 
-  fetch(POPUP_API, { cache: "no-store" })
+  // 워커가 공개 사이트 응답에 30초 브라우저 캐시를 붙인다. 페이지를 옮길 때마다 다시 받지 않도록 no-store 를 뺐다.
+  fetch(POPUP_API)
     .then((r) => (r.ok ? r.json() : null))
     .then((data) => {
       if (!data) return;

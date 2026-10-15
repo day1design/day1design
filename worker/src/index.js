@@ -46,6 +46,7 @@ import { handleWorks } from "./routes/works.js";
 import { handleHealth } from "./routes/healthcheck.js";
 import { runAndReportHealth, healthReportTarget } from "./lib/healthcheck.js";
 import { cors, preflight } from "./lib/cors.js";
+import { withPublicCache } from "./lib/public-cache.js";
 import { jsonError } from "./lib/response.js";
 import { notifyTelegram, notifyInfra } from "./lib/telegram.js";
 import { createServices } from "./lib/services.js";
@@ -271,6 +272,8 @@ async function handleApi(request, env, ctx, path) {
     res = jsonError(404, "Not Found");
   }
 
+  // 공개 사이트의 공개 조회만 브라우저 30초 캐시(관리자 출처·쓰기·오류는 제외). lib/public-cache.js 참고.
+  res = withPublicCache(res, request, path);
   return cors(res, request, env);
 }
 

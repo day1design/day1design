@@ -1350,7 +1350,8 @@ async function syncPortfolioOnce() {
       let d = early && early[page - 1] ? await early[page - 1] : null;
       if (!d) {
         const res = await fetch(
-          `${API_BASE}/api/portfolio?page=${page}&limit=${LIMIT}&ts=${Date.now()}`,
+          // ts 꼬리표를 붙이면 워커의 30초 브라우저 캐시를 쓰지 못한다(관리자 수정은 최대 30초 뒤 반영).
+          `${API_BASE}/api/portfolio?page=${page}&limit=${LIMIT}`,
         );
         if (!res.ok) {
           return finishHouseWait();
