@@ -9,6 +9,11 @@
 
 import { notifyTelegram } from "./telegram.js";
 import { logPixelEvent } from "../routes/pixel-events.js";
+import {
+  BUDGET_BANDS,
+  budgetBandIndex,
+  estimateBudget,
+} from "./estimate-budget.js";
 
 const API_VERSION = "v21.0";
 
@@ -85,23 +90,7 @@ export async function sendMetaCapiLead(env, ctx, info = {}) {
     return { skipped: true };
   }
 
-  const userData = {};
-  const em = normEmail(info.email);
-  if (em) userData.em = [await sha256Hex(em)];
-  const ph = normPhone(info.phone);
-  if (ph) userData.ph = [await sha256Hex(ph)];
-  // 이름과 접수 식별자를 함께 보내 매칭 신호를 늘린다. Meta 인스턴트폼 리드는
-  // 브라우저 신호(fbp·fbc·ua)가 아예 없어 전화번호 하나로만 매칭되던 상태였다.
-  const fn = normName(info.name);
-  if (fn) userData.fn = [await sha256Hex(fn)];
-  // external_id 는 우리 쪽 접수 식별자다. 같은 사람이 다시 접수해도 같은 값이
-  // 아니므로 사람 식별이 아니라 이벤트 대조용으로 쓰인다.
-  if (info.externalId)
-    userData.external_id = [await sha256Hex(String(info.externalId))];
-  if (info.ip) userData.client_ip_address = info.ip;
-  if (info.ua) userData.client_user_agent = info.ua;
-  if (info.fbp) userData.fbp = info.fbp;
-  if (info.fbc) userData.fbc = info.fbc;
+  const userData = await buildUserData(info);
   const matched = Object.keys(userData).join(",");
 
   const actionSource = info.actionSource || "website";
@@ -146,6 +135,102 @@ export async function sendMetaCapiLead(env, ctx, info = {}) {
       env,
       `[day1design/meta-capi] 예외\n${(e?.message || "").slice(0, 200)}`,
     );
+    return { ok: false, error: e?.message };
+  }
+}
+
+async function buildUserData(info) {
+  const userData = {};
+  const em = normEmail(info.email);
+  if (em) userData.em = [await sha256Hex(em)];
+  const ph = normPhone(info.phone);
+  if (ph) userData.ph = [await sha256Hex(ph)];
+  // 이름과 접수 식별자를 함께 보내 매칭 신호를 늘린다. Meta 인스턴트폼 리드는
+  // 브라우저 신호(fbp·fbc·ua)가 아예 없어 전화번호 하나로만 매칭되던 상태였다.
+  const fn = normName(info.name);
+  if (fn) userData.fn = [await sha256Hex(fn)];
+  // external_id 는 우리 쪽 접수 식별자다. 같은 사람이 다시 접수해도 같은 값이
+  // 아니므로 사람 식별이 아니라 이벤트 대조용으로 쓰인다.
+  if (info.externalId)
+    userData.external_id = [await sha256Hex(String(info.externalId))];
+  if (info.ip) userData.client_ip_address = info.ip;
+  if (info.ua) userData.client_user_agent = info.ua;
+  if (info.fbp) userData.fbp = info.fbp;
+  if (info.fbc) userData.fbc = info.fbc;
+  return userData;
+}
+
+// 가용예산 1억원 이상 접수에만 하나 더 보내는 사용자 정의 이벤트(2026-10-27 사용자 결정).
+// Lead 는 모든 접수에서 그대로 나가므로 Lead 로 최적화하는 광고세트와 기존 집계
+// (pixel_events·Meta 전달 상태)는 달라지지 않는다. 예산 판정 규칙이 워커에만 있어
+// 브라우저 픽셀은 이 이벤트를 보내지 않는다.
+export const QUALIFIED_LEAD_EVENT = "QualifiedLead";
+const QUALIFIED_BAND = budgetBandIndex(10000); // 만원 단위, '1억~1억5천' 구간부터
+
+/** 1억원 이상이면 예산 판정 결과, 아니면(미기재·'1억 이하' 포함) null. */
+export function qualifiedLeadBudget(row) {
+  const budget = estimateBudget(row);
+  return budget.band >= QUALIFIED_BAND ? budget : null;
+}
+
+/**
+ * 1억원 이상 접수면 QualifiedLead 를 CAPI 로 보낸다. 예외를 던지지 않는다.
+ * @param {*} info  sendMetaCapiLead 와 같은 매칭 정보 + leadSource(접수 경로)
+ * @param {{Detail?:string, SpaceSize?:string, EstimateAmount?:number}} row  예산을 읽을 접수 내용
+ */
+export async function sendMetaCapiQualifiedLead(env, info = {}, row = {}) {
+  const budget = qualifiedLeadBudget(row);
+  if (!budget) return { skipped: "below_threshold" };
+  const pixelId = String(env.META_PIXEL_ID || "").trim();
+  const token = String(env.META_CAPI_TOKEN || "").trim();
+  if (!pixelId || !token) return { skipped: true };
+
+  const actionSource = info.actionSource || "website";
+  const event = {
+    event_name: QUALIFIED_LEAD_EVENT,
+    event_time: Math.floor(Date.now() / 1000),
+    action_source: actionSource,
+    user_data: await buildUserData(info),
+    custom_data: {
+      value: Math.round(budget.amount * 10000),
+      currency: "KRW",
+      budget_band: BUDGET_BANDS[budget.band].label,
+      lead_source: info.leadSource || "",
+    },
+  };
+  if (actionSource === "website") {
+    event.event_source_url =
+      info.sourceUrl || "https://day1design.co.kr/estimates";
+  }
+  // Lead 와 같은 event_id 를 쓴다. Meta 는 이벤트 이름과 event_id 가 모두 같을
+  // 때만 한 건으로 묶으므로 Lead 와 섞이지 않고, 같은 접수끼리 대조할 수 있다.
+  if (info.eventId) event.event_id = info.eventId;
+
+  const payload = { data: [event] };
+  if (env.META_CAPI_TEST_CODE)
+    payload.test_event_code = env.META_CAPI_TEST_CODE;
+
+  const url = `https://graph.facebook.com/${API_VERSION}/${pixelId}/events?access_token=${encodeURIComponent(token)}`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      await notifyTelegram(
+        env,
+        `[day1design/meta-capi] QualifiedLead 전송 실패 ${res.status}\n${body.slice(0, 200)}`,
+      );
+      return { ok: false, status: res.status };
+    }
+    return { ok: true };
+  } catch (e) {
+    await notifyTelegram(
+      env,
+      `[day1design/meta-capi] QualifiedLead 예외\n${(e?.message || "").slice(0, 200)}`,
+    ).catch(() => null);
     return { ok: false, error: e?.message };
   }
 }

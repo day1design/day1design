@@ -12,7 +12,10 @@ import { escapeHtml } from "../lib/security.js";
 import { createServices } from "../lib/services.js";
 import { notifyTelegram, notifyInfra } from "../lib/telegram.js";
 import { edgeCacheDeleteMany } from "../lib/edge-cache.js";
-import { sendMetaCapiLead } from "../lib/meta-capi.js";
+import {
+  sendMetaCapiLead,
+  sendMetaCapiQualifiedLead,
+} from "../lib/meta-capi.js";
 import {
   sendNcpSens,
   buildCustomerSms,
@@ -561,6 +564,21 @@ export async function handleMetaLead(
       } catch {
         capiStep = "fail";
       }
+      // 가용예산 1억원 이상이면 QualifiedLead 도 보낸다. Lead 와 따로 처리해
+      // capiStep(작동로그)에 섞지 않는다.
+      await sendMetaCapiQualifiedLead(
+        env,
+        {
+          actionSource: "system_generated",
+          eventId: `meta-lead:${phoneDigits}:${timestamp || ""}`,
+          phone: phoneDigits,
+          name: lead.name,
+          email: lead.email,
+          externalId: recordId || leadId,
+          leadSource: "meta",
+        },
+        { Detail: detail, SpaceSize: area },
+      ).catch(() => null);
       if (recordId) {
         await ensureNewCustomerNotification(env.DB, {
           tenantId: 'day1design',

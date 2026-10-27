@@ -20,7 +20,10 @@ import {
   isImageUpload,
 } from "../lib/upload-policy.js";
 import { notifyTelegram } from "../lib/telegram.js";
-import { sendMetaCapiLead } from "../lib/meta-capi.js";
+import {
+  sendMetaCapiLead,
+  sendMetaCapiQualifiedLead,
+} from "../lib/meta-capi.js";
 import { notifyEmail, sendEmail } from "../lib/email.js";
 import {
   sendNcpSens,
@@ -1326,6 +1329,26 @@ async function submitEstimate(request, env, ctx, services) {
       .catch(() => {
         steps.capi = "fail";
       }),
+  );
+  // 가용예산 1억원 이상이면 QualifiedLead 를 하나 더 보낸다(서버만). 위 Lead 와
+  // 따로 돌아서 실패해도 Lead·접수·작동로그(steps)에는 영향이 없다.
+  notifyTasks.push(
+    sendMetaCapiQualifiedLead(
+      env,
+      {
+        eventId: fields._fb_event_id,
+        email: fields.email,
+        phone: fields.phone,
+        name: fields.name,
+        externalId: record.id,
+        ip,
+        ua: request.headers.get("user-agent") || "",
+        fbp: fields._fbp,
+        fbc: fields._fbc,
+        leadSource: attribution.source,
+      },
+      { Detail: detail, SpaceSize: fields.space_size || "" },
+    ).catch(() => null),
   );
   // 구글시트 미러링 — D1 저장이 확정된 뒤의 사본 1행. SoT 는 D1 이므로 시트 실패가
   // 접수를 막지 않는다(결과는 IntakeEvents.steps.sheet + 실패 시 텔레그램).
