@@ -21,6 +21,12 @@ import {
 } from "../lib/upload-policy.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import {
+  describeDevice,
+  fetchVisitStats,
+  formatVisitLine,
+  metaPlatformFromUa,
+} from "../lib/visitor-info.js";
+import {
   sendMetaCapiLead,
   sendMetaCapiQualifiedLead,
 } from "../lib/meta-capi.js";
@@ -305,7 +311,8 @@ function emailGridCell(label, value, width, accent = false) {
 
 // Meta 리드(routes/meta-lead.js)도 같은 템플릿을 쓴다 — 내부 알림 메일 스타일 일원화.
 export function internalEstimateEmailHtml(env, details) {
-  const { fields, attribution, conceptCount, planCount, submittedAt } = details;
+  const { fields, attribution, conceptCount, planCount, submittedAt, visitor } =
+    details;
   const receivedAt = formatKstMinute(submittedAt);
   const location =
     compactJoin([fields.address, fields.address_detail]) || fields.branch;
@@ -360,6 +367,7 @@ export function internalEstimateEmailHtml(env, details) {
         <td style="padding:10px 14px;">
           <span style="display:block;color:#333333;font-size:12px;line-height:1.8;"><b style="color:#888888;font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-right:6px;">Platform</b>${htmlValue(attribution.platform)}</span>
           <span style="display:block;color:#333333;font-size:12px;line-height:1.8;"><b style="color:#888888;font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-right:6px;">Campaign</b>${htmlValue(campaign)}</span>
+          ${visitorEmailRows(visitor)}
         </td>
         <td style="padding:10px 14px;text-align:right;white-space:nowrap;">
           <a href="${escapeHtml(adminUrl)}" style="display:inline-block;background:#1a1a1a;color:#ffffff;text-decoration:none;padding:8px 18px;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;font-weight:500;border-radius:2px;">관리자 확인</a>
@@ -809,6 +817,99 @@ async function deleteEstimate(env, id, ctx, services) {
   return jsonOk({ deleted: true, id });
 }
 
+// 지역 랜딩 접수 판별 — 랜딩(site/lp/*.html)은 utm_campaign 을 lp-<지역> 으로 싣는다.
+const LANDING_LABELS = { "lp-bd": "판교·수지·광교·동탄", "lp-gn": "서울" };
+function isLandingSubmission(fields) {
+  return /^lp-[a-z0-9-]+$/i.test(String(fields?.utm_campaign || "").trim());
+}
+
+// 지역 랜딩 접수 알림 — Meta 잠재고객 리드 알림(meta-lead.js buildMetaLeadMessage)과 같은
+// 섹션·트리 모양이다. 광고 접수를 랜딩으로 옮긴 뒤에도 담당자가 보던 형식을 유지하고,
+// 랜딩에서만 알 수 있는 방문 정보를 마지막 블록에 붙인다. parse_mode HTML, 빈 값은 줄 생략.
+function buildLandingLeadMessage({
+  fields,
+  addressLine,
+  platform,
+  visitLine,
+  ip,
+  device,
+  promoted,
+}) {
+  const pushBlock = (lines, header, rows) => {
+    if (!rows.length) return;
+    lines.push("", header);
+    rows.forEach((row, i) =>
+      lines.push(`${i === rows.length - 1 ? "└" : "├"} ${row}`),
+    );
+  };
+  const out = [
+    `<b>[day1design/estimates]</b> 🔔 <b>신규 상담 신청</b>${promoted ? " (이탈팝업 경유)" : ""}`,
+    `🔵 Meta 광고 · 랜딩`,
+  ];
+
+  const customer = [
+    `이름: ${escapeHtml(fields.name)}`,
+    `연락처: ${escapeHtml(fields.phone)}`,
+  ];
+  if (fields.email) customer.push(`이메일: ${escapeHtml(fields.email)}`);
+  if (addressLine) customer.push(`지역: ${escapeHtml(addressLine)}`);
+  pushBlock(out, `👤 <b>고객정보</b>`, customer);
+
+  const space = [];
+  if (fields.space_type)
+    space.push(`유형: ${escapeHtml(String(fields.space_type).replace(/_/g, " "))}`);
+  if (fields.space_size) space.push(`면적: ${escapeHtml(fields.space_size)}`);
+  if (fields.branch) space.push(`지점: ${escapeHtml(fields.branch)}`);
+  if (fields.schedule) space.push(`시공예정: ${escapeHtml(fields.schedule)}`);
+  if (fields.budget) space.push(`가용예산: ${escapeHtml(fields.budget)}`);
+  pushBlock(out, `🏘 <b>공간/일정</b>`, space);
+
+  const code = String(fields.utm_campaign || "").trim().toLowerCase();
+  const label = LANDING_LABELS[code];
+  const ads = [
+    `플랫폼: ${escapeHtml(platform || "Meta")}`,
+    `캠페인: ${escapeHtml(label ? `${label} 랜딩 (${code})` : code)}`,
+  ];
+  // 소재 코드(utm_content s1~s3·p1~p3)는 광고 이름 표기(S-1·P-3)로 보여 준다.
+  const ad = String(fields._fb_adset || fields.utm_content || "")
+    .trim()
+    .replace(/^([a-z])(\d+)$/i, (_, a, n) => `${a.toUpperCase()}-${n}`);
+  if (ad) ads.push(`소재: ${escapeHtml(ad)}`);
+  pushBlock(out, `📢 <b>광고정보</b>`, ads);
+
+  pushBlock(out, `🧭 <b>방문정보</b>`, [
+    `방문횟수: ${escapeHtml(visitLine)}`,
+    `IP: ${escapeHtml(ip || "확인 불가")}`,
+    `기기: ${escapeHtml(device || "확인 불가")}`,
+  ]);
+  return out.join("\n");
+}
+
+// 텔레그램 HTML 본문 → 메일 text 파트(굵게 표시·엔티티 해제).
+function telegramHtmlToText(text) {
+  return String(text || "")
+    .replace(/<\/?b>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function visitorEmailRows(visitor) {
+  if (!visitor) return "";
+  return [
+    ["Visits", visitor.visits],
+    ["IP", visitor.ip],
+    ["Device", visitor.device],
+  ]
+    .map(
+      ([label, value]) =>
+        `<span style="display:block;color:#333333;font-size:12px;line-height:1.8;"><b style="color:#888888;font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-right:6px;">${label}</b>${htmlValue(value)}</span>`,
+    )
+    .join("\n          ");
+}
+
 async function submitEstimate(request, env, ctx, services) {
   const ip = clientIP(request);
   const ua = request.headers.get("user-agent") || "";
@@ -1050,7 +1151,12 @@ async function submitEstimate(request, env, ctx, services) {
   const submittedAt = fields.submittedAt || new Date().toISOString();
   // First-touch 출처: 자체 트래커 SessionId로 D1 HeatmapEvents의 최초 page_view 조회
   const sessionId = sanitizeText(fields.session_id, 64);
-  const firstTouch = await fetchFirstTouch(env, sessionId);
+  // 방문 정보(최근 30일 방문 횟수·재방문)도 같은 방문자 ID 로 함께 읽는다.
+  const [firstTouch, visitStats] = await Promise.all([
+    fetchFirstTouch(env, sessionId),
+    fetchVisitStats(env, sessionId),
+  ]);
+  const deviceInfo = describeDevice(ua);
 
   // ★팝업 → 폼 승격. 팝업이 먼저 저장해 둔 '작성중' 레코드를 LeadKey 로 찾아
   // 새 카드를 만들지 않고 그 레코드를 채운다. 이 대조가 없으면 같은 사람이
@@ -1122,6 +1228,12 @@ async function submitEstimate(request, env, ctx, services) {
     FirstUtmCampaign: firstTouch.utmCampaign,
     // 방문 이력에 단서가 없으면 접수 폼이 보낸 값을 폴백으로 쓴다(첫 페이지 즉시 접수).
     FirstInflowApp: firstTouch.inflowApp || safeInflowApp(fields.inflow_app),
+    // 접수자 방문 정보 — 알림에 싣는 값과 같다(IP 는 위 IP 칸). 마이그 0100.
+    VisitCount: visitStats.visitCount,
+    IsRevisit: visitStats.isRevisit ? 1 : 0,
+    FirstVisitAt: visitStats.firstVisitAt,
+    DeviceInfo: deviceInfo,
+    UserAgent: ua.slice(0, 500),
   };
   const saveRecord = () =>
     promoteId
@@ -1226,7 +1338,21 @@ async function submitEstimate(request, env, ctx, services) {
       `파일: 컨셉 ${conceptUrls.length} / 평면도 ${planUrls.length}`,
     );
   }
-  const notificationText = notificationLines.join("\n");
+  // 지역 랜딩(/lp/*) 접수는 Meta 광고 접수라 예전 Meta 리드 알림과 같은 모양으로 보내고
+  // 방문 정보(30일 방문 횟수·IP·기기)를 덧붙인다. 일반 견적 폼 알림은 위 형식 그대로다.
+  const isLanding = isLandingSubmission(fields);
+  const visitLine = formatVisitLine(visitStats);
+  const notificationText = isLanding
+    ? buildLandingLeadMessage({
+        fields,
+        addressLine,
+        platform: metaPlatformFromUa(ua, safeInflowApp(fields.inflow_app)),
+        visitLine,
+        ip,
+        device: deviceInfo,
+        promoted: Boolean(promoteId),
+      })
+    : notificationLines.join("\n");
 
   // 알림 발송 실패가 접수 저장 성공을 막지 않도록 waitUntil으로 분리.
   // 작동로그(IntakeEvents)용 단계별 결과 수집 — 여기 도달 = D1 저장 확정.
@@ -1240,14 +1366,15 @@ async function submitEstimate(request, env, ctx, services) {
         steps.telegram = "fail";
       }),
     notifyEmail(env, {
-      subject: "[DAYONE] 새 상담신청",
-      text: notificationText,
+      subject: isLanding ? "[DAYONE] 새 상담신청 (Meta)" : "[DAYONE] 새 상담신청",
+      text: isLanding ? telegramHtmlToText(notificationText) : notificationText,
       html: internalEstimateEmailHtml(env, {
         fields,
         attribution,
         conceptCount: conceptUrls.length,
         planCount: planUrls.length,
         submittedAt,
+        visitor: isLanding ? { visits: visitLine, ip, device: deviceInfo } : null,
       }),
     })
       .then(() => {
