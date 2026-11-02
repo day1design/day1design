@@ -56,6 +56,17 @@ import { adminMeetingOutboxAvailable, cancelStaleMeetingNotifications, enqueueMe
 
 const CACHE_TTL = 30;
 const ESTIMATE_RATE_LIMIT_PER_HOUR = 60;
+// 문의 내용은 길이 때문에 접수를 거절하지 않는다. 2026-11-02 서유정 건은 2,044자가 옛 2,000자
+// 제한에 네 번 거절됐고, 고객이 요청사항을 지운 뒤에야 접수됐다. 접수카드에는 원문 전체를 남기고,
+// 사람이 쓸 수 없는 길이(봇)만 D1 행 크기를 지키려고 앞부분을 저장한다. 원문은 R2 접수 기록의
+// fields 에 그대로 있다.
+const DETAIL_STORE_MAX = 20000;
+
+function clipStoredDetail(text) {
+  const value = String(text || "");
+  if (value.length <= DETAIL_STORE_MAX) return value;
+  return `${value.slice(0, DETAIL_STORE_MAX)}\n…(이하 생략: 원문 ${value.length}자 전체는 접수 기록에 보관)`;
+}
 function listCacheNs(status) {
   return `estimates:list:${status || "all"}`;
 }
@@ -834,6 +845,7 @@ function buildLandingLeadMessage({
   ip,
   device,
   promoted,
+  hasDetail,
 }) {
   const pushBlock = (lines, header, rows) => {
     if (!rows.length) return;
@@ -862,6 +874,8 @@ function buildLandingLeadMessage({
   if (fields.branch) space.push(`지점: ${escapeHtml(fields.branch)}`);
   if (fields.schedule) space.push(`시공예정: ${escapeHtml(fields.schedule)}`);
   if (fields.budget) space.push(`가용예산: ${escapeHtml(fields.budget)}`);
+  // 문의 내용 원문은 알림에 싣지 않는다(접수카드에서 확인).
+  if (hasDetail) space.push("상세내용: 접수카드 확인");
   pushBlock(out, `🏘 <b>공간/일정</b>`, space);
 
   const code = String(fields.utm_campaign || "").trim().toLowerCase();
@@ -1054,7 +1068,7 @@ async function submitEstimate(request, env, ctx, services) {
     if (!fields.branch) errors.push("branch");
     if (!fields.budget) errors.push("budget");
   }
-  if ((fields.detail || "").length > 2000) errors.push("detail-too-long");
+  // 문의 내용 길이로는 거절하지 않는다(DETAIL_STORE_MAX 참고).
   // URL 정책: 이름엔 URL 금지(봇). 문의내용엔 단순 참고링크 허용,
   // 링크 스팸(3개+)·HTML/스크립트 삽입만 차단. (정상 고객 링크 첨부 보존)
   if (hasUrl(fields.name)) errors.push("url-in-name");
@@ -1095,7 +1109,7 @@ async function submitEstimate(request, env, ctx, services) {
   // 그 사실을 본문에 남긴다(빈 카드를 받으면 왜 비었는지 알 수 없다).
   const detail = isExitGuard
     ? "이탈 방지 팝업 접수 · 이름·연락처만 입력됨 (상세 항목 미작성)"
-    : detailWithBudget(fields.detail, fields.budget);
+    : detailWithBudget(clipStoredDetail(fields.detail), fields.budget);
 
   // ★검증 통과 시점에 R2 원문 보관 — 이후 업로드/D1 실패에 대비.
   // 자동완성 허니팟 오탐 건은 'accepted_autofill' 로 구분 보관(접수는 정상).
@@ -1106,6 +1120,10 @@ async function submitEstimate(request, env, ctx, services) {
     outcome: autofillHoneypot ? "accepted_autofill" : "accepted",
     rawText: rawBackup,
   });
+  // 원문 보관이 끝난 뒤에 저장용 길이로 맞춘다(접수카드의 폼 응답 칸도 이 값을 쓴다).
+  // 알림에는 문의 내용을 싣지 않고 "접수카드 확인" 한 줄만 보내므로 고객이 썼는지만 기억한다.
+  const hasDetailText = !isExitGuard && Boolean(String(fields.detail || "").trim());
+  fields.detail = clipStoredDetail(fields.detail);
 
   // 파일 업로드 (R2)
   const folder = `estimates/${datePrefix()}-${randomId()}`;
@@ -1338,6 +1356,8 @@ async function submitEstimate(request, env, ctx, services) {
       `파일: 컨셉 ${conceptUrls.length} / 평면도 ${planUrls.length}`,
     );
   }
+  // 문의 내용은 길어서 알림에 싣지 않는다. 원문은 접수카드에서 본다(2026-11-02 사용자 지시).
+  if (hasDetailText) notificationLines.push("상세내용: 접수카드 확인");
   // 지역 랜딩(/lp/*) 접수는 Meta 광고 접수라 예전 Meta 리드 알림과 같은 모양으로 보내고
   // 방문 정보(30일 방문 횟수·IP·기기)를 덧붙인다. 일반 견적 폼 알림은 위 형식을 유지하고
   // 끝에 같은 방문정보 블록만 붙인다.
@@ -1359,6 +1379,7 @@ async function submitEstimate(request, env, ctx, services) {
         ip,
         device: deviceInfo,
         promoted: Boolean(promoteId),
+        hasDetail: hasDetailText,
       })
     : notificationLines.join("\n");
 

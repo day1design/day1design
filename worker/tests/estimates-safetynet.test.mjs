@@ -381,3 +381,86 @@ test("[invariant] URL in name is BLOCKED (D1 오류 + R2 validation_failed)", as
   assert.equal(created.length, 1, "거부건도 D1 에 남아야 함");
   assert.equal(created[0].Status, "오류");
 });
+
+// 문의 내용이 길어도 접수를 거절하지 않는다(2026-11-02 서유정 건: 2,044자가 옛 2,000자 제한에
+// 네 번 거절됨). 접수카드(D1)에는 원문 전체, 텔레그램에는 "상세내용: 접수카드 확인" 한 줄만.
+async function submitLongDetail({ utmCampaign = "", phone = "010-4444-5555" } = {}) {
+  const puts = [];
+  const created = [];
+  const tasks = [];
+  const telegramTexts = [];
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes("api.telegram.org")) {
+      telegramTexts.push(JSON.parse(init.body).text);
+    }
+    return Response.json({ ok: true });
+  };
+  // 브라우저 폼 전송(multipart)은 줄바꿈을 \r\n 으로 보내므로 같은 형식으로 만든다.
+  const detail = `긴문의시작\r\n${"ㆍ현관 중문 교체와 다운라이트 시공 범위 확인 요청\r\n".repeat(90)}추가비 없는 견적 요청 끝`;
+  const form = new FormData();
+  form.append("name", "긴문의고객");
+  form.append("phone", phone);
+  form.append("privacy_agreed", "true");
+  form.append("space_size", "30평대 이하");
+  form.append("address", "동탄 반도유보라");
+  form.append("schedule", "3개월 이내");
+  form.append("branch", "판교점");
+  form.append("budget", "7천만원~1억");
+  form.append("detail", detail);
+  if (utmCampaign) form.append("utm_campaign", utmCampaign);
+
+  const res = await handleEstimates(
+    new Request("https://api.example.test/api/estimates", {
+      method: "POST",
+      body: form,
+      headers: { "cf-connecting-ip": "203.0.113.30" },
+    }),
+    { IMAGES: makeR2(puts), TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "-100" },
+    { waitUntil: (t) => tasks.push(t) },
+    {
+      media: { async upload() { return "https://x/y"; } },
+      estimates: {
+        async create(fields) {
+          created.push(fields);
+          return { id: "recLongDetail001", fields };
+        },
+      },
+    },
+  );
+  await Promise.allSettled(tasks);
+  return { res, puts, created, telegramTexts, detail };
+}
+
+test("[invariant] long detail (over 2,000 chars) is ACCEPTED with the full text on the card", async () => {
+  const { res, puts, created, telegramTexts, detail } = await submitLongDetail();
+  assert.ok(detail.length > 2000, "테스트 문의 내용은 2,000자를 넘어야 함");
+  assert.equal(res.status, 200);
+  assert.equal(created.length, 1);
+  assert.equal(created[0].Status, "접수대기");
+  assert.ok(created[0].Detail.includes(detail.trim()), "접수카드에 원문 전체가 남아야 함");
+  const answers = JSON.parse(created[0].MetaFieldData);
+  assert.equal(answers.find((a) => a.f === "detail").a, detail.trim(), "폼 응답 칸도 원문 전체");
+  assert.ok(r2Outcomes(puts).includes("accepted"));
+  const alert = telegramTexts.find((t) => t.includes("새 상담신청"));
+  assert.ok(alert, "견적폼 알림이 가야 함");
+  assert.ok(alert.includes("상세내용: 접수카드 확인"));
+  assert.ok(!alert.includes("긴문의시작"), "알림에는 문의 내용 원문을 싣지 않음");
+});
+
+test("[invariant] long detail from a landing page alerts '상세내용: 접수카드 확인' only", async () => {
+  const { res, created, telegramTexts, detail } = await submitLongDetail({ utmCampaign: "lp-bd" });
+  assert.equal(res.status, 200);
+  assert.ok(created[0].Detail.includes(detail.trim()));
+  const alert = telegramTexts.find((t) => t.includes("신규 상담 신청"));
+  assert.ok(alert, "랜딩 알림이 가야 함");
+  assert.ok(alert.includes("상세내용: 접수카드 확인"));
+  assert.ok(!alert.includes("긴문의시작"));
+});
+
+test("[invariant] rejected submit keeps the full long detail on the 오류 card", async () => {
+  const { res, created, detail } = await submitLongDetail({ phone: "12" });
+  assert.equal(res.status, 400);
+  assert.equal(created.length, 1);
+  assert.equal(created[0].Status, "오류");
+  assert.ok(created[0].Detail.includes(detail), "오류 카드도 원문 전체를 남겨야 함");
+});

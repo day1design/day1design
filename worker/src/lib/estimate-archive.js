@@ -9,7 +9,9 @@ import { clientIP } from "./security.js";
 import { notifyTelegram } from "./telegram.js";
 
 const RAW_MAX = 4000;
-const DETAIL_MAX = 400;
+// 오류 카드에도 문의 내용 원문 전체를 남긴다(2026-11-02 사용자 지시: 잘린 내용 대신 전체).
+// 봇이 보낸 비정상 길이만 D1 행 크기를 지키려고 앞부분을 저장한다(원문은 R2 fields).
+const DETAIL_MAX = 20000;
 
 // 모든 접수 시도를 R2 estimates-attempts/{Y}/{M}/{D}/{ISO}-{ip}-{outcome}.json 에 저장.
 // 실패가 본 요청 흐름을 막지 않도록 항상 try/catch + (가능하면) ctx.waitUntil.
