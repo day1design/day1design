@@ -1339,9 +1339,17 @@ async function submitEstimate(request, env, ctx, services) {
     );
   }
   // 지역 랜딩(/lp/*) 접수는 Meta 광고 접수라 예전 Meta 리드 알림과 같은 모양으로 보내고
-  // 방문 정보(30일 방문 횟수·IP·기기)를 덧붙인다. 일반 견적 폼 알림은 위 형식 그대로다.
+  // 방문 정보(30일 방문 횟수·IP·기기)를 덧붙인다. 일반 견적 폼 알림은 위 형식을 유지하고
+  // 끝에 같은 방문정보 블록만 붙인다.
   const isLanding = isLandingSubmission(fields);
   const visitLine = formatVisitLine(visitStats);
+  notificationLines.push(
+    "",
+    `🧭 <b>방문정보</b>`,
+    `├ 방문횟수: ${escapeHtml(visitLine)}`,
+    `├ IP: ${escapeHtml(ip || "확인 불가")}`,
+    `└ 기기: ${escapeHtml(deviceInfo || "확인 불가")}`,
+  );
   const notificationText = isLanding
     ? buildLandingLeadMessage({
         fields,
@@ -1367,14 +1375,14 @@ async function submitEstimate(request, env, ctx, services) {
       }),
     notifyEmail(env, {
       subject: isLanding ? "[DAYONE] 새 상담신청 (Meta)" : "[DAYONE] 새 상담신청",
-      text: isLanding ? telegramHtmlToText(notificationText) : notificationText,
+      text: telegramHtmlToText(notificationText),
       html: internalEstimateEmailHtml(env, {
         fields,
         attribution,
         conceptCount: conceptUrls.length,
         planCount: planUrls.length,
         submittedAt,
-        visitor: isLanding ? { visits: visitLine, ip, device: deviceInfo } : null,
+        visitor: { visits: visitLine, ip, device: deviceInfo },
       }),
     })
       .then(() => {

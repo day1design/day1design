@@ -365,8 +365,8 @@ test("랜딩 접수: Meta 리드 알림 모양 + 방문횟수·IP·기기, D1 �
   assert.equal(created[0].Status, "접수대기");
 });
 
-test("일반 견적 폼 접수: 알림 형식은 그대로, 방문 정보는 D1 에만 저장", async () => {
-  const { res, telegram, created } = await submit({
+test("일반 견적 폼 접수: 기존 알림 형식 끝에 방문정보 블록, D1 에도 저장", async () => {
+  const { res, telegram, mails, created } = await submit({
     fields: { ...BASE_FIELDS, branch: "강남점" },
     ua: SAFARI_IOS_UA,
     pageViews: [],
@@ -376,7 +376,17 @@ test("일반 견적 폼 접수: 알림 형식은 그대로, 방문 정보는 D1 
   assert.ok(lead);
   assert.ok(lead.startsWith("[day1design/estimates] 새 상담신청"));
   assert.ok(lead.includes("평형대: 40평대"));
-  assert.ok(!lead.includes("방문정보"));
+  assert.ok(lead.includes("출처: Homepage"));
+  assert.ok(!lead.includes("🔔"), "랜딩 형식이 섞였다");
+  assert.ok(
+    lead.endsWith(
+      "\n\n🧭 <b>방문정보</b>\n├ 방문횟수: 1회 (첫 방문)\n├ IP: 203.0.113.77\n└ 기기: iPhone (모델 미표시) · iOS 18.1 · Safari",
+    ),
+    lead,
+  );
+  const internal = mails.find((m) => m.includes("To: internal@example.com"));
+  assert.ok(internal.includes("Visits"));
+  assert.ok(!internal.includes("<b>방문정보</b>"), "메일 text 에 태그가 남았다");
   assert.equal(created[0].VisitCount, 1);
   assert.equal(created[0].IsRevisit, 0);
   assert.equal(created[0].DeviceInfo, "iPhone (모델 미표시) · iOS 18.1 · Safari");
