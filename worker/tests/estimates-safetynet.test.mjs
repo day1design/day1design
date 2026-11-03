@@ -441,7 +441,7 @@ test("[invariant] long detail (over 2,000 chars) is ACCEPTED with the full text 
   const answers = JSON.parse(created[0].MetaFieldData);
   assert.equal(answers.find((a) => a.f === "detail").a, detail.trim(), "폼 응답 칸도 원문 전체");
   assert.ok(r2Outcomes(puts).includes("accepted"));
-  const alert = telegramTexts.find((t) => t.includes("새 상담신청"));
+  const alert = telegramTexts.find((t) => t.includes("🟢 홈페이지 견적문의"));
   assert.ok(alert, "견적폼 알림이 가야 함");
   assert.ok(alert.includes("상세내용: 접수카드 확인"));
   assert.ok(!alert.includes("긴문의시작"), "알림에는 문의 내용 원문을 싣지 않음");

@@ -365,29 +365,89 @@ test("랜딩 접수: Meta 리드 알림 모양 + 방문횟수·IP·기기, D1 �
   assert.equal(created[0].Status, "접수대기");
 });
 
-test("일반 견적 폼 접수: 기존 알림 형식 끝에 방문정보 블록, D1 에도 저장", async () => {
+test("일반 견적 폼 접수: 랜딩과 같은 트리 형식(유입정보 블록) + 방문정보, D1 에도 저장", async () => {
   const { res, telegram, mails, created } = await submit({
     fields: { ...BASE_FIELDS, branch: "강남점" },
     ua: SAFARI_IOS_UA,
     pageViews: [],
   });
   assert.equal(res.status, 200);
-  const lead = telegram.find((t) => t.includes("새 상담신청"));
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
   assert.ok(lead);
-  assert.ok(lead.startsWith("[day1design/estimates] 새 상담신청"));
-  assert.ok(lead.includes("평형대: 40평대"));
-  assert.ok(lead.includes("출처: Homepage"));
-  assert.ok(!lead.includes("🔔"), "랜딩 형식이 섞였다");
-  assert.ok(
-    lead.endsWith(
-      "\n\n🧭 <b>방문정보</b>\n├ 방문횟수: 1회 (첫 방문)\n├ IP: 203.0.113.77\n└ 기기: iPhone (모델 미표시) · iOS 18.1 · Safari",
-    ),
+  assert.equal(
     lead,
+    [
+      "<b>[day1design/estimates]</b> 🔔 <b>신규 상담 신청</b>",
+      "🟢 홈페이지 견적문의",
+      "",
+      "👤 <b>고객정보</b>",
+      "├ 이름: 임혜진",
+      "├ 연락처: 010-6624-6615",
+      "└ 지역: 판교 원마을 12단지",
+      "",
+      "🏘 <b>공간/일정</b>",
+      "├ 유형: 아파트",
+      "├ 면적: 40평대",
+      "├ 지점: 강남점",
+      "├ 시공예정: 3~6개월 후",
+      "└ 가용예산: 1억~1억5천",
+      "",
+      "📢 <b>유입정보</b>",
+      "└ 출처: Homepage",
+      "",
+      "🧭 <b>방문정보</b>",
+      "├ 방문횟수: 1회 (첫 방문)",
+      "├ IP: 203.0.113.77",
+      "└ 기기: iPhone (모델 미표시) · iOS 18.1 · Safari",
+    ].join("\n"),
   );
+  assert.ok(!lead.includes("새 상담신청"), "예전 홈페이지 형식이 남았다");
+  assert.ok(!lead.includes("광고정보"), "랜딩 광고정보 블록이 섞였다");
   const internal = mails.find((m) => m.includes("To: internal@example.com"));
   assert.ok(internal.includes("Visits"));
   assert.ok(!internal.includes("<b>방문정보</b>"), "메일 text 에 태그가 남았다");
   assert.equal(created[0].VisitCount, 1);
   assert.equal(created[0].IsRevisit, 0);
   assert.equal(created[0].DeviceInfo, "iPhone (모델 미표시) · iOS 18.1 · Safari");
+});
+
+test("이탈 팝업 접수 알림에도 방문정보(방문횟수·IP·기기) 블록이 붙는다", async () => {
+  const { res, telegram, created } = await submit({
+    fields: { name: "임혜진", phone: "010-6624-6615", privacy_agreed: "true", form_type: "exit_guard", session_id: BASE_FIELDS.session_id },
+    ua: IG_IOS_UA,
+    pageViews: [{ CreatedAt: new Date(Date.now() - 60_000).toISOString(), EventType: "page_view" }],
+  });
+  assert.equal(res.status, 200);
+  const guard = telegram.find((t) => t.includes("이탈 팝업 접수 (작성중)"));
+  assert.ok(guard, "이탈 팝업 알림이 없다");
+  assert.ok(
+    guard.endsWith(
+      "\n\n🧭 <b>방문정보</b>\n├ 방문횟수: 1회 (첫 방문)\n├ IP: 203.0.113.77\n└ 기기: iPhone 14 Pro · iOS 26.6 · 인스타그램 앱",
+    ),
+    guard,
+  );
+  assert.equal(created[0].Status, "작성중");
+  assert.equal(created[0].IP, "203.0.113.77");
+});
+
+test("검증 실패 '오류' 카드에도 IP·기기·방문 정보가 남고 차단감지 알림에 기기 줄이 붙는다", async () => {
+  const { budget, ...withoutBudget } = BASE_FIELDS;
+  const { res, telegram, created } = await submit({
+    fields: withoutBudget,
+    ua: SAFARI_IOS_UA,
+    pageViews: [{ CreatedAt: new Date(Date.now() - 60_000).toISOString(), EventType: "page_view" }],
+  });
+  assert.equal(res.status, 400);
+  assert.equal(created.length, 1);
+  const card = created[0];
+  assert.equal(card.Status, "오류");
+  assert.equal(card.IP, "203.0.113.77");
+  assert.equal(card.UserAgent, SAFARI_IOS_UA);
+  assert.equal(card.DeviceInfo, "iPhone (모델 미표시) · iOS 18.1 · Safari");
+  assert.equal(card.VisitCount, 1);
+  assert.equal(card.IsRevisit, 0);
+  const blocked = telegram.find((t) => t.includes("차단감지"));
+  assert.ok(blocked, "차단감지 알림이 없다");
+  assert.ok(blocked.includes("IP: 203.0.113.77"));
+  assert.ok(blocked.includes("기기: iPhone (모델 미표시) · iOS 18.1 · Safari"));
 });

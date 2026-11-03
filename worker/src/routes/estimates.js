@@ -834,11 +834,14 @@ function isLandingSubmission(fields) {
   return /^lp-[a-z0-9-]+$/i.test(String(fields?.utm_campaign || "").trim());
 }
 
-// 지역 랜딩 접수 알림 — Meta 잠재고객 리드 알림(meta-lead.js buildMetaLeadMessage)과 같은
-// 섹션·트리 모양이다. 광고 접수를 랜딩으로 옮긴 뒤에도 담당자가 보던 형식을 유지하고,
-// 랜딩에서만 알 수 있는 방문 정보를 마지막 블록에 붙인다. parse_mode HTML, 빈 값은 줄 생략.
-function buildLandingLeadMessage({
+// 접수 알림 — Meta 잠재고객 리드 알림(meta-lead.js buildMetaLeadMessage)과 같은
+// 섹션·트리 모양이다. 지역 랜딩(/lp/*) 접수는 광고정보 블록을, 일반 견적 폼 접수는
+// 유입정보 블록을 싣고, 둘 다 마지막에 방문정보 블록을 붙인다. 홈페이지 접수도 랜딩과
+// 같은 모양으로 보낸다(2026-11-03 사용자 지시). parse_mode HTML, 빈 값은 줄 생략.
+function buildLeadAlertMessage({
+  landing,
   fields,
+  attribution,
   addressLine,
   platform,
   visitLine,
@@ -846,6 +849,8 @@ function buildLandingLeadMessage({
   device,
   promoted,
   hasDetail,
+  conceptCount = 0,
+  planCount = 0,
 }) {
   const pushBlock = (lines, header, rows) => {
     if (!rows.length) return;
@@ -856,7 +861,7 @@ function buildLandingLeadMessage({
   };
   const out = [
     `<b>[day1design/estimates]</b> 🔔 <b>신규 상담 신청</b>${promoted ? " (이탈팝업 경유)" : ""}`,
-    `🔵 Meta 광고 · 랜딩`,
+    landing ? `🔵 Meta 광고 · 랜딩` : `🟢 홈페이지 견적문의`,
   ];
 
   const customer = [
@@ -874,22 +879,32 @@ function buildLandingLeadMessage({
   if (fields.branch) space.push(`지점: ${escapeHtml(fields.branch)}`);
   if (fields.schedule) space.push(`시공예정: ${escapeHtml(fields.schedule)}`);
   if (fields.budget) space.push(`가용예산: ${escapeHtml(fields.budget)}`);
+  if (conceptCount || planCount)
+    space.push(`파일: 컨셉 ${conceptCount} / 평면도 ${planCount}`);
   // 문의 내용 원문은 알림에 싣지 않는다(접수카드에서 확인).
   if (hasDetail) space.push("상세내용: 접수카드 확인");
   pushBlock(out, `🏘 <b>공간/일정</b>`, space);
 
-  const code = String(fields.utm_campaign || "").trim().toLowerCase();
-  const label = LANDING_LABELS[code];
-  const ads = [
-    `플랫폼: ${escapeHtml(platform || "Meta")}`,
-    `캠페인: ${escapeHtml(label ? `${label} 랜딩 (${code})` : code)}`,
-  ];
-  // 소재 코드(utm_content s1~s3·p1~p3)는 광고 이름 표기(S-1·P-3)로 보여 준다.
-  const ad = String(fields._fb_adset || fields.utm_content || "")
-    .trim()
-    .replace(/^([a-z])(\d+)$/i, (_, a, n) => `${a.toUpperCase()}-${n}`);
-  if (ad) ads.push(`소재: ${escapeHtml(ad)}`);
-  pushBlock(out, `📢 <b>광고정보</b>`, ads);
+  if (landing) {
+    const code = String(fields.utm_campaign || "").trim().toLowerCase();
+    const label = LANDING_LABELS[code];
+    const ads = [
+      `플랫폼: ${escapeHtml(platform || "Meta")}`,
+      `캠페인: ${escapeHtml(label ? `${label} 랜딩 (${code})` : code)}`,
+    ];
+    // 소재 코드(utm_content s1~s3·p1~p3)는 광고 이름 표기(S-1·P-3)로 보여 준다.
+    const ad = String(fields._fb_adset || fields.utm_content || "")
+      .trim()
+      .replace(/^([a-z])(\d+)$/i, (_, a, n) => `${a.toUpperCase()}-${n}`);
+    if (ad) ads.push(`소재: ${escapeHtml(ad)}`);
+    pushBlock(out, `📢 <b>광고정보</b>`, ads);
+  } else {
+    // 견적 폼은 광고 외 유입(네이버·구글·직접 방문)이 많아 예전 알림의 출처 줄을 그대로 옮긴다.
+    const inflow = [`출처: ${escapeHtml(attribution?.platform || "Homepage")}`];
+    if (attribution?.campaign)
+      inflow.push(`캠페인: ${escapeHtml(attribution.campaign)}`);
+    pushBlock(out, `📢 <b>유입정보</b>`, inflow);
+  }
 
   pushBlock(out, `🧭 <b>방문정보</b>`, [
     `방문횟수: ${escapeHtml(visitLine)}`,
@@ -922,6 +937,19 @@ function visitorEmailRows(visitor) {
         `<span style="display:block;color:#333333;font-size:12px;line-height:1.8;"><b style="color:#888888;font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-right:6px;">${label}</b>${htmlValue(value)}</span>`,
     )
     .join("\n          ");
+}
+
+// 검증 실패 '오류' 카드에도 정상 접수와 같은 방문 정보(30일 방문 횟수·재방문)를 남긴다.
+// 봇으로 보이는 시도는 조회하지 않는다(봇이 D1 읽기를 늘리지 못하게). 조회 실패는 빈 값.
+async function rejectVisitExtra(env, fields) {
+  if (!looksHuman({ name: fields.name, phone: fields.phone })) return {};
+  const stats = await fetchVisitStats(env, sanitizeText(fields.session_id, 64));
+  if (!stats.known) return {};
+  return {
+    VisitCount: stats.visitCount,
+    IsRevisit: stats.isRevisit ? 1 : 0,
+    FirstVisitAt: stats.firstVisitAt,
+  };
 }
 
 async function submitEstimate(request, env, ctx, services) {
@@ -1090,8 +1118,10 @@ async function submitEstimate(request, env, ctx, services) {
       email: fields.email,
       fields,
       ip,
+      ua,
       outcome: "validation_failed",
       error: errors.join(","),
+      extra: await rejectVisitExtra(env, fields),
     });
     if (looksHuman({ name: fields.name, phone: fields.phone })) {
       await notifyBlockedAttempt(env, ctx, {
@@ -1308,7 +1338,12 @@ async function submitEstimate(request, env, ctx, services) {
             `이름: ${escapeHtml(fields.name)}\n` +
             `연락처: ${escapeHtml(fields.phone)}\n` +
             `출처: ${escapeHtml(attribution.platform)}\n` +
-            `※ 견적 폼 완주 시 같은 카드가 '접수대기' 로 승격됩니다.`,
+            `※ 견적 폼 완주 시 같은 카드가 '접수대기' 로 승격됩니다.\n\n` +
+            // 팝업만 남기고 떠난 고객도 IP·기기·방문 횟수를 알림에서 바로 본다(D1 에도 같은 값).
+            `🧭 <b>방문정보</b>\n` +
+            `├ 방문횟수: ${escapeHtml(formatVisitLine(visitStats))}\n` +
+            `├ IP: ${escapeHtml(ip || "확인 불가")}\n` +
+            `└ 기기: ${escapeHtml(deviceInfo || "확인 불가")}`,
         ),
         logIntakeEvent(services, {
           channel: "exit_guard",
@@ -1334,54 +1369,27 @@ async function submitEstimate(request, env, ctx, services) {
     payload: { region: addressLine, available_budget: fields.budget || '' },
     createdAt: submittedAt, env,
   }).catch(() => null);
-  const notificationLines = [
-    `[day1design/estimates] 새 상담신청${promoteId ? " (이탈팝업 경유)" : ""}`,
-    `이름: ${escapeHtml(fields.name)}`,
-    `연락처: ${escapeHtml(fields.phone)}`,
-  ];
-  if (fields.email)
-    notificationLines.push(`이메일: ${escapeHtml(fields.email)}`);
-  notificationLines.push(
-    `평형대: ${escapeHtml(fields.space_size)}`,
-    `지점: ${escapeHtml(fields.branch)}`,
-    `가용예산: ${escapeHtml(fields.budget)}`,
-    `희망일정: ${escapeHtml(fields.schedule)}`,
-  );
-  if (addressLine) notificationLines.push(`주소: ${escapeHtml(addressLine)}`);
-  notificationLines.push(
-    `출처: ${escapeHtml(attribution.platform)}${attribution.campaign ? ` / ${escapeHtml(attribution.campaign)}` : ""}`,
-  );
-  if (conceptUrls.length || planUrls.length) {
-    notificationLines.push(
-      `파일: 컨셉 ${conceptUrls.length} / 평면도 ${planUrls.length}`,
-    );
-  }
-  // 문의 내용은 길어서 알림에 싣지 않는다. 원문은 접수카드에서 본다(2026-11-02 사용자 지시).
-  if (hasDetailText) notificationLines.push("상세내용: 접수카드 확인");
-  // 지역 랜딩(/lp/*) 접수는 Meta 광고 접수라 예전 Meta 리드 알림과 같은 모양으로 보내고
-  // 방문 정보(30일 방문 횟수·IP·기기)를 덧붙인다. 일반 견적 폼 알림은 위 형식을 유지하고
-  // 끝에 같은 방문정보 블록만 붙인다.
+  // 홈페이지 견적 폼 접수도 지역 랜딩 접수와 같은 트리 모양으로 보낸다(2026-11-03 사용자 지시).
+  // 랜딩(/lp/*)은 광고정보, 견적 폼은 유입정보 블록이 들어가고, 둘 다 방문정보(30일 방문
+  // 횟수·IP·기기)로 끝난다. 문의 내용은 길어서 싣지 않고 "상세내용: 접수카드 확인"만 남긴다.
   const isLanding = isLandingSubmission(fields);
   const visitLine = formatVisitLine(visitStats);
-  notificationLines.push(
-    "",
-    `🧭 <b>방문정보</b>`,
-    `├ 방문횟수: ${escapeHtml(visitLine)}`,
-    `├ IP: ${escapeHtml(ip || "확인 불가")}`,
-    `└ 기기: ${escapeHtml(deviceInfo || "확인 불가")}`,
-  );
-  const notificationText = isLanding
-    ? buildLandingLeadMessage({
-        fields,
-        addressLine,
-        platform: metaPlatformFromUa(ua, safeInflowApp(fields.inflow_app)),
-        visitLine,
-        ip,
-        device: deviceInfo,
-        promoted: Boolean(promoteId),
-        hasDetail: hasDetailText,
-      })
-    : notificationLines.join("\n");
+  const notificationText = buildLeadAlertMessage({
+    landing: isLanding,
+    fields,
+    attribution,
+    addressLine,
+    platform: isLanding
+      ? metaPlatformFromUa(ua, safeInflowApp(fields.inflow_app))
+      : "",
+    visitLine,
+    ip,
+    device: deviceInfo,
+    promoted: Boolean(promoteId),
+    hasDetail: hasDetailText,
+    conceptCount: conceptUrls.length,
+    planCount: planUrls.length,
+  });
 
   // 알림 발송 실패가 접수 저장 성공을 막지 않도록 waitUntil으로 분리.
   // 작동로그(IntakeEvents)용 단계별 결과 수집 — 여기 도달 = D1 저장 확정.

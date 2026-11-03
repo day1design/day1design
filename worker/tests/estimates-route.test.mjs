@@ -428,9 +428,9 @@ test("estimate submit accepts simplified form without email/space_type/referral"
   assert.equal(created[0].SpaceSize, "30~40평");
   assert.equal(created[0].Branch, "강남점");
   assert.equal(created[0].Email, "");
-  // 텔레그램 알림에 평형대/지점/가용예산이 포함되고 빈 이메일 줄은 없어야 함
+  // 텔레그램 알림에 면적/지점/가용예산이 포함되고 빈 이메일 줄은 없어야 함
   const tgText = telegramTexts.map((m) => m.text || "").join("\n");
-  assert.ok(tgText.includes("평형대: 30~40평"));
+  assert.ok(tgText.includes("면적: 30~40평"));
   assert.ok(tgText.includes("지점: 강남점"));
   assert.ok(tgText.includes("가용예산: 5000만원"));
   assert.ok(!tgText.includes("이메일:"));

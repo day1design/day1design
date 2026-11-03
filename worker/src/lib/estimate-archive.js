@@ -7,6 +7,7 @@
 // 현재 모듈 구조에 맞춰 외과적으로 재구현 + 보강(origin 가드 앞 캡처/봇 구분/D1 양면 기록).
 import { clientIP } from "./security.js";
 import { notifyTelegram } from "./telegram.js";
+import { describeDevice } from "./visitor-info.js";
 
 const RAW_MAX = 4000;
 // 오류 카드에도 문의 내용 원문 전체를 남긴다(2026-11-02 사용자 지시: 잘린 내용 대신 전체).
@@ -71,6 +72,8 @@ export async function recordRejectToD1(
     email,
     fields = {},
     ip,
+    // 접수자 브라우저 User-Agent. 받지 못하는 경로(Meta 폴러)는 비워 둔다.
+    ua = "",
     outcome,
     error,
     source = "homepage",
@@ -101,6 +104,9 @@ export async function recordRejectToD1(
         Status: "오류",
         SubmittedAt: new Date().toISOString(),
         IP: ip || "",
+        // 정상 접수 카드와 같은 기기 칸(마이그 0100) — 오류 카드도 다시 연락할 고객이다.
+        UserAgent: String(ua || "").slice(0, 500),
+        DeviceInfo: ua ? describeDevice(ua) : "",
         Source: source,
       });
     } catch {
@@ -125,6 +131,7 @@ export async function notifyBlockedAttempt(
     `IP: ${ip || "-"}\n` +
     `이름: ${String(name || "").slice(0, 40) || "-"}\n` +
     `연락처: ****${tail4}\n` +
+    `기기: ${ua ? describeDevice(ua) : "-"}\n` +
     `UA: ${String(ua || "").slice(0, 120)}`;
   const task = Promise.resolve(notifyTelegram(env, text)).catch(() => {});
   if (ctx && ctx.waitUntil) ctx.waitUntil(task);
@@ -173,6 +180,7 @@ export async function captureRejectedSubmission(
         email: f.email,
         fields: f,
         ip,
+        ua,
         outcome,
         error,
       });
