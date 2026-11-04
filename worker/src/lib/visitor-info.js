@@ -307,13 +307,38 @@ export function describeDevice(ua) {
     .slice(0, 160);
 }
 
-// 인앱 브라우저 → 광고 플랫폼 이름(Meta 리드 알림의 "플랫폼" 칸과 같은 표기).
-// UA 가 있으면 UA 를 먼저 믿는다. inflowApp 은 첫 방문 때 추정한 값이라 UA 가 없을 때만 쓴다.
-export function metaPlatformFromUa(ua, inflowApp = "") {
+// Meta 광고 URL 매개변수 utm_term={{site_source_name}} 값 → 플랫폼(2026-11-04 랜딩 광고 6개에 추가).
+// 프런트(common.js)는 utm_term 을 _fb_ad 로 보내고 D1 MetaAd 칸에 저장한다. 그 전 접수의 MetaAd 에는
+// Meta 가 자동으로 붙인 광고세트 ID(숫자)가 들어 있어 여기 표에 걸리지 않는다.
+const SITE_SOURCE_PLATFORMS = {
+  ig: "Instagram",
+  fb: "Facebook",
+  msg: "Messenger",
+  an: "Audience Network",
+  th: "Threads",
+  threads: "Threads",
+};
+export function metaPlatformFromSite(siteSource) {
+  return (
+    SITE_SOURCE_PLATFORMS[
+      String(siteSource || "")
+        .trim()
+        .toLowerCase()
+    ] || ""
+  );
+}
+
+// 광고 플랫폼 이름(Meta 리드 알림의 "플랫폼" 칸과 같은 표기).
+// 1) 인앱 브라우저 UA — 그 앱 안에서 열었다는 직접 증거라 가장 먼저 믿는다.
+// 2) 광고 URL 의 site_source_name — 고객이 앱 밖 브라우저로 열어도 남는다.
+// 3) inflowApp — 첫 방문 때 추정한 값이라 마지막에 쓴다.
+export function metaPlatformFromUa(ua, inflowApp = "", siteSource = "") {
   const s = String(ua || "");
   if (/Barcelona \d/.test(s)) return "Threads";
   if (/Instagram \d/.test(s)) return "Instagram";
   if (/FBAN\/|FBAV\/|FB_IAB|FBIOS/.test(s)) return "Facebook";
+  const site = metaPlatformFromSite(siteSource);
+  if (site) return site;
   if (inflowApp === "instagram-app") return "Instagram";
   if (inflowApp === "facebook-app") return "Facebook";
   return "";
@@ -379,7 +404,7 @@ export function describeAdSource(r) {
   const landing = isLandingCampaign(r.UtmCampaign);
   return {
     channel: landing ? "랜딩" : "견적문의 폼",
-    platform: metaPlatformFromUa(r.UserAgent, r.FirstInflowApp),
+    platform: metaPlatformFromUa(r.UserAgent, r.FirstInflowApp, r.MetaAd),
     campaign: landing
       ? landingCampaignLabel(r.UtmCampaign)
       : String(r.MetaCampaign || r.UtmCampaign || r.Campaign || "").trim(),

@@ -624,3 +624,51 @@ test("접수 목록 API: 카드용 AdSource 를 싣고 기기는 UA 원문으로
   assert.equal(home.AdSource, null);
   assert.equal(home.DeviceInfo, "");
 });
+
+test("플랫폼: 광고 URL 의 site_source_name(utm_term) — 앱 밖 브라우저에서도 구분, 인앱 UA 가 먼저", async () => {
+  const { metaPlatformFromSite } = await import("../src/lib/visitor-info.js");
+  assert.equal(metaPlatformFromSite("ig"), "Instagram");
+  assert.equal(metaPlatformFromSite("FB"), "Facebook");
+  assert.equal(metaPlatformFromSite("msg"), "Messenger");
+  assert.equal(metaPlatformFromSite("an"), "Audience Network");
+  // 예전 접수의 MetaAd(Meta 자동 광고세트 ID)·치환 안 된 매크로는 무시한다.
+  assert.equal(metaPlatformFromSite("52583047314269"), "");
+  assert.equal(metaPlatformFromSite("{{site_source_name}}"), "");
+  // 앱 밖 사파리 + utm_term=fb → Facebook
+  assert.equal(metaPlatformFromUa(SAFARI_IOS_UA, "", "fb"), "Facebook");
+  // 인스타그램 앱 안에서 열었으면 UA 가 직접 증거다.
+  assert.equal(metaPlatformFromUa(IG_IOS_UA, "", "fb"), "Instagram");
+  // 접수카드: 사파리로 연 랜딩도 MetaAd(=utm_term) 로 플랫폼이 나온다.
+  assert.equal(
+    describeAdSource({
+      Source: "meta",
+      UtmCampaign: "lp-gn",
+      MetaAdset: "s1",
+      MetaAd: "ig",
+      UserAgent: SAFARI_IOS_UA,
+    }).platform,
+    "Instagram",
+  );
+});
+
+test("랜딩 접수 알림: 앱 밖 브라우저로 열어도 utm_term(site_source_name)으로 플랫폼을 적는다", async () => {
+  const { res, telegram, created } = await submit({
+    fields: {
+      ...BASE_FIELDS,
+      utm_source: "meta",
+      utm_medium: "paid",
+      utm_campaign: "lp-gn",
+      _fb_source: "meta",
+      _fb_campaign: "lp-gn",
+      _fb_adset: "s2",
+      _fb_ad: "fb",
+    },
+    ua: SAFARI_IOS_UA,
+    pageViews: [],
+  });
+  assert.equal(res.status, 200);
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
+  assert.ok(lead.includes("├ 플랫폼: Facebook"), lead);
+  assert.ok(lead.includes("└ 소재: S-2"));
+  assert.equal(created[0].MetaAd, "fb");
+});

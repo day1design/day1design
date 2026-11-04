@@ -1380,7 +1380,7 @@ async function submitEstimate(request, env, ctx, services) {
     attribution,
     addressLine,
     platform: isLanding
-      ? metaPlatformFromUa(ua, safeInflowApp(fields.inflow_app))
+      ? metaPlatformFromUa(ua, safeInflowApp(fields.inflow_app), fields._fb_ad)
       : "",
     visitLine,
     ip,
