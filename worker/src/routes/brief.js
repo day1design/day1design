@@ -16,8 +16,12 @@ import { jsonOk, jsonError } from "../lib/response.js";
 import { timingSafeEqual } from "../lib/auth.js";
 import { briefOverview } from "./meta-ads.js";
 import { briefSummary, briefFunnel } from "./analytics.js";
+import { BUDGET_BANDS, estimateBudget } from "../lib/estimate-budget.js";
 
 const MAX_DAYS = 180;
+// 금액별 집계에 읽는 접수 행 상한. 7일이면 수십 건이고, 180일을 불러도 이 안에 든다.
+// 넘으면 truncated 로 알린다(잘린 채 전체인 것처럼 보고하지 않게).
+const BUDGET_ROW_LIMIT = 2000;
 
 // KST 기준 날짜 문자열. 광고계정도 서울 시간대라 여기서 기준을 맞춰야
 // "어제까지"가 어드민 화면과 같은 날을 가리킨다.
@@ -137,11 +141,14 @@ async function collectLeads(env, period) {
     byStatus: [],
     daily: [],
     byCampaign: [],
+    byBudget: null,
     error: "",
   };
 
   try {
-    const [totalRow, bySource, byStatus, daily, byCampaign] = await Promise.all(
+    // runaway-ok: 아래 GROUP BY 4개는 출처·상태·일자·캠페인 수만큼만 행이 나오는 집계이고,
+    // 기간은 resolveRange 가 MAX_DAYS(180일)로 자른다. 행을 읽는 금액별 조회만 LIMIT 를 둔다
+    const [totalRow, bySource, byStatus, daily, byCampaign, budgetRows] = await Promise.all(
       [
         env.DB.prepare(
           `SELECT COUNT(*) AS n FROM Estimates
@@ -168,9 +175,12 @@ async function collectLeads(env, period) {
           .bind(since, until)
           .all(),
         // 일자는 KST 로 끊는다. UTC 로 자르면 09시 이전 접수가 전날로 잡혀
-        // 광고 일자별 지표와 하루씩 어긋난다
+        // 광고 일자별 지표와 하루씩 어긋난다.
+        // Meta 입력양식 리드는 SubmittedAt 이 '2026-10-29T10:12:33+0000'(Meta created_time)
+        // 형식이라 SQLite datetime() 이 NULL 을 낸다. 그대로 두면 그 리드가 일자별에서 통째로
+        // 빠진다(2026-11-04 실측: 7일 30건 중 22건 day=null). 두 형식 모두 UTC 이므로 앞 19자만 읽는다.
         env.DB.prepare(
-          `SELECT substr(datetime(SubmittedAt, '+9 hours'), 1, 10) AS day, COUNT(*) AS n
+          `SELECT substr(datetime(substr(SubmittedAt, 1, 19), '+9 hours'), 1, 10) AS day, COUNT(*) AS n
            FROM Estimates
           WHERE SubmittedAt >= ? AND SubmittedAt < ?
           GROUP BY day
@@ -192,6 +202,16 @@ async function collectLeads(env, period) {
         )
           .bind(since, until)
           .all(),
+        // 접수 금액별. 예산 문구는 Detail 안에 있어 SQL 로 못 나눈다 → 행을 읽어
+        // 관리자 KPI 와 같은 규칙(estimate-budget.js)으로 나눈다
+        env.DB.prepare(
+          `SELECT Source, Status, Detail, EstimateAmount, SpaceSize
+           FROM Estimates
+          WHERE SubmittedAt >= ? AND SubmittedAt < ?
+          LIMIT ?`,
+        )
+          .bind(since, until, BUDGET_ROW_LIMIT + 1)
+          .all(),
       ],
     );
 
@@ -200,12 +220,40 @@ async function collectLeads(env, period) {
     out.byStatus = byStatus?.results || [];
     out.daily = daily?.results || [];
     out.byCampaign = byCampaign?.results || [];
+    out.byBudget = summarizeBudgets(budgetRows?.results || []);
   } catch (e) {
     // 한 조각이 막혀도 브리프 전체를 죽이지 않는다. 대신 무엇이 빠졌는지 남긴다
     out.error = String(e?.message || "").slice(0, 120);
   }
 
   return out;
+}
+
+// 접수 금액별 건수. 구간은 관리자 KPI 와 같은 BUDGET_BANDS, 고객카드에 직원이 넣은
+// 금액(EstimateAmount)이 있으면 그 값이 먼저다. meta 는 Source='meta'(입력양식·랜딩)인 접수 수.
+// 작성 중(이탈 팝업에서 이름·연락처만 남긴 건)은 금액 문항을 거치지 않아 '미기재'로 센다.
+export function summarizeBudgets(rows = []) {
+  const truncated = rows.length > BUDGET_ROW_LIMIT;
+  const list = truncated ? rows.slice(0, BUDGET_ROW_LIMIT) : rows;
+  const bands = BUDGET_BANDS.map((b) => ({ key: b.key, label: b.label, n: 0, meta: 0 }));
+  const missing = { key: "none", label: "미기재·분류 불가", n: 0, meta: 0 };
+  let high = 0;
+  for (const row of list) {
+    const isMeta = String(row?.Source || "").toLowerCase() === "meta";
+    const { band } = estimateBudget(row);
+    const slot = band >= 0 ? bands[band] : missing;
+    slot.n += 1;
+    if (isMeta) slot.meta += 1;
+    if (band >= 4) high += 1; // 1억~1억5천, 1억5천 이상
+  }
+  const total = list.length;
+  const classified = total - missing.n;
+  return {
+    total,
+    truncated,
+    bands: [...bands, missing],
+    highBudget: { label: "1억원 이상", n: high, shareOfClassified: classified > 0 ? Number((high / classified).toFixed(3)) : null },
+  };
 }
 
 // overview 의 각 조각은 하위 핸들러의 Response 를 그대로 담은 것이라 {ok, range, <본체>}
