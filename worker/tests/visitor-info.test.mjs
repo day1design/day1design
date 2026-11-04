@@ -4,6 +4,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { handleEstimates } from "../src/routes/estimates.js";
 import {
   countVisits,
+  describeAdSource,
   describeDevice,
   fetchVisitStats,
   formatVisitLine,
@@ -56,9 +57,10 @@ test("기기: 인앱 브라우저 UA 에서 기종을 읽는다", () => {
 });
 
 test("기기: 기종을 숨기는 브라우저는 '모델 미표시'로 남긴다", () => {
+  // UA 축소의 "Android 10" 은 고정값이라 버전으로 적지 않는다(2026-11-04 오표기 수정).
   assert.equal(
     describeDevice(CHROME_ANDROID_REDUCED_UA),
-    "Android 폰 (모델 미표시) · Android 10 · Chrome",
+    "Android 폰 (모델·버전 미표시) · Chrome",
   );
   assert.equal(
     describeDevice(SAFARI_IOS_UA),
@@ -66,11 +68,130 @@ test("기기: 기종을 숨기는 브라우저는 '모델 미표시'로 남긴�
   );
   assert.equal(describeDevice(WINDOWS_CHROME_UA), "PC · Windows · Chrome");
   assert.equal(describeDevice(""), "");
-  // 표에 없는 코드는 원문 코드를 그대로 보여 준다(틀린 이름보다 낫다).
+  // 표에 없는 코드는 틀린 이름 대신 코드를 보여 주되, 코드만 있으면 기종처럼 읽히므로
+  // 제품군을 붙인다.
   assert.match(
-    describeDevice(IG_IOS_UA.replace("iPhone15,2", "iPhone19,9")),
-    /^iPhone19,9 · /,
+    describeDevice(IG_IOS_UA.replace("iPhone15,2", "iPhone20,9")),
+    /^iPhone 신규 기종 \(iPhone20,9\) · /,
   );
+});
+
+// 2026-11-02~03 운영 접수에서 기기가 틀리게 적힌 실제 UA.
+// 스레드 앱: 앞쪽은 축소된 "Android 10; K; wv", 뒤쪽 토큰에 실제 Android 17·SM-S938N.
+const THREADS_ANDROID_UA =
+  "Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/156.0.0.0 Mobile Safari/537.36 Barcelona 453.0.0.56.79 Android (37/17; 420dpi; 1080x2340; samsung; SM-S938N; pa3q; qcom; ko_KR; 1100454133)";
+const IG_IPHONE18PRO_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/24A446 Instagram 453.0.0.39.58 (iPhone19,2; iOS 27_0_1; ko_KR; ko; scale=3.00; 1206x2622; IABMV/1; 1099096960) Safari/604.1";
+const SAMSUNG_REDUCED_UA =
+  "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/30.0 Chrome/143.0.0.0 Mobile Safari/537.36";
+const NAVER_APP_UA =
+  "Mozilla/5.0 (Linux; Android 17; SM-S948N Build/CP2A.260605.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/140.0.0.0 Whale/1.0.0.0 Crosswalk/30.140.0.14 Mobile Safari/537.36 NAVER(inapp; search; 2100; 12.24.50)";
+const GENERIC_WEBVIEW_UA =
+  "Mozilla/5.0 (Linux; Android 15; SM-S931N Build/AP3A.240905.015; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/140.0.0.0 Mobile Safari/537.36";
+
+test("기기: 운영에서 틀리게 적힌 UA 를 바르게 읽는다", () => {
+  // 전: "갤럭시 S25 Ultra (SM-S938N) · Android 10 · Chrome"
+  assert.equal(
+    describeDevice(THREADS_ANDROID_UA),
+    "갤럭시 S25 Ultra (SM-S938N) · Android 17 · 스레드 앱",
+  );
+  // 전: "iPhone19,2 · iOS 27.0 · 인스타그램 앱"
+  assert.equal(
+    describeDevice(IG_IPHONE18PRO_UA),
+    "iPhone 18 Pro · iOS 27.0 · 인스타그램 앱",
+  );
+  // 전: "Android 폰 (모델 미표시) · Android 10 · 삼성 인터넷"
+  assert.equal(
+    describeDevice(SAMSUNG_REDUCED_UA),
+    "Android 폰 (모델·버전 미표시) · 삼성 인터넷",
+  );
+  // 그대로 맞던 값은 유지한다.
+  assert.equal(
+    describeDevice(NAVER_APP_UA),
+    "갤럭시 S26 Ultra (SM-S948N) · Android 17 · 네이버 앱",
+  );
+  // 앱 이름이 없는 WebView 는 크롬이 아니다.
+  assert.equal(
+    describeDevice(GENERIC_WEBVIEW_UA),
+    "갤럭시 S25 (SM-S931N) · Android 15 · 앱 내 브라우저",
+  );
+});
+
+test("플랫폼: 스레드 앱은 Threads, UA 단서가 첫 방문 추정보다 먼저다", () => {
+  assert.equal(metaPlatformFromUa(THREADS_ANDROID_UA), "Threads");
+  assert.equal(metaPlatformFromUa(IG_IPHONE18PRO_UA, "facebook-app"), "Instagram");
+  assert.equal(metaPlatformFromUa("", "facebook-app"), "Facebook");
+});
+
+test("광고 출처: 접수카드용 describeAdSource", () => {
+  // 랜딩 접수(2026-11-03 실제 칸 값)
+  assert.deepEqual(
+    describeAdSource({
+      Source: "meta",
+      Platform: "Meta",
+      Campaign: "lp-gn",
+      UtmCampaign: "lp-gn",
+      MetaCampaign: "lp-gn",
+      MetaAdset: "s2",
+      MetaAd: "52583047314269",
+      UserAgent: IG_IPHONE18PRO_UA,
+      FirstInflowApp: "instagram-app",
+    }),
+    {
+      channel: "랜딩",
+      platform: "Instagram",
+      campaign: "서울 랜딩 (lp-gn)",
+      creative: "S-2",
+    },
+  );
+  assert.equal(
+    describeAdSource({
+      Source: "meta",
+      UtmCampaign: "lp-bd",
+      MetaAdset: "p1",
+      UserAgent: THREADS_ANDROID_UA,
+    }).platform,
+    "Threads",
+  );
+  // 앱 밖 브라우저로 연 랜딩 = 플랫폼 미상("")
+  assert.equal(
+    describeAdSource({
+      Source: "meta",
+      UtmCampaign: "lp-bd",
+      UserAgent: SAFARI_IOS_UA,
+    }).platform,
+    "",
+  );
+  // Meta 입력양식 리드 — 광고 이름이 캠페인과 같으면 소재 칸은 비운다.
+  assert.deepEqual(
+    describeAdSource({
+      Source: "meta",
+      MetaLeadId: "1234567890",
+      Platform: "instagram",
+      Campaign: "261020_잠재고객 캠페인(서울 타겟팅)",
+      MetaCampaign: "261020_잠재고객 캠페인(서울 타겟팅)",
+      MetaAd: "261020_잠재고객 캠페인(서울 타겟팅)",
+    }),
+    {
+      channel: "입력양식",
+      platform: "Instagram",
+      campaign: "261020_잠재고객 캠페인(서울 타겟팅)",
+      creative: "",
+    },
+  );
+  assert.equal(
+    describeAdSource({
+      Source: "meta",
+      MetaLeadId: "1",
+      Platform: "facebook",
+      MetaCampaign: "C",
+      MetaAd: "광고 A",
+    }).creative,
+    "광고 A",
+  );
+  // Meta 가 아니면 null
+  assert.equal(describeAdSource({ Source: "naver" }), null);
+  assert.equal(describeAdSource(null), null);
 });
 
 test("플랫폼: 인앱 단서로 Instagram·Facebook 을 가른다", () => {
@@ -450,4 +571,56 @@ test("검증 실패 '오류' 카드에도 IP·기기·방문 정보가 남고 �
   assert.ok(blocked, "차단감지 알림이 없다");
   assert.ok(blocked.includes("IP: 203.0.113.77"));
   assert.ok(blocked.includes("기기: iPhone (모델 미표시) · iOS 18.1 · Safari"));
+});
+
+test("접수 목록 API: 카드용 AdSource 를 싣고 기기는 UA 원문으로 다시 읽는다", async () => {
+  const { sign: signJwt } = await import("../src/lib/jwt.js");
+  const secret = "test-secret";
+  const token = await signJwt({ sub: "admin" }, secret);
+  const services = {
+    estimates: {
+      async listAll() {
+        return [
+          {
+            id: "recLanding",
+            fields: {
+              Status: "접수대기",
+              Source: "meta",
+              Platform: "Meta",
+              UtmCampaign: "lp-gn",
+              MetaAdset: "s2",
+              UserAgent: IG_IPHONE18PRO_UA,
+              FirstInflowApp: "instagram-app",
+              // 옛 기종 표로 저장된 값 — 목록에서는 새 표로 고쳐서 내려간다.
+              DeviceInfo: "iPhone19,2 · iOS 27.0 · 인스타그램 앱",
+            },
+          },
+          {
+            id: "recHome",
+            fields: { Status: "접수대기", Source: "naver", DeviceInfo: "" },
+          },
+        ];
+      },
+    },
+  };
+  const res = await handleEstimates(
+    new Request("https://api.day1design.co.kr/api/estimates", {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+    { JWT_SECRET: secret },
+    { waitUntil() {} },
+    services,
+  );
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  const [landing, home] = body.records;
+  assert.equal(landing.DeviceInfo, "iPhone 18 Pro · iOS 27.0 · 인스타그램 앱");
+  assert.deepEqual(landing.AdSource, {
+    channel: "랜딩",
+    platform: "Instagram",
+    campaign: "서울 랜딩 (lp-gn)",
+    creative: "S-2",
+  });
+  assert.equal(home.AdSource, null);
+  assert.equal(home.DeviceInfo, "");
 });

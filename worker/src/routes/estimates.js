@@ -21,9 +21,13 @@ import {
 } from "../lib/upload-policy.js";
 import { notifyTelegram } from "../lib/telegram.js";
 import {
+  describeAdSource,
   describeDevice,
   fetchVisitStats,
+  formatCreativeCode,
   formatVisitLine,
+  isLandingCampaign,
+  landingCampaignLabel,
   metaPlatformFromUa,
 } from "../lib/visitor-info.js";
 import {
@@ -829,9 +833,9 @@ async function deleteEstimate(env, id, ctx, services) {
 }
 
 // 지역 랜딩 접수 판별 — 랜딩(site/lp/*.html)은 utm_campaign 을 lp-<지역> 으로 싣는다.
-const LANDING_LABELS = { "lp-bd": "판교·수지·광교·동탄", "lp-gn": "서울" };
+// 라벨 표·소재 표기는 visitor-info.js 에 있다(접수카드 광고 줄과 같은 표기).
 function isLandingSubmission(fields) {
-  return /^lp-[a-z0-9-]+$/i.test(String(fields?.utm_campaign || "").trim());
+  return isLandingCampaign(fields?.utm_campaign);
 }
 
 // 접수 알림 — Meta 잠재고객 리드 알림(meta-lead.js buildMetaLeadMessage)과 같은
@@ -886,16 +890,12 @@ function buildLeadAlertMessage({
   pushBlock(out, `🏘 <b>공간/일정</b>`, space);
 
   if (landing) {
-    const code = String(fields.utm_campaign || "").trim().toLowerCase();
-    const label = LANDING_LABELS[code];
     const ads = [
       `플랫폼: ${escapeHtml(platform || "Meta")}`,
-      `캠페인: ${escapeHtml(label ? `${label} 랜딩 (${code})` : code)}`,
+      `캠페인: ${escapeHtml(landingCampaignLabel(fields.utm_campaign))}`,
     ];
     // 소재 코드(utm_content s1~s3·p1~p3)는 광고 이름 표기(S-1·P-3)로 보여 준다.
-    const ad = String(fields._fb_adset || fields.utm_content || "")
-      .trim()
-      .replace(/^([a-z])(\d+)$/i, (_, a, n) => `${a.toUpperCase()}-${n}`);
+    const ad = formatCreativeCode(fields._fb_adset || fields.utm_content);
     if (ad) ads.push(`소재: ${escapeHtml(ad)}`);
     pushBlock(out, `📢 <b>광고정보</b>`, ads);
   } else {
@@ -1629,6 +1629,12 @@ async function listEstimates(request, env, ctx, services) {
       ...r.fields,
       ConceptFiles: safeJsonParse(r.fields.ConceptFiles),
       FloorPlans: safeJsonParse(r.fields.FloorPlans),
+      // 기기는 저장된 UA 원문으로 다시 읽는다 — 기종 표가 늘면 옛 접수 표기도 함께 고쳐진다.
+      DeviceInfo: r.fields.UserAgent
+        ? describeDevice(r.fields.UserAgent) || r.fields.DeviceInfo || ""
+        : r.fields.DeviceInfo || "",
+      // Meta 광고 출처(플랫폼·캠페인·소재). 텔레그램 광고정보 블록과 같은 계산이다.
+      AdSource: describeAdSource(r.fields),
     })),
   };
   await edgeCachePut(ns, payload, CACHE_TTL, ctx);

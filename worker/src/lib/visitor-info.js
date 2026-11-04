@@ -132,6 +132,11 @@ const IPHONE_MODELS = {
   "iPhone18,3": "iPhone 17",
   "iPhone18,4": "iPhone Air",
   "iPhone18,5": "iPhone 17e",
+  // 2026-09 출시분(Apple Wiki·EveryMac 확인, 2026-11-04). 19,7 은 18 Pro Max 의 C2 모뎀판이다.
+  "iPhone19,2": "iPhone 18 Pro",
+  "iPhone19,3": "iPhone 18 Pro Max",
+  "iPhone19,7": "iPhone 18 Pro Max",
+  "iPhone19,4": "iPhone Duo",
 };
 
 // 삼성 모델 코드 앞 4자리(지역 접미사 N·B·U 등 제외) → 제품명.
@@ -154,6 +159,7 @@ const GALAXY_MODELS = {
   S926: "S24+",
   S928: "S24 Ultra",
   S721: "S24 FE",
+  S731: "S25 FE",
   S931: "S25",
   S936: "S25+",
   S938: "S25 Ultra",
@@ -193,6 +199,17 @@ const GALAXY_MODELS = {
 // UA 축소(크롬 110+)로 기종 자리에 들어가는 가짜 값.
 const HIDDEN_ANDROID_MODELS = new Set(["K", "WV", "MOBILE", "U", ""]);
 
+// 인스타그램·스레드 앱이 UA 끝에 붙이는 기기 토큰. 앞쪽 "Linux; Android 10; K" 가 축소된
+// 가짜 값이어도 이 토큰에는 실제 Android 버전과 기종이 남는다.
+// "Android (37/17; 420dpi; 1080x2340; samsung; SM-S938N; pa3q; …)" → 버전 17, 제조사, 기종
+const IN_APP_ANDROID_RE =
+  /Android \(\d+\/([\d.]+); [^;]*; [^;]*; ([^;]+); ([^;]+);/;
+
+// 크롬 UA 축소는 기종을 "K", 버전을 "10" 으로 고정한다. 이때 "Android 10" 은 실제 버전이 아니다.
+function isReducedAndroid(ua) {
+  return /Android 10; K[;)]/.test(ua) && !IN_APP_ANDROID_RE.test(ua);
+}
+
 function cleanToken(value, max = 40) {
   return String(value || "")
     .replace(/[^\w ,.+()\-가-힣]/g, "")
@@ -201,6 +218,8 @@ function cleanToken(value, max = 40) {
 }
 
 function detectApp(ua) {
+  // 스레드 앱 UA 는 "Barcelona"(스레드의 내부 이름)로 표시되고 Instagram 문자열이 없다.
+  if (/Barcelona \d/.test(ua)) return "스레드 앱";
   if (/Instagram \d/.test(ua)) return "인스타그램 앱";
   if (/FBAN\/|FBAV\/|FB_IAB|FBIOS/.test(ua)) return "페이스북 앱";
   if (/KAKAOTALK/i.test(ua)) return "카카오톡";
@@ -211,6 +230,8 @@ function detectApp(ua) {
   if (/Whale\//.test(ua)) return "웨일";
   if (/EdgiOS\/|EdgA\/|Edg\//.test(ua)) return "Edge";
   if (/FxiOS\/|Firefox\//.test(ua)) return "Firefox";
+  // 안드로이드 WebView("; wv)")는 크롬이 아니라 다른 앱 안의 브라우저다.
+  if (/; wv\)/.test(ua)) return "앱 내 브라우저";
   if (/CriOS\/|Chrome\//.test(ua)) return "Chrome";
   if (/Safari\//.test(ua)) return "Safari";
   return "";
@@ -219,6 +240,9 @@ function detectApp(ua) {
 function detectOs(ua) {
   let m = ua.match(/(?:iPhone OS|CPU OS|iOS) (\d+)[_.](\d+)/);
   if (m) return `iOS ${m[1]}.${m[2]}`;
+  m = ua.match(IN_APP_ANDROID_RE);
+  if (m) return `Android ${m[1]}`;
+  if (isReducedAndroid(ua)) return "";
   m = ua.match(/Android (\d+(?:\.\d+)?)/);
   if (m) return `Android ${m[1]}`;
   if (/Windows NT/.test(ua)) return "Windows";
@@ -235,30 +259,36 @@ function galaxyName(code) {
 
 function detectModel(ua) {
   const ios = ua.match(/\b(iPhone\d+,\d+|iPad\d+,\d+)\b/);
-  if (ios) return IPHONE_MODELS[ios[1]] || ios[1];
+  if (ios) {
+    if (IPHONE_MODELS[ios[1]]) return IPHONE_MODELS[ios[1]];
+    // 표에 없는 새 기종은 코드만 보여 주면 기종처럼 읽히므로 제품군과 함께 적는다.
+    return ios[1].startsWith("iPad")
+      ? `iPad (${ios[1]})`
+      : `iPhone 신규 기종 (${ios[1]})`;
+  }
   if (/iPhone/.test(ua)) return "iPhone (모델 미표시)";
   if (/iPad/.test(ua)) return "iPad";
 
   if (/Android/.test(ua)) {
-    // 인스타그램 앱: "Android (34/14; 450dpi; 1080x2316; samsung; SM-S918N; dm3q; …)"
-    const ig = ua.match(
-      /Android \(\d+\/[\d.]+; [^;]*; [^;]*; ([^;]+); ([^;]+);/,
-    );
+    // 인스타그램·스레드 앱 토큰(IN_APP_ANDROID_RE)을 먼저 본다.
+    const ig = ua.match(IN_APP_ANDROID_RE);
     // 브라우저 공통: "Linux; Android 14; SM-S918N Build/…)" 또는 "…; SAMSUNG SM-S918N)"
     const linux = ua.match(
       /Android [\d.]+;(?: [a-z]{2}[-_][a-z]{2};)? ([^;)]+?)(?: Build\/[^;)]*)?(?:;|\))/i,
     );
-    const raw = cleanToken(ig ? ig[2] : linux ? linux[1] : "").replace(
+    const raw = cleanToken(ig ? ig[3] : linux ? linux[1] : "").replace(
       /^SAMSUNG\s+/i,
       "",
     );
     if (HIDDEN_ANDROID_MODELS.has(raw.toUpperCase())) {
-      return "Android 폰 (모델 미표시)";
+      return isReducedAndroid(ua)
+        ? "Android 폰 (모델·버전 미표시)"
+        : "Android 폰 (모델 미표시)";
     }
     const galaxy = galaxyName(raw);
     if (galaxy) return galaxy;
     // "Google/google" 처럼 제조사·브랜드가 붙어 오는 경우 앞쪽만 쓴다.
-    const maker = ig ? cleanToken(ig[1].split("/")[0], 20) : "";
+    const maker = ig ? cleanToken(ig[2].split("/")[0], 20) : "";
     return maker && !raw.toLowerCase().startsWith(maker.toLowerCase())
       ? `${maker} ${raw}`
       : raw;
@@ -278,13 +308,81 @@ export function describeDevice(ua) {
 }
 
 // 인앱 브라우저 → 광고 플랫폼 이름(Meta 리드 알림의 "플랫폼" 칸과 같은 표기).
+// UA 가 있으면 UA 를 먼저 믿는다. inflowApp 은 첫 방문 때 추정한 값이라 UA 가 없을 때만 쓴다.
 export function metaPlatformFromUa(ua, inflowApp = "") {
   const s = String(ua || "");
-  if (inflowApp === "instagram-app" || /Instagram \d/.test(s)) {
-    return "Instagram";
-  }
-  if (inflowApp === "facebook-app" || /FBAN\/|FBAV\/|FB_IAB|FBIOS/.test(s)) {
-    return "Facebook";
-  }
+  if (/Barcelona \d/.test(s)) return "Threads";
+  if (/Instagram \d/.test(s)) return "Instagram";
+  if (/FBAN\/|FBAV\/|FB_IAB|FBIOS/.test(s)) return "Facebook";
+  if (inflowApp === "instagram-app") return "Instagram";
+  if (inflowApp === "facebook-app") return "Facebook";
   return "";
+}
+
+// ─── 광고 출처(접수카드·알림 공통) ──────────────────────
+
+// 지역 랜딩(site/lp/*.html)은 utm_campaign 을 lp-<지역> 으로 싣는다.
+export const LANDING_LABELS = {
+  "lp-bd": "판교·수지·광교·동탄",
+  "lp-gn": "서울",
+};
+
+export function isLandingCampaign(utmCampaign) {
+  return /^lp-[a-z0-9-]+$/i.test(String(utmCampaign || "").trim());
+}
+
+// "서울 랜딩 (lp-gn)" — 표에 없는 lp-* 코드는 코드만 쓴다.
+export function landingCampaignLabel(utmCampaign) {
+  const code = String(utmCampaign || "")
+    .trim()
+    .toLowerCase();
+  const label = LANDING_LABELS[code];
+  return label ? `${label} 랜딩 (${code})` : code;
+}
+
+// 소재 코드(utm_content s1~s3·p1~p3)는 광고 이름 표기(S-1·P-3)로 보여 준다.
+export function formatCreativeCode(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^([a-z])(\d+)$/i, (_, a, n) => `${a.toUpperCase()}-${n}`);
+}
+
+// Meta 입력양식 리드의 Platform 칸 값 → 표기
+const LEAD_PLATFORM_LABELS = {
+  instagram: "Instagram",
+  ig: "Instagram",
+  facebook: "Facebook",
+  fb: "Facebook",
+  messenger: "Messenger",
+  threads: "Threads",
+  audience_network: "Audience Network",
+};
+
+// 접수 레코드(D1 Estimates 칸) → Meta 광고 출처. Meta 접수가 아니면 null.
+// channel: 입력양식 | 랜딩 | 견적문의 폼, platform: Instagram·Facebook·Threads(모르면 ""),
+// campaign: 캠페인 표기, creative: 소재(랜딩은 S-2 같은 광고 코드, 입력양식은 광고 이름).
+export function describeAdSource(r) {
+  if (String(r?.Source || "").toLowerCase() !== "meta") return null;
+  if (r.MetaLeadId) {
+    const campaign = String(r.MetaCampaign || r.Campaign || "").trim();
+    const ad = String(r.MetaAd || "").trim();
+    const key = String(r.Platform || "")
+      .trim()
+      .toLowerCase();
+    return {
+      channel: "입력양식",
+      platform: LEAD_PLATFORM_LABELS[key] || String(r.Platform || "").trim(),
+      campaign,
+      creative: ad && ad !== campaign ? ad : "",
+    };
+  }
+  const landing = isLandingCampaign(r.UtmCampaign);
+  return {
+    channel: landing ? "랜딩" : "견적문의 폼",
+    platform: metaPlatformFromUa(r.UserAgent, r.FirstInflowApp),
+    campaign: landing
+      ? landingCampaignLabel(r.UtmCampaign)
+      : String(r.MetaCampaign || r.UtmCampaign || r.Campaign || "").trim(),
+    creative: formatCreativeCode(r.MetaAdset),
+  };
 }
