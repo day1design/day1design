@@ -56,6 +56,9 @@
 
   // ─── 차트 인스턴스 ──────────────────────────────────
   let effChart = null;
+  let leadCpmChart = null;
+  const leadPosCharts = {};
+  const leadReachCharts = {};
   let effMetric = "cpm";
   let dowMetric = "spend";
   let hhMetric = "spend";
@@ -574,6 +577,356 @@
     });
   }
 
+  // ─── 잠재고객 캠페인 주별 노출 단가 (트래픽 제외 · 최근 13주) ──
+  // 같은 예산으로 사는 노출이 줄었는지 본다. 기간 필터와 무관하게 서버가 13주를 보낸다.
+  function renderLeadCpmWeekly(data) {
+    const body = $("leadCpmBody");
+    const summary = $("leadCpmSummary");
+    if (!body) return;
+    if (leadCpmChart) {
+      leadCpmChart.destroy();
+      leadCpmChart = null;
+    }
+    const weeks = data?.weeks || [];
+    if (!weeks.some((w) => w.impressions > 0)) {
+      body.innerHTML = '<tr><td colspan="6" class="empty-state">데이터 없음</td></tr>';
+      summary.textContent = "";
+      return;
+    }
+    const md = (ymd) => `${+ymd.slice(5, 7)}/${+ymd.slice(8, 10)}`;
+    const per100 = (w) => (w.impPer100 > 0 ? fmtInt(Math.round(w.impPer100)) + "회" : "—");
+    const done = weeks.filter((w) => !w.partial && w.impressions > 0);
+    const doneSpend = done.reduce((a, w) => a + w.spend, 0);
+    const doneImps = done.reduce((a, w) => a + w.impressions, 0);
+    const avg = doneImps > 0 ? (doneSpend / doneImps) * 1000 : 0;
+    const last = done[done.length - 1];
+    if (last && avg > 0) {
+      const pct = ((last.cpm - avg) / avg) * 100;
+      summary.textContent = `지난주(${md(last.start)}~${md(last.end)}) CPM ${fmtUsd(last.cpm)} · $100당 노출 ${per100(last)} · ${done.length}주 평균 ${fmtUsd(avg)} 대비 ${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%`;
+    } else summary.textContent = "";
+
+    const newestFirst = weeks.slice().reverse();
+    body.innerHTML = newestFirst
+      .map((w, i) => {
+        const prev = newestFirst[i + 1];
+        let delta = "";
+        if (prev?.cpm > 0 && w.cpm > 0) {
+          const pct = ((w.cpm - prev.cpm) / prev.cpm) * 100;
+          const cls = pct > 1 ? "up" : pct < -1 ? "down" : "flat";
+          delta = `<span class="mads-eff-delta mads-eff-delta-${cls}">${pct > 0 ? "▲" : pct < 0 ? "▼" : "—"} ${Math.abs(pct).toFixed(1)}%</span>`;
+        }
+        return `<tr>
+          <td>${md(w.start)}~${md(w.end)}${w.partial ? ` <span class="mads-lead-cpm-partial">진행 중 ${w.days}일</span>` : ""}</td>
+          <td class="num">${w.cpm > 0 ? fmtUsd(w.cpm) : "—"}</td>
+          <td class="num">${per100(w)}</td>
+          <td class="num">${delta}</td>
+          <td class="num">${fmtUsd(w.spend)}</td>
+          <td class="num">${fmtInt(w.impressions)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const canvas = $("leadCpmChart");
+    if (!canvas || !window.Chart) return;
+    const partialIdx = weeks.findIndex((w) => w.partial);
+    leadCpmChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: weeks.map((w) => md(w.start)),
+        datasets: [
+          {
+            label: "CPM",
+            data: weeks.map((w) => (w.cpm > 0 ? +w.cpm.toFixed(2) : null)),
+            borderColor: "#1877f2",
+            backgroundColor: "#1877f2",
+            tension: 0,
+            spanGaps: true,
+            // 진행 중인 주는 점선 — 며칠치만 들어 있어 흔들릴 수 있다
+            segment: {
+              borderDash: (c) => (c.p1DataIndex === partialIdx ? [4, 4] : undefined),
+            },
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: (items) => {
+                const w = weeks[items[0].dataIndex];
+                return `${md(w.start)}~${md(w.end)}${w.partial ? " (진행 중)" : ""}`;
+              },
+              label: (c) => {
+                const w = weeks[c.dataIndex];
+                return [`CPM ${fmtUsd(w.cpm)}`, `$100당 노출 ${per100(w)}`, `지출 ${fmtUsd(w.spend)}`];
+              },
+            },
+          },
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: (v) => "$" + v } },
+        },
+      },
+    });
+  }
+
+  // ─── ① 게재 위치별 주별 CPM · ② 주별 도달·빈도 (잠재고객 캠페인) ──
+  const POS_LABELS = {
+    "instagram/feed": "IG 피드",
+    "instagram/instagram_reels": "IG 릴스",
+    "instagram/instagram_stories": "IG 스토리",
+    "facebook/feed": "FB 피드",
+    "threads/threads_feed": "스레드",
+  };
+  const POS_COLORS = {
+    "IG 피드": "#1877f2",
+    "IG 릴스": "#e1306c",
+    "IG 스토리": "#f59e0b",
+    "FB 피드": "#10b981",
+    스레드: "#0f766e",
+    기타: "#9ca3af",
+  };
+  const weekMd = (ymd) => `${+ymd.slice(5, 7)}/${+ymd.slice(8, 10)}`;
+  const cpmOf = (a) => (a && a.impressions > 0 ? (a.spend / a.impressions) * 1000 : null);
+  const totalOf = (m) =>
+    Object.values(m).reduce(
+      (t, a) => ({ spend: t.spend + a.spend, impressions: t.impressions + a.impressions }),
+      { spend: 0, impressions: 0 },
+    );
+  // 위치 이름별 합계. 여러 주를 넘기면 그 주들을 합친다.
+  function groupPlacements(weeks) {
+    const m = {};
+    for (const w of weeks)
+      for (const p of w.placements || []) {
+        const a = (m[POS_LABELS[p.key] || "기타"] ||= { spend: 0, impressions: 0 });
+        a.spend += p.spend;
+        a.impressions += p.impressions;
+      }
+    return m;
+  }
+  const destroyCharts = (store) => {
+    for (const k of Object.keys(store)) {
+      store[k]?.destroy();
+      delete store[k];
+    }
+  };
+  const deltaHtml = (cur, prev) => {
+    const pct = ((cur - prev) / prev) * 100;
+    const cls = pct > 1 ? "up" : pct < -1 ? "down" : "flat";
+    return `<span class="mads-eff-delta mads-eff-delta-${cls}">${pct > 0 ? "▲" : pct < 0 ? "▼" : "—"} ${Math.abs(pct).toFixed(1)}%</span>`;
+  };
+  const emptyRow = (cols) =>
+    `<tr><td colspan="${cols}" class="empty-state">데이터 없음 (동기화 후 표시)</td></tr>`;
+
+  function renderLeadPlacement(data) {
+    const body = $("leadPosBody");
+    const box = $("leadPosDecomp");
+    if (!body) return;
+    destroyCharts(leadPosCharts);
+    const weeks = data?.weeks || [];
+    const done = weeks.filter((w) => !w.partial && (w.placements || []).length);
+    if (done.length < 2) {
+      body.innerHTML = emptyRow(6);
+      box.innerHTML = "";
+      return;
+    }
+    // 기준 = 데이터가 있는 첫 4주(지난주 제외), 비교 = 지난주(끝난 주)
+    const baseWeeks = done.slice(0, Math.min(4, done.length - 1));
+    const lastW = done[done.length - 1];
+    const base = groupPlacements(baseWeeks);
+    const now = groupPlacements([lastW]);
+    const bt = totalOf(base);
+    const nt = totalOf(now);
+    const baseCpm = cpmOf(bt);
+    const nowCpm = cpmOf(nt);
+    // 기준 주들의 위치 비중에 지난주 위치별 단가를 곱한다 → 비중이 그대로였다면의 CPM
+    let mixAdj = 0;
+    let weight = 0;
+    for (const [n, a] of Object.entries(base)) {
+      const c = cpmOf(now[n]);
+      if (c == null) continue;
+      mixAdj += (a.impressions / bt.impressions) * c;
+      weight += a.impressions / bt.impressions;
+    }
+    mixAdj = weight > 0 ? mixAdj / weight : null;
+    const signed = (v) => `${v >= 0 ? "+" : "−"}$${Math.abs(v).toFixed(2)}`;
+    box.innerHTML = `
+      <div>기준 CPM (${weekMd(baseWeeks[0].start)}~${weekMd(baseWeeks[baseWeeks.length - 1].end)})<b>${fmtUsd(baseCpm)}</b></div>
+      <div class="em">기준 위치 비중이었다면 지난주<b>${mixAdj != null ? fmtUsd(mixAdj) : "—"}</b>${mixAdj != null ? "위치별 단가 변화 몫 " + signed(mixAdj - baseCpm) : ""}</div>
+      <div>실제 지난주 (${weekMd(lastW.start)}~${weekMd(lastW.end)})<b>${fmtUsd(nowCpm)}</b>${mixAdj != null ? "위치 비중 변화 몫 " + signed(nowCpm - mixAdj) : ""}</div>`;
+
+    const names = Object.keys(POS_COLORS);
+    const share = (m, t, n) =>
+      m[n] && t.impressions ? Math.round((100 * m[n].impressions) / t.impressions) + "%" : "0%";
+    body.innerHTML = names
+      .filter((n) => base[n] || now[n])
+      .map((n) => {
+        const nc = cpmOf(now[n]);
+        const bc = cpmOf(base[n]);
+        return `<tr>
+          <td><span class="mads-pos-dot" style="background:${POS_COLORS[n]}"></span>${n}</td>
+          <td class="num">${nc ? fmtUsd(nc) : "—"}</td>
+          <td class="num">${bc ? fmtUsd(bc) : "—"}</td>
+          <td class="num">${nc && bc ? deltaHtml(nc, bc) : "—"}</td>
+          <td class="num">${share(now, nt, n)}</td>
+          <td class="num">${share(base, bt, n)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    if (!window.Chart) return;
+    const labels = weeks.map((w) => weekMd(w.start));
+    const partialIdx = weeks.findIndex((w) => w.partial);
+    const grouped = weeks.map((w) => groupPlacements([w]));
+    const totals = grouped.map(totalOf);
+    leadPosCharts.cpm = new Chart($("leadPosCpmChart").getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: names
+          .filter((n) => n !== "기타")
+          .map((n) => ({
+            label: n,
+            // 노출 3% 미만인 주는 값이 흔들려 그리지 않는다
+            data: grouped.map((g, i) =>
+              g[n] && totals[i].impressions && g[n].impressions / totals[i].impressions >= 0.03
+                ? +cpmOf(g[n]).toFixed(2)
+                : null,
+            ),
+            borderColor: POS_COLORS[n],
+            backgroundColor: POS_COLORS[n],
+            tension: 0,
+            spanGaps: true,
+            pointRadius: 2,
+            segment: {
+              borderDash: (c) => (c.p1DataIndex === partialIdx ? [4, 4] : undefined),
+            },
+          })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "bottom", labels: { boxWidth: 10 } },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label} ${fmtUsd(c.parsed.y)}` } },
+        },
+        scales: { y: { beginAtZero: true, ticks: { callback: (v) => "$" + v } } },
+      },
+    });
+    leadPosCharts.share = new Chart($("leadPosShareChart").getContext("2d"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: names.map((n) => ({
+          label: n,
+          backgroundColor: POS_COLORS[n],
+          data: grouped.map((g, i) =>
+            totals[i].spend ? +((100 * (g[n]?.spend || 0)) / totals[i].spend).toFixed(1) : 0,
+          ),
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "bottom", labels: { boxWidth: 10 } },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label} ${c.parsed.y}%` } },
+        },
+        scales: {
+          x: { stacked: true },
+          y: { stacked: true, max: 100, ticks: { callback: (v) => v + "%" } },
+        },
+      },
+    });
+  }
+
+  function renderLeadReach(data) {
+    const body = $("leadReachBody");
+    const summary = $("leadReachSummary");
+    if (!body) return;
+    destroyCharts(leadReachCharts);
+    const weeks = data?.weeks || [];
+    if (!weeks.some((w) => w.reach)) {
+      body.innerHTML = emptyRow(6);
+      summary.textContent = "";
+      return;
+    }
+    const last = weeks.filter((w) => w.reach && !w.partial).at(-1);
+    summary.textContent = last
+      ? `지난주(${weekMd(last.start)}~${weekMd(last.end)}) 도달 ${fmtInt(last.reach.people)}명 · 빈도 ${last.reach.frequency.toFixed(2)}회 · 1,000명 도달당 ${fmtUsd(last.reach.costPer1000)} · CPM ${fmtUsd(last.cpm)}`
+      : "";
+    body.innerHTML = weeks
+      .slice()
+      .reverse()
+      .map(
+        (w) => `<tr>
+          <td>${weekMd(w.start)}~${weekMd(w.end)}${w.partial ? ` <span class="mads-lead-cpm-partial">진행 중 ${w.days}일</span>` : ""}</td>
+          <td class="num">${w.reach ? fmtInt(w.reach.people) + "명" : "—"}</td>
+          <td class="num">${w.reach ? w.reach.frequency.toFixed(2) + "회" : "—"}</td>
+          <td class="num">${w.reach ? fmtUsd(w.reach.costPer1000) : "—"}</td>
+          <td class="num">${w.cpm > 0 ? fmtUsd(w.cpm) : "—"}</td>
+          <td class="num">${fmtUsd(w.spend)}</td>
+        </tr>`,
+      )
+      .join("");
+
+    if (!window.Chart) return;
+    const labels = weeks.map((w) => weekMd(w.start));
+    const partialIdx = weeks.findIndex((w) => w.partial);
+    leadReachCharts.reach = new Chart($("leadReachChart").getContext("2d"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            data: weeks.map((w) => (w.reach ? w.reach.people : null)),
+            backgroundColor: weeks.map((w) => (w.partial ? "#bfdbfe" : "#1877f2")),
+            borderRadius: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (c) => fmtInt(c.parsed.y) + "명" } },
+        },
+        scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmtInt(v) } } },
+      },
+    });
+    leadReachCharts.freq = new Chart($("leadFreqChart").getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            data: weeks.map((w) => (w.reach ? +w.reach.frequency.toFixed(2) : null)),
+            borderColor: "#7c3aed",
+            backgroundColor: "#7c3aed",
+            tension: 0,
+            spanGaps: true,
+            segment: {
+              borderDash: (c) => (c.p1DataIndex === partialIdx ? [4, 4] : undefined),
+            },
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (c) => c.parsed.y + "회" } },
+        },
+        scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + "회" } } },
+      },
+    });
+  }
+
   // ─── 분해 분석 6종 ─────────────────────────────────
   function renderBarRows(el, rows, opts = {}) {
     if (!rows || !rows.length) {
@@ -955,6 +1308,14 @@
       renderAds(ov?.ads?.ads);
       renderVideoRetention(ov?.ads?.ads);
       renderEfficiency(ov?.efficiency);
+      // 주별 잠재고객 단가 3종 — 하나가 실패해도 아래 구역은 그린다
+      for (const render of [renderLeadCpmWeekly, renderLeadPlacement, renderLeadReach]) {
+        try {
+          render(ov?.leadCpmWeekly);
+        } catch (e) {
+          console.error("lead weekly render failed:", e);
+        }
+      }
       renderBreakdowns({
         platform: bd.platform?.rows,
         position: bd.position?.rows,

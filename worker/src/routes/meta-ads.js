@@ -59,7 +59,9 @@ export async function handleMetaAds(request, env, ctx) {
   const internalSecretOk =
     !!env.META_INTERNAL_SECRET &&
     timingSafeEqual(internalSecret, env.META_INTERNAL_SECRET);
-  const isBackfillRoute = path === "/backfill" && request.method === "POST";
+  const isBackfillRoute =
+    (path === "/backfill" || path === "/backfill-lead-weekly") &&
+    request.method === "POST";
   const isOverviewGet = path === "/overview" && request.method === "GET";
   const internalOk = internalSecretOk && (isBackfillRoute || isOverviewGet);
 
@@ -134,6 +136,10 @@ export async function handleMetaAds(request, env, ctx) {
   // POST /api/meta-ads/backfill — 초기 백필 (2026-02-02 ~ 어제)
   if (path === "/backfill" && request.method === "POST") {
     return runBackfill(request, env, ctx);
+  }
+
+  if (path === "/backfill-lead-weekly" && request.method === "POST") {
+    return runLeadWeeklyBackfill(env, ctx);
   }
 
   return jsonError(404, "Not Found");
@@ -269,6 +275,7 @@ async function computeOverview(request, env, range) {
     dow,
     hourHeatmap,
     syncLog,
+    leadCpmWeekly,
   ] = await Promise.all([
     getSummary(request, env).then(j),
     listCampaigns(request, env).then(j),
@@ -285,6 +292,7 @@ async function computeOverview(request, env, range) {
     listDow(request, env).then(j),
     listHourHeatmap(request, env).then(j),
     listSyncLog(env).then(j),
+    getLeadCpmWeekly(env).catch(() => null),
   ]);
 
   return JSON.stringify({
@@ -298,6 +306,7 @@ async function computeOverview(request, env, range) {
     dow,
     hourHeatmap,
     syncLog,
+    leadCpmWeekly,
     cachedAt: new Date().toISOString(),
   });
 }
@@ -823,23 +832,27 @@ async function getEfficiency(request, env) {
   const prevStart = addDays(prevEnd, -(days - 1));
 
   try {
-    const curr = await aggregateAccount(env, startDate, endDate);
-    const prev = await aggregateAccount(env, prevStart, prevEnd);
+    const curr = await aggregateLeadCampaigns(env, startDate, endDate);
+    const prev = await aggregateLeadCampaigns(env, prevStart, prevEnd);
 
-    // 일별 시계열 (CPM/CPC/CPL)
+    // 일별 시계열 (CPM/CPC/CPL) — 잠재고객 캠페인(랜딩·양식)만. 트래픽 캠페인의 싼 노출이
+    // 섞이면 입찰 단가가 그대로여도 CPM 이 크게 오른 것처럼 보인다(2026-11-17 실측).
     const seriesRes = await env.DB.prepare(
       `SELECT
          Date,
-         Impressions,
-         Clicks,
-         LinkClicks,
-         Spend,
-         Leads
+         SUM(Impressions) AS Impressions,
+         SUM(Clicks) AS Clicks,
+         SUM(LinkClicks) AS LinkClicks,
+         SUM(Spend) AS Spend,
+         SUM(Leads) AS Leads
        FROM MetaAdsDaily
-       WHERE Level = 'account' AND Date BETWEEN ? AND ?
-       ORDER BY Date ASC`,
+       WHERE Level = 'campaign' AND Date BETWEEN ? AND ?
+         AND Objective IN (${LEAD_OBJECTIVES.map(() => "?").join(", ")})
+       GROUP BY Date
+       ORDER BY Date ASC
+       LIMIT 800`,
     )
-      .bind(startDate, endDate)
+      .bind(startDate, endDate, ...LEAD_OBJECTIVES)
       .all();
     const daily = (seriesRes.results || []).map((r) => {
       const imps = Number(r.Impressions || 0);
@@ -874,7 +887,183 @@ async function getEfficiency(request, env) {
   }
 }
 
-async function aggregateAccount(env, startDate, endDate) {
+// ─── 잠재고객 캠페인 주별 노출 단가 (트래픽 제외 · 최근 13주) ──
+// 같은 예산으로 사는 노출이 줄었는지(입찰 단가 변화)를 본다. 기간 필터와 무관하게
+// 어제까지 13주(월~일)를 돌려준다. 접수·리드는 CPL 로 따로 보므로 넣지 않는다.
+const LEAD_OBJECTIVES = ["OUTCOME_LEADS", "LEAD_GENERATION"];
+export async function getLeadCpmWeekly(env, weeks = 13, end = kstYesterday()) {
+  const weekday = (new Date(end + "T00:00:00Z").getUTCDay() + 6) % 7; // 월=0
+  const start = addDays(end, -weekday - 7 * (weeks - 1));
+  const { results = [] } = await env.DB.prepare(
+    `SELECT Date, SUM(Spend) AS Spend, SUM(Impressions) AS Impressions
+       FROM MetaAdsDaily
+      WHERE Level = 'campaign' AND Date BETWEEN ? AND ?
+        AND Objective IN (${LEAD_OBJECTIVES.map(() => "?").join(", ")})
+      GROUP BY Date
+      ORDER BY Date
+      LIMIT 100`,
+  )
+    .bind(start, end, ...LEAD_OBJECTIVES)
+    .all();
+  const rows = Array.from({ length: weeks }, (_, i) => {
+    const ws = addDays(start, 7 * i);
+    const we = addDays(ws, 6);
+    return {
+      start: ws,
+      end: we < end ? we : end,
+      days: Math.min(7, daysBetween(ws, end)),
+      spend: 0,
+      impressions: 0,
+      placements: [],
+      reach: null,
+    };
+  });
+  const weekAt = (date) => {
+    const w = rows[Math.floor((daysBetween(start, date) - 1) / 7)];
+    return w && w.start === date ? w : null;
+  };
+  for (const r of results) {
+    const w = rows[Math.floor((daysBetween(start, r.Date) - 1) / 7)];
+    if (!w) continue;
+    w.spend += Number(r.Spend || 0);
+    w.impressions += Number(r.Impressions || 0);
+  }
+  // 동기화가 주 단위(월요일 날짜)로 저장한 게재 위치·도달. 도달은 하루 값을 더할 수 없다.
+  // 주 시작일로 자리를 찾으므로 정렬하지 않는다(13주 × 위치 약 15곳 ≈ 200행 < LIMIT).
+  const [pos, reach] = await Promise.all([
+    env.DB.prepare(
+      `SELECT Date, DimensionSub AS Platform, DimensionValue AS Position, Spend, Impressions
+         FROM MetaAdsBreakdown
+        WHERE Date BETWEEN ? AND ? AND Dimension = 'lead_position_week'
+        LIMIT 600`,
+    )
+      .bind(start, end)
+      .all(),
+    env.DB.prepare(
+      `SELECT Date, Spend, Impressions, Reach
+         FROM MetaAdsBreakdown
+        WHERE Date BETWEEN ? AND ? AND Dimension = 'lead_week' AND DimensionValue = 'all'
+        LIMIT 30`,
+    )
+      .bind(start, end)
+      .all(),
+  ]);
+  for (const r of pos.results || []) {
+    const w = weekAt(r.Date);
+    if (!w) continue;
+    w.placements.push({
+      key: `${r.Platform}/${r.Position}`,
+      spend: Number(r.Spend || 0),
+      impressions: Number(r.Impressions || 0),
+    });
+  }
+  for (const r of reach.results || []) {
+    const w = weekAt(r.Date);
+    const people = Number(r.Reach || 0);
+    if (!w || people <= 0) continue;
+    w.reach = {
+      people,
+      frequency: Number(r.Impressions || 0) / people,
+      costPer1000: (Number(r.Spend || 0) / people) * 1000,
+    };
+  }
+  return {
+    start,
+    end,
+    weeks: rows.map((w) => ({
+      ...w,
+      partial: w.days < 7,
+      cpm: w.impressions > 0 ? (w.spend / w.impressions) * 1000 : 0,
+      impPer100: w.spend > 0 ? (w.impressions / w.spend) * 100 : 0,
+    })),
+  };
+}
+
+// 잠재고객 캠페인만 주 단위(월~일)로 받는다: 도달·빈도(②)와 게재 위치별 CPM(①).
+// 계정 전체 위치 분해에는 트래픽 캠페인이 섞여 입찰 단가 판독이 흐려진다. Meta 호출 2건.
+const LEAD_FILTER = [
+  { field: "campaign.objective", operator: "IN", value: LEAD_OBJECTIVES },
+];
+function mondayOf(ymd) {
+  const weekday = (new Date(ymd + "T00:00:00Z").getUTCDay() + 6) % 7;
+  return addDays(ymd, -weekday);
+}
+export async function fetchLeadWeekly(token, accountId, startDate, endDate) {
+  const since = mondayOf(startDate);
+  const opts = { timeIncrement: 7, filtering: LEAD_FILTER };
+  const weeks = await fetchBreakdown(token, accountId, since, endDate, "", opts);
+  const positions = await fetchBreakdown(
+    token,
+    accountId,
+    since,
+    endDate,
+    "publisher_platform,platform_position",
+    opts,
+  );
+  return { weeks, positions };
+}
+export function buildLeadWeeklyStmts(env, { weeks = [], positions = [] }, fetchedAt) {
+  const stmts = [];
+  for (const row of weeks) {
+    if (!row.date_start) continue;
+    stmts.push(
+      buildBreakdownStmt(env, {
+        Date: row.date_start,
+        Dimension: "lead_week",
+        DimensionValue: "all",
+        DimensionSub: "",
+        ...mapInsight(row),
+        VideoPlays: null,
+        FetchedAt: fetchedAt,
+      }),
+    );
+  }
+  for (const row of positions) {
+    if (!row.date_start || !row.platform_position) continue;
+    stmts.push(
+      buildBreakdownStmt(env, {
+        Date: row.date_start,
+        Dimension: "lead_position_week",
+        DimensionValue: row.platform_position,
+        DimensionSub: row.publisher_platform || "",
+        ...mapInsight(row),
+        VideoPlays: null,
+        FetchedAt: fetchedAt,
+      }),
+    );
+  }
+  return stmts;
+}
+
+// 지난 13주의 주별 도달·게재 위치만 다시 받는다(Meta 호출 2건, 다른 지표는 건드리지 않는다).
+async function runLeadWeeklyBackfill(env, ctx, weeks = 13) {
+  const token = String(env.META_AD_ACCESS_TOKEN || "").trim();
+  const accountId = String(env.META_AD_ACCOUNT_ID || "").trim();
+  if (!token || !accountId) return jsonError(500, "META_AD_* env not configured");
+  const end = kstYesterday();
+  const start = addDays(mondayOf(end), -7 * (weeks - 1));
+  try {
+    const data = await fetchLeadWeekly(token, accountId, start, end);
+    const stmts = buildLeadWeeklyStmts(env, data, new Date().toISOString());
+    await runBatch(env, stmts, "day1design");
+    ctx?.waitUntil(prewarmOverviewCache(env).catch(() => null));
+    return jsonOk({
+      status: "success",
+      range: { start, end },
+      weeks: data.weeks.length,
+      positions: data.positions.length,
+      recordsUpdated: stmts.length,
+    });
+  } catch (e) {
+    return jsonError(
+      500,
+      "lead weekly backfill failed: " + String(e?.message || "").slice(0, 160),
+    );
+  }
+}
+
+// 효율 카드 합계 — 잠재고객 캠페인만(트래픽 캠페인 제외). 리드도 캠페인별 값을 더한다.
+async function aggregateLeadCampaigns(env, startDate, endDate) {
   const row = await env.DB.prepare(
     `SELECT
        SUM(Impressions) AS Impressions,
@@ -883,9 +1072,10 @@ async function aggregateAccount(env, startDate, endDate) {
        SUM(Spend) AS Spend,
        SUM(Leads) AS Leads
      FROM MetaAdsDaily
-     WHERE Level = 'account' AND Date BETWEEN ? AND ?`,
+     WHERE Level = 'campaign' AND Date BETWEEN ? AND ?
+       AND Objective IN (${LEAD_OBJECTIVES.map(() => "?").join(", ")})`,
   )
-    .bind(startDate, endDate)
+    .bind(startDate, endDate, ...LEAD_OBJECTIVES)
     .first();
   const imps = Number(row?.Impressions || 0);
   const clicks = Number(row?.Clicks || 0);
@@ -1215,13 +1405,27 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
     );
     log.ApiCallsUsed++;
 
+    // 11-12) 잠재고객 캠페인 주별 도달·게재 위치 — 실패해도 나머지 지표는 저장하고 이력에 남긴다
+    let leadWeekly = { weeks: [], positions: [] };
+    let leadWeeklyStatus = "ok";
+    try {
+      leadWeekly = await fetchLeadWeekly(token, accountId, startDate, endDate);
+    } catch (e) {
+      leadWeeklyStatus = "failed: " + String(e?.message || "unknown").slice(0, 120);
+    }
+    log.ApiCallsUsed += 2;
+
     // UPSERT — D1 batch로 묶어 subrequest 절약 (수백 statement → 몇 subrequest)
     const fetchedAt = new Date().toISOString();
     const stmts = [];
     const platformVideo = reconcileVideoBreakdown(accountRows, brkPlatform, "platform");
     const ageGenderVideo = reconcileVideoBreakdown(accountRows, brkAgeGender, "age_gender");
     const videoReconciliation = { platform: platformVideo.evidence, age_gender: ageGenderVideo.evidence };
-    log.ErrorMessage = JSON.stringify({ videoReconciliation }).slice(0, 400);
+    log.ErrorMessage = JSON.stringify(
+      leadWeeklyStatus === "ok"
+        ? { videoReconciliation }
+        : { leadWeekly: leadWeeklyStatus, videoReconciliation },
+    ).slice(0, 400);
 
     for (const row of completeAccountInsightDays(accountRows, startDate, endDate)) {
       stmts.push(
@@ -1311,6 +1515,8 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       ],
     ];
 
+    stmts.push(...buildLeadWeeklyStmts(env, leadWeekly, fetchedAt));
+
     const snapshots = [];
     for (const [dim, rows, keyFn] of breakdowns) {
       if (dim === "platform") {
@@ -1367,6 +1573,7 @@ async function syncRange(env, ctx, startDate, endDate, syncType) {
       apiCalls: log.ApiCallsUsed,
       recordsUpdated: updated,
       videoReconciliation,
+      leadWeekly: leadWeeklyStatus,
       media,
       cleanup,
     });
@@ -2230,6 +2437,7 @@ export async function fetchBreakdown(
   startDate,
   endDate,
   breakdowns,
+  { timeIncrement = 1, filtering = null } = {},
 ) {
   // 페이지네이션 지원 — Meta API limit=500/페이지, paging.next로 추가 호출
   // 차원값이 많은 분해(age_gender / region / hour)는 일자 × 차원값 조합 수천 row 발생
@@ -2237,10 +2445,12 @@ export async function fetchBreakdown(
     fields: "impressions,clicks,spend,ctr,cpc,reach,actions,inline_link_clicks,video_play_actions",
     breakdowns,
     time_range: JSON.stringify({ since: startDate, until: endDate }),
-    time_increment: "1",
+    time_increment: String(timeIncrement),
     limit: "500",
     access_token: token,
   });
+  if (!breakdowns) params.delete("breakdowns");
+  if (filtering) params.set("filtering", JSON.stringify(filtering));
   let url = `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/insights?${params}`;
   const all = [];
   const MAX_PAGES = 10; // 안전망 (subrequest 한도 보호)
@@ -2385,9 +2595,11 @@ function sumActionValue(arr, types) {
 
 export function mapInsight(row) {
   const actions = Array.isArray(row.actions) ? row.actions : [];
+  // "lead" 는 양식 리드(lead_grouped)와 랜딩 픽셀 리드(fb_pixel_lead)를 합친 Meta 리드 합계다.
+  // 양식 리드 이름(offsite_complete_registration_add_meta_leads)을 먼저 집으면 랜딩 리드가 빠진다(2026-11-17 실측).
   const leads = preferredActionValue(actions, [
-    "offsite_complete_registration_add_meta_leads",
     "lead",
+    "offsite_complete_registration_add_meta_leads",
   ]);
   return {
     Impressions: Number(row.impressions || 0),

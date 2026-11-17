@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="https://day1design.co.kr/css/fonts.css" />
     <link rel="stylesheet" href="https://day1design.co.kr/css/reset.css" />
     <link rel="stylesheet" href="admin.css?v=20260903-branch" />
-    <link rel="stylesheet" href="meta-ads.css?v=20260903-watchsec" />
+    <link rel="stylesheet" href="meta-ads.css?v=20261117-leadweekly" />
     <script>
       window.ADMIN_PAGE = { title: "Meta 광고", nav: "meta-ads" };
     </script>
@@ -280,7 +280,8 @@
           <div class="mads-section-head">
             <div class="mads-section-title">📈 효율 변화 추이</div>
             <div class="mads-section-sub">
-              단가 변동(시장 입찰가) vs 광고 효율(우리 CTR) 분리 분석
+              잠재고객 캠페인 기준(트래픽 제외) · 단가 변동(시장 입찰가) vs 광고
+              효율(우리 CTR) 분리 분석
             </div>
           </div>
           <div class="panel">
@@ -340,6 +341,124 @@
             </div>
             <div class="chart-wrap">
               <canvas id="effChart" height="220"></canvas>
+            </div>
+          </div>
+          <div class="panel mads-lead-cpm">
+            <div class="panel-head">
+              <h3>잠재고객 캠페인 주별 노출 단가</h3>
+              <span class="panel-sub"
+                >최근 13주 · 랜딩·양식 합산 · 트래픽 제외 · 기간 필터와
+                무관</span
+              >
+            </div>
+            <p class="mads-lead-cpm-summary" id="leadCpmSummary"></p>
+            <div class="chart-wrap">
+              <canvas id="leadCpmChart" height="220"></canvas>
+            </div>
+            <div class="table-wrap">
+              <table class="top-table">
+                <thead>
+                  <tr>
+                    <th>주 (월~일)</th>
+                    <th style="text-align: right">CPM</th>
+                    <th style="text-align: right">$100당 노출</th>
+                    <th style="text-align: right">전주 대비</th>
+                    <th style="text-align: right">지출</th>
+                    <th style="text-align: right">노출</th>
+                  </tr>
+                </thead>
+                <tbody id="leadCpmBody">
+                  <tr>
+                    <td colspan="6" class="empty-state">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel mads-lead-cpm">
+            <div class="panel-head">
+              <h3>게재 위치별 주별 CPM</h3>
+              <span class="panel-sub"
+                >잠재고객 캠페인 · 최근 13주 · 노출 3% 미만인 주는 그래프에서
+                생략</span
+              >
+            </div>
+            <div class="mads-mix" id="leadPosDecomp"></div>
+            <div class="mads-lead-grid">
+              <div>
+                <p class="mads-lead-ctitle">위치별 CPM</p>
+                <div class="chart-wrap">
+                  <canvas id="leadPosCpmChart"></canvas>
+                </div>
+              </div>
+              <div>
+                <p class="mads-lead-ctitle">위치별 지출 비중</p>
+                <div class="chart-wrap">
+                  <canvas id="leadPosShareChart"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="top-table">
+                <thead>
+                  <tr>
+                    <th>위치</th>
+                    <th style="text-align: right">지난주 CPM</th>
+                    <th style="text-align: right">기준 CPM</th>
+                    <th style="text-align: right">단가 변화</th>
+                    <th style="text-align: right">지난주 노출 비중</th>
+                    <th style="text-align: right">기준 노출 비중</th>
+                  </tr>
+                </thead>
+                <tbody id="leadPosBody">
+                  <tr>
+                    <td colspan="6" class="empty-state">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel mads-lead-cpm">
+            <div class="panel-head">
+              <h3>주별 도달·빈도</h3>
+              <span class="panel-sub"
+                >잠재고객 캠페인 · 최근 13주 · 1,000명 도달당 = 지출 ÷ 도달 ×
+                1,000</span
+              >
+            </div>
+            <p class="mads-lead-cpm-summary" id="leadReachSummary"></p>
+            <div class="mads-lead-grid">
+              <div>
+                <p class="mads-lead-ctitle">도달 (명)</p>
+                <div class="chart-wrap">
+                  <canvas id="leadReachChart"></canvas>
+                </div>
+              </div>
+              <div>
+                <p class="mads-lead-ctitle">빈도 (1인당 노출 횟수)</p>
+                <div class="chart-wrap">
+                  <canvas id="leadFreqChart"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="top-table">
+                <thead>
+                  <tr>
+                    <th>주 (월~일)</th>
+                    <th style="text-align: right">도달</th>
+                    <th style="text-align: right">빈도</th>
+                    <th style="text-align: right">1,000명 도달당</th>
+                    <th style="text-align: right">CPM</th>
+                    <th style="text-align: right">지출</th>
+                  </tr>
+                </thead>
+                <tbody id="leadReachBody">
+                  <tr>
+                    <td colspan="6" class="empty-state">—</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </section>
@@ -528,6 +647,6 @@
     ></script>
     <script defer src="config.js?v=20260520-heatmap"></script>
     <script defer src="admin.js?v=20260911-emblem"></script>
-    <script defer src="meta-ads.js?v=20260903-chunkfill"></script>
+    <script defer src="meta-ads.js?v=20261117-leadweekly"></script>
   </body>
 </html>

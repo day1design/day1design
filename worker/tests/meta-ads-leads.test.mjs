@@ -23,7 +23,23 @@ test("Meta lead aliases are counted once", () => {
   assert.equal(mapped.Spend / mapped.Leads, 30);
 });
 
-test("Meta lead uses generic alias only as fallback", () => {
+test("Meta lead total wins over the form-only alias", () => {
+  // 2026-11-13 계정 행 원문: 양식 1건 + 랜딩 픽셀 4건 = lead 5건. 양식 이름만 집으면 1건이 된다.
+  const mapped = mapInsight({
+    actions: [
+      { action_type: "offsite_complete_registration_add_meta_leads", value: "1" },
+      { action_type: "offsite_search_add_meta_leads", value: "1" },
+      { action_type: "onsite_web_lead", value: "4" },
+      { action_type: "lead", value: "5" },
+      { action_type: "offsite_content_view_add_meta_leads", value: "2" },
+      { action_type: "onsite_conversion.lead_grouped", value: "1" },
+      { action_type: "offsite_conversion.fb_pixel_lead", value: "4" },
+    ],
+  });
+  assert.equal(mapped.Leads, 5);
+});
+
+test("Meta lead falls back to the form alias only without a lead total", () => {
   assert.equal(
     mapInsight({ actions: [{ action_type: "lead", value: "4" }] }).Leads,
     4,
