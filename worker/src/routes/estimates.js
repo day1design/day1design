@@ -1078,6 +1078,10 @@ async function submitEstimate(request, env, ctx, services) {
   // 나머지 항목은 이어지는 견적 폼에서 채워 같은 LeadKey 로 승격된다.
   // 기존 견적 폼의 검증은 그대로 두고, 이 경로에서만 필수 범위를 좁힌다.
   const isExitGuard = fields.form_type === "exit_guard";
+  // 지역 랜딩(/lp/*) 신청서에는 아파트 단지명 칸이 없다(2026-11-17 사용자 승인 랜딩 v3).
+  // 랜딩이 보내는 form_type(lp_all·lp_gangnam·lp_pangyo)일 때만 주소를 필수에서 뺀다. 견적문의 폼은 그대로 필수.
+  // (아래 알림용 isLanding 은 utm_campaign 기준이라 꼬리표 없이 들어온 랜딩 방문을 못 가린다. 검증에는 쓰지 않는다)
+  const isLandingForm = /^lp_[a-z]+$/.test(String(fields.form_type || ""));
   const leadKey = sanitizeText(fields.lead_key || "", 40);
 
   // 기본 검증 — 간소화 폼 필수: 이름·연락처·평형대·현장주소·희망일정·지점·가용예산 + 개인정보 동의
@@ -1091,7 +1095,7 @@ async function submitEstimate(request, env, ctx, services) {
   if (fields.privacy_agreed !== "true") errors.push("privacy_agreed");
   if (!isExitGuard) {
     if (!fields.space_size) errors.push("space_size");
-    if (!fields.address) errors.push("address");
+    if (!fields.address && !isLandingForm) errors.push("address");
     if (!fields.schedule) errors.push("schedule");
     if (!fields.branch) errors.push("branch");
     if (!fields.budget) errors.push("budget");
