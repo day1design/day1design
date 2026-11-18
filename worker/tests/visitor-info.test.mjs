@@ -349,7 +349,7 @@ function fakeDb(pageViews) {
   };
 }
 
-async function submit({ fields, ua, pageViews }) {
+async function submit({ fields, ua, pageViews, env: extraEnv = {}, graph = null }) {
   const telegram = [];
   const mails = [];
   const created = [];
@@ -358,6 +358,8 @@ async function submit({ fields, ua, pageViews }) {
     const href = String(url);
     if (href.includes("api.telegram.org")) {
       telegram.push(JSON.parse(init.body).text);
+    } else if (graph && href.includes("graph.facebook.com")) {
+      return Response.json(graph);
     } else if (href === "https://oauth2.googleapis.com/token") {
       return Response.json({ access_token: "t" });
     } else if (href.includes("gmail.googleapis.com")) {
@@ -387,6 +389,7 @@ async function submit({ fields, ua, pageViews }) {
       GMAIL_REFRESH_TOKEN: "r",
       GMAIL_USER: "sender@example.com",
       GMAIL_NOTIFY_TO: "internal@example.com",
+      ...extraEnv,
     },
     { waitUntil: (t) => tasks.push(t) },
     {
@@ -461,7 +464,7 @@ test("랜딩 접수: Meta 리드 알림 모양 + 방문횟수·IP·기기, D1 �
   assert.ok(lead.includes("└ 가용예산: 1억~1억5천"));
   assert.ok(lead.includes("├ 플랫폼: Instagram"));
   assert.ok(lead.includes("├ 캠페인: 판교·수지·광교·동탄 랜딩 (lp-bd)"));
-  assert.ok(lead.includes("└ 소재: P-3"));
+  assert.ok(lead.includes("└ 광고명: P-3"));
   assert.ok(lead.includes("🧭 <b>방문정보</b>\n├ 방문횟수: 2회 (재방문 · 첫 방문"));
   assert.ok(lead.includes("├ IP: 203.0.113.77"));
   assert.ok(lead.includes("└ 기기: iPhone 14 Pro · iOS 26.6 · 인스타그램 앱"));
@@ -669,6 +672,74 @@ test("랜딩 접수 알림: 앱 밖 브라우저로 열어도 utm_term(site_sour
   assert.equal(res.status, 200);
   const lead = telegram.find((t) => t.includes("신규 상담 신청"));
   assert.ok(lead.includes("├ 플랫폼: Facebook"), lead);
-  assert.ok(lead.includes("└ 소재: S-2"));
+  assert.ok(lead.includes("└ 광고명: S-2"));
   assert.equal(created[0].MetaAd, "fb");
+});
+
+// 2026-11-18 사용자 지시: 텔레그램 출처에 utm 축약어 대신 실제 캠페인·광고 이름
+const LP_ALL_FIELDS = {
+  ...BASE_FIELDS,
+  utm_source: "meta",
+  utm_medium: "paid",
+  utm_campaign: "lp-all",
+  _fb_source: "meta",
+  _fb_campaign: "lp-all",
+  _fb_adset: "p1",
+  _fb_ad: "ig",
+  _fb_adid: "52584375569269",
+};
+
+test("랜딩 접수 알림: 캠페인·광고명은 Meta 의 실제 이름으로 적는다", async () => {
+  const { res, telegram, mails } = await submit({
+    fields: LP_ALL_FIELDS,
+    ua: IG_IOS_UA,
+    pageViews: [],
+    env: { META_AD_ACCESS_TOKEN: "tok" },
+    graph: {
+      name: "261107_랜딩전환(통합·유사10%)",
+      ads: {
+        data: [
+          { name: "261107_C_P1_내 삶의 가장 큰 결심" },
+          { name: "261107_C_P3_같은 견적이라도 데이원은 다릅니다" },
+          { name: "261107_C_S2_시간의 흐름에도 변치 않는 설렘" },
+        ],
+      },
+    },
+  });
+  assert.equal(res.status, 200);
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
+  assert.ok(lead.includes("├ 캠페인: 261107_랜딩전환(통합·유사10%)"), lead);
+  assert.ok(lead.includes("└ 광고명: 261107_C_P1_내 삶의 가장 큰 결심"), lead);
+  const internal = mails.find((m) => m.includes("To: internal@example.com")) || "";
+  assert.ok(internal.length > 0, "내부 알림 메일이 없다");
+});
+
+test("랜딩 접수 알림: 이름 조회가 실패하면 랜딩 표기와 소재 코드로 보낸다", async () => {
+  const { res, telegram } = await submit({
+    fields: LP_ALL_FIELDS,
+    ua: IG_IOS_UA,
+    pageViews: [],
+    env: { META_AD_ACCESS_TOKEN: "tok" },
+    graph: { error: { message: "Invalid OAuth access token" } },
+  });
+  assert.equal(res.status, 200);
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
+  assert.ok(lead.includes("├ 캠페인: 통합 랜딩 (lp-all)"), lead);
+  assert.ok(lead.includes("└ 광고명: P-1"), lead);
+});
+
+test("랜딩 접수 알림: 같은 소재 코드가 여러 광고에 있으면 광고명을 고르지 않는다", async () => {
+  const { telegram } = await submit({
+    fields: LP_ALL_FIELDS,
+    ua: IG_IOS_UA,
+    pageViews: [],
+    env: { META_AD_ACCESS_TOKEN: "tok" },
+    graph: {
+      name: "261119_랜딩전환(신규)",
+      ads: { data: [{ name: "261119_P1_가" }, { name: "261119_P1_나" }] },
+    },
+  });
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
+  assert.ok(lead.includes("├ 캠페인: 261119_랜딩전환(신규)"), lead);
+  assert.ok(lead.includes("└ 광고명: P-1"), lead);
 });

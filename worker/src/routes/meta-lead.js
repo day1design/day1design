@@ -319,6 +319,7 @@ function buildMetaLeadMessage({
   budget,
   platform,
   campaign,
+  campaignName = "",
   extras = [],
 }) {
   const platformLabel = platform === "instagram" ? "Instagram" : "Facebook";
@@ -359,9 +360,11 @@ function buildMetaLeadMessage({
     .map((line) => escapeHtml(String(line).slice(0, 200)));
   pushBlock(out, `📋 <b>폼 응답</b>`, extraRows);
 
-  // 광고정보 — 플랫폼은 항상, 캠페인은 있을 때만
+  // 광고정보 — 플랫폼은 항상, 캠페인·광고명은 있을 때만. campaign 인자는 옛 Make 시절부터
+  // 광고명이 들어오는 칸이라 '광고명'으로 적고, 진짜 캠페인명은 campaignName 이다(2026-11-18).
   const ads = [`플랫폼: ${escapeHtml(platformLabel)}`];
-  if (campaign) ads.push(`캠페인: ${escapeHtml(campaign)}`);
+  if (campaignName) ads.push(`캠페인: ${escapeHtml(campaignName)}`);
+  if (campaign && campaign !== campaignName) ads.push(`광고명: ${escapeHtml(campaign)}`);
   pushBlock(out, `📢 <b>광고정보</b>`, ads);
 
   return out.join("\n");
@@ -602,6 +605,7 @@ export async function handleMetaLead(
             budget,
             platform,
             campaign,
+            campaignName: lead.campaignName,
             extras: lead.extras,
           }),
         );

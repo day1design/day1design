@@ -348,6 +348,7 @@ export function metaPlatformFromUa(ua, inflowApp = "", siteSource = "") {
 
 // 지역 랜딩(site/lp/*.html)은 utm_campaign 을 lp-<지역> 으로 싣는다.
 export const LANDING_LABELS = {
+  "lp-all": "통합",
   "lp-bd": "판교·수지·광교·동탄",
   "lp-gn": "서울",
 };

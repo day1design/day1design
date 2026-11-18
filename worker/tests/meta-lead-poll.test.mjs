@@ -635,6 +635,9 @@ test("[guard] 새 질문은 D1 원문(MetaFieldData)과 텔레그램 알림에 �
   const leadMsg = sent.find((t) => t.includes("신규 상담 신청")) || "";
   assert.match(leadMsg, /폼 응답/);
   assert.match(leadMsg, /반려동물을 키우시나요: 고양이 2마리/);
+  // 광고정보: 캠페인은 진짜 캠페인명, 광고명은 따로(2026-11-18 사용자 지시)
+  assert.ok(leadMsg.includes("├ 캠페인: 260710_잠재고객(전환/브랜딩)"), leadMsg);
+  assert.ok(leadMsg.includes("└ 광고명: 브랜딩용"), leadMsg);
 });
 
 test("[guard] 폼 질문 변경 감지 — 최초는 조용, 변경 시에만 알린다", async () => {

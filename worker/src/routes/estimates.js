@@ -55,6 +55,7 @@ import {
   recordRejectToD1,
 } from "../lib/estimate-archive.js";
 import { ensureNewCustomerNotification } from "../lib/crm-automation.js";
+import { lookupLandingAdNames } from "../lib/meta-ad-names.js";
 import { createContract, listContracts, validateMeetingBuffer } from "../lib/admin-meetings.js";
 import { adminMeetingOutboxAvailable, cancelStaleMeetingNotifications, enqueueMeetingNotifications } from "../lib/admin-meeting-notifications.js";
 
@@ -855,6 +856,7 @@ function buildLeadAlertMessage({
   hasDetail,
   conceptCount = 0,
   planCount = 0,
+  adNames = null,
 }) {
   const pushBlock = (lines, header, rows) => {
     if (!rows.length) return;
@@ -890,13 +892,14 @@ function buildLeadAlertMessage({
   pushBlock(out, `🏘 <b>공간/일정</b>`, space);
 
   if (landing) {
+    // 캠페인·광고명은 Meta 에서 찾은 실제 이름(adNames)을 쓰고, 못 찾으면 랜딩 표기와
+    // 소재 코드(utm_content p1 → P-1)로 대신한다(2026-11-18 사용자 지시).
     const ads = [
       `플랫폼: ${escapeHtml(platform || "Meta")}`,
-      `캠페인: ${escapeHtml(landingCampaignLabel(fields.utm_campaign))}`,
+      `캠페인: ${escapeHtml(adNames?.campaign || landingCampaignLabel(fields.utm_campaign))}`,
     ];
-    // 소재 코드(utm_content s1~s3·p1~p3)는 광고 이름 표기(S-1·P-3)로 보여 준다.
-    const ad = formatCreativeCode(fields._fb_adset || fields.utm_content);
-    if (ad) ads.push(`소재: ${escapeHtml(ad)}`);
+    const ad = adNames?.ad || formatCreativeCode(fields._fb_adset || fields.utm_content);
+    if (ad) ads.push(`광고명: ${escapeHtml(ad)}`);
     pushBlock(out, `📢 <b>광고정보</b>`, ads);
   } else {
     // 견적 폼은 광고 외 유입(네이버·구글·직접 방문)이 많아 예전 알림의 출처 줄을 그대로 옮긴다.
@@ -1378,7 +1381,16 @@ async function submitEstimate(request, env, ctx, services) {
   // 횟수·IP·기기)로 끝난다. 문의 내용은 길어서 싣지 않고 "상세내용: 접수카드 확인"만 남긴다.
   const isLanding = isLandingSubmission(fields);
   const visitLine = formatVisitLine(visitStats);
-  const notificationText = buildLeadAlertMessage({
+  // 랜딩 알림의 실제 캠페인·광고 이름은 알림 단계에서만 찾는다(고객 응답은 기다리지 않음).
+  // 랜딩 주소의 utm_id(캠페인 ID)가 _fb_adid 로 온다.
+  const adNamesTask = isLanding
+    ? lookupLandingAdNames(env, {
+        campaignId: fields._fb_campaign_id || fields._fb_adid,
+        code: fields._fb_adset || fields.utm_content,
+      }).catch(() => null)
+    : Promise.resolve(null);
+  const notificationTask = adNamesTask.then((adNames) => buildLeadAlertMessage({
+    adNames,
     landing: isLanding,
     fields,
     attribution,
@@ -1393,22 +1405,23 @@ async function submitEstimate(request, env, ctx, services) {
     hasDetail: hasDetailText,
     conceptCount: conceptUrls.length,
     planCount: planUrls.length,
-  });
+  }));
 
   // 알림 발송 실패가 접수 저장 성공을 막지 않도록 waitUntil으로 분리.
   // 작동로그(IntakeEvents)용 단계별 결과 수집 — 여기 도달 = D1 저장 확정.
   const steps = { d1: "ok" };
   const notifyTasks = [
-    notifyTelegram(env, notificationText)
+    notificationTask
+      .then((text) => notifyTelegram(env, text))
       .then(() => {
         steps.telegram = "ok";
       })
       .catch(() => {
         steps.telegram = "fail";
       }),
-    notifyEmail(env, {
+    notificationTask.then((text) => notifyEmail(env, {
       subject: isLanding ? "[DAYONE] 새 상담신청 (Meta)" : "[DAYONE] 새 상담신청",
-      text: telegramHtmlToText(notificationText),
+      text: telegramHtmlToText(text),
       html: internalEstimateEmailHtml(env, {
         fields,
         attribution,
@@ -1417,7 +1430,7 @@ async function submitEstimate(request, env, ctx, services) {
         submittedAt,
         visitor: { visits: visitLine, ip, device: deviceInfo },
       }),
-    })
+    }))
       .then(() => {
         steps.email = "ok";
       })
