@@ -143,3 +143,35 @@ test("[가드] 실측 출처 목록에 기타가 없다", () => {
     .map(([src]) => src);
   assert.deepEqual(fellThrough, []);
 });
+
+// 바이럴 채널 링크(매거진 랜딩 /lp/mag, utm_campaign gn-mag)는 utm_source 를 정확히
+// viral-blog·viral-insta·viral-thread 로 싣는다(2026-11-21). 인스타·스레드·네이버 블로그
+// 안에서 눌러도 바이럴로 세야 해서 Meta·네이버 판정보다 먼저 본다.
+test("[가드] 바이럴 utm_source 3종은 정확히 일치하면 바이럴 채널로 센다", () => {
+  const g = (source, medium, channelGroup) =>
+    classifyTrafficSource({ source, medium, channelGroup }).key;
+  assert.equal(ch("viral-blog"), "viral_blog");
+  assert.equal(ch("viral-insta"), "viral_insta");
+  assert.equal(ch("viral-thread"), "viral_threads");
+  assert.equal(ch(" Viral-Insta "), "viral_insta", "대소문자·앞뒤 공백은 봐준다");
+  // 인스타·스레드·네이버 블로그 단서가 매체·채널 그룹에 같이 실려도 바이럴이 이긴다
+  assert.equal(g("viral-insta", "instagram.com", "Organic Social"), "viral_insta");
+  assert.equal(g("viral-insta", "paid", "Paid Social"), "viral_insta");
+  assert.equal(g("viral-thread", "www.threads.com", "Organic Social"), "viral_threads");
+  assert.equal(g("viral-blog", "m.blog.naver.com", "Referral"), "viral_blog");
+  assert.equal(
+    classifyTrafficSource({ source: "viral-blog", medium: "", channelGroup: "" }).name,
+    "바이럴 블로그",
+  );
+});
+
+test("[가드] 바이럴 utm_source 가 없거나 다르면 예전 판정 그대로다", () => {
+  assert.equal(ch("instagram.com"), "instagram");
+  assert.equal(ch("l.instagram.com"), "instagram");
+  assert.equal(ch("www.threads.com"), "threads");
+  assert.equal(ch("m.blog.naver.com"), "naver");
+  // 비슷해도 정확히 같지 않으면 바이럴이 아니다
+  assert.equal(ch("viral-instagram"), "instagram");
+  assert.equal(ch("viral-threads"), "threads");
+  assert.equal(ch("viral-blog-naver"), "naver");
+});

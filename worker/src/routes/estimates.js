@@ -96,6 +96,9 @@ const SOURCE_LABELS = {
   homepage: "Homepage",
   instagram_official: "IG오피셜",
   instagram_mkt: "IG마케팅",
+  viral_blog: "바이럴 블로그",
+  viral_insta: "바이럴 인스타",
+  viral_threads: "바이럴 스레드",
   meta: "Meta",
   google: "Google",
   naver: "Naver",
@@ -105,6 +108,27 @@ const SOURCE_LABELS = {
   other: "Other",
 };
 
+// 바이럴 채널 링크(매거진 랜딩 /lp/mag, utm_campaign gn-mag)는 utm_source 를 정확히 이 값으로
+// 싣는다(2026-11-21 사용자 지시). 인스타·스레드·네이버 블로그 안에서 눌러 리퍼러가
+// instagram.com·threads.com·m.blog.naver.com 이어도 바이럴로 세야 해서, 아래 meta·naver
+// 판정보다 먼저 보고 정확히 일치할 때만 잡는다. 관리자 estimates.js(visitEntryLabel)와
+// analytics.js(classifyTrafficSource)에 같은 표가 있다.
+const VIRAL_UTM_SOURCES = new Map([
+  ["viral-blog", "viral_blog"],
+  ["viral-insta", "viral_insta"],
+  ["viral-thread", "viral_threads"],
+]);
+
+function viralSourceKey(utmSource) {
+  return (
+    VIRAL_UTM_SOURCES.get(
+      String(utmSource || "")
+        .trim()
+        .toLowerCase(),
+    ) || ""
+  );
+}
+
 function sanitizeText(value, max = 120) {
   return String(value || "")
     .trim()
@@ -113,6 +137,14 @@ function sanitizeText(value, max = 120) {
 }
 
 function normalizeEstimateAttribution(fields) {
+  const viral = viralSourceKey(fields.utm_source);
+  if (viral) {
+    return {
+      source: viral,
+      platform: SOURCE_LABELS[viral],
+      campaign: sanitizeText(fields.campaign || fields.utm_campaign || "", 160),
+    };
+  }
   const raw = [
     fields.source,
     fields.platform,
@@ -860,6 +892,7 @@ const PAGE_LABELS = {
   "/lp/all": "통합 랜딩",
   "/lp/gangnam": "서울 랜딩",
   "/lp/bundang": "판교 랜딩",
+  "/lp/mag": "매거진 랜딩",
 };
 const JOURNEY_MAX_VISITS = 6;
 const JOURNEY_MAX_PAGES = 8;

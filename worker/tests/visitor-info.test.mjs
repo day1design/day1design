@@ -824,3 +824,89 @@ test("방문 경로: 페이지가 많으면 앞 3개·뒤 3개만, 회차가 많
   assert.equal(rows[1], "├ … 3회 생략");
   assert.match(rows[5], /^└ 8회차\(이번\) .* · 직접 방문 · 홈 → 회사소개 → 포트폴리오 → …3쪽 → 포트폴리오 → 진행절차 → 견적문의$/);
 });
+
+// ─── 바이럴 채널(매거진 랜딩) ─────────────────────────
+// 2026-11-21: 바이럴 링크는 utm_source 를 정확히 viral-blog·viral-insta·viral-thread 로 싣고
+// /lp/mag(utm_campaign gn-mag)로 들어온다. 인스타·스레드·네이버 블로그 안에서 눌러 리퍼러가
+// 그쪽이어도 접수 Source·FirstSource 는 바이럴 키여야 한다.
+
+test("바이럴 utm_source 3종은 리퍼러가 인스타·스레드·네이버 블로그여도 접수 출처가 바이럴이다", async () => {
+  const cases = [
+    ["viral-blog", "m.blog.naver.com", "viral_blog", "바이럴 블로그"],
+    ["viral-insta", "instagram.com", "viral_insta", "바이럴 인스타"],
+    ["viral-thread", "www.threads.com", "viral_threads", "바이럴 스레드"],
+  ];
+  for (const [utmSource, referrer, key, label] of cases) {
+    const { res, created } = await submit({
+      fields: { ...BASE_FIELDS, utm_source: utmSource, utm_medium: "viral", utm_campaign: "gn-mag" },
+      ua: IG_IOS_UA,
+      pageViews: [
+        {
+          CreatedAt: new Date(Date.now() - 60_000).toISOString(),
+          EventType: "page_view",
+          Page: "/lp/mag",
+          Referrer: referrer,
+          UtmSource: utmSource,
+          UtmMedium: "viral",
+          UtmCampaign: "gn-mag",
+        },
+      ],
+    });
+    assert.equal(res.status, 200);
+    assert.equal(created[0].Source, key, `${utmSource} 끝 출처`);
+    assert.equal(created[0].Platform, label);
+    assert.equal(created[0].FirstSource, key, `${utmSource} 첫 출처`);
+    assert.equal(created[0].FirstPlatform, label);
+  }
+});
+
+test("utm_source 가 없거나 바이럴 값과 다르면 인스타·스레드·네이버 블로그는 예전대로 Meta·Naver 다", async () => {
+  const cases = [
+    ["m.blog.naver.com", "naver"],
+    ["instagram.com", "meta"],
+    ["www.threads.com", "meta"],
+  ];
+  for (const [referrer, key] of cases) {
+    const { created } = await submit({
+      fields: { ...BASE_FIELDS },
+      ua: SAFARI_IOS_UA,
+      pageViews: [
+        { CreatedAt: new Date(Date.now() - 60_000).toISOString(), EventType: "page_view", Page: "/lp/mag", Referrer: referrer },
+      ],
+    });
+    assert.equal(created[0].Source, "homepage", referrer);
+    assert.equal(created[0].FirstSource, key, referrer);
+  }
+  // 정확히 같지 않으면 바이럴이 아니다
+  const { created } = await submit({
+    fields: { ...BASE_FIELDS, utm_source: "viral-instagram", utm_campaign: "gn-mag" },
+    ua: SAFARI_IOS_UA,
+    pageViews: [],
+  });
+  assert.equal(created[0].Source, "meta");
+});
+
+test("방문 경로: 바이럴 링크로 온 회차는 '바이럴 ○○ (gn-mag) · 매거진 랜딩'으로 적는다", async () => {
+  const now = Date.now();
+  const iso = (ms) => new Date(now - ms).toISOString();
+  const day = 24 * 60 * 60_000;
+  const viral = (utmSource, referrer) => ({ Page: "/lp/mag", Referrer: referrer, UtmSource: utmSource, UtmMedium: "viral", UtmCampaign: "gn-mag" });
+  const { telegram } = await submit({
+    fields: { ...BASE_FIELDS },
+    ua: SAFARI_IOS_UA,
+    pageViews: [
+      { CreatedAt: iso(60_000), EventType: "page_view", Page: "/pages/estimates" },
+      { CreatedAt: iso(2 * 60_000), EventType: "page_view", Page: "/" },
+      { CreatedAt: iso(2 * day), EventType: "page_view", ...viral("viral-thread", "www.threads.com") },
+      { CreatedAt: iso(5 * day), EventType: "page_view", ...viral("viral-blog", "m.blog.naver.com") },
+    ],
+  });
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
+  const block = lead.split("🛤 <b>방문 경로</b>\n")[1];
+  assert.ok(block, "방문 경로 블록이 없다");
+  const rows = block.split("\n");
+  assert.equal(rows.length, 3);
+  assert.match(rows[0], /^├ 1회차 \d+\/\d+ \d{2}:\d{2} · 바이럴 블로그 \(gn-mag\) · 매거진 랜딩$/);
+  assert.match(rows[1], /^├ 2회차 \d+\/\d+ \d{2}:\d{2} · 바이럴 스레드 \(gn-mag\) · 매거진 랜딩$/);
+  assert.match(rows[2], /^└ 3회차\(이번\) \d+\/\d+ \d{2}:\d{2} · 직접 방문 · 홈 → 견적문의$/);
+});
