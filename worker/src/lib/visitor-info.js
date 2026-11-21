@@ -40,6 +40,46 @@ export function countVisits(createdAtList, nowMs = Date.now()) {
   };
 }
 
+// 방문 경로 — 30일 page_view 를 방문 단위(30분 공백)로 묶는다. 방문마다 시작 시각, 진입 단서
+// (출처가 실린 가장 이른 행, 없으면 첫 행), 본 페이지 순서(연속 중복 제거)를 남긴다.
+// current 는 접수 시점이 속한 방문이다(마지막 기록이 30분 안).
+export function groupVisits(rows, nowMs = Date.now()) {
+  const list = (Array.isArray(rows) ? rows : [])
+    .map((r) => ({ r, t: Date.parse(r?.CreatedAt || "") }))
+    .filter(
+      ({ t }) =>
+        Number.isFinite(t) && t >= nowMs - VISIT_WINDOW_MS && t <= nowMs + 60_000,
+    )
+    .sort((a, b) => a.t - b.t);
+  const groups = [];
+  for (const item of list) {
+    const cur = groups.at(-1);
+    if (!cur || item.t - cur.lastT > VISIT_GAP_MS) {
+      groups.push({ startT: item.t, lastT: item.t, rows: [item.r] });
+    } else {
+      cur.rows.push(item.r);
+      cur.lastT = item.t;
+    }
+  }
+  return groups.map(({ startT, lastT, rows: visitRows }) => {
+    const entry = visitRows.find((r) => r.Referrer || r.UtmSource) || visitRows[0];
+    const pages = [];
+    for (const r of visitRows) {
+      const page = String(r.Page || "");
+      if (page && pages.at(-1) !== page) pages.push(page);
+    }
+    return {
+      startAt: new Date(startT).toISOString(),
+      current: nowMs - lastT <= VISIT_GAP_MS,
+      referrer: String(entry.Referrer || ""),
+      utmSource: String(entry.UtmSource || ""),
+      utmMedium: String(entry.UtmMedium || ""),
+      utmCampaign: String(entry.UtmCampaign || ""),
+      pages,
+    };
+  });
+}
+
 // known=false 는 방문자 ID 가 없거나(트래커 차단·저장소 막힘) 조회가 실패한 경우다.
 export async function fetchVisitStats(env, sessionId, nowMs = Date.now()) {
   const empty = {
@@ -47,13 +87,15 @@ export async function fetchVisitStats(env, sessionId, nowMs = Date.now()) {
     isRevisit: false,
     firstVisitAt: "",
     known: false,
+    visits: [],
   };
   if (!sessionId || !env?.DB) return empty;
   try {
     const since = new Date(nowMs - VISIT_WINDOW_MS).toISOString();
     // idx_heatmap_session_created(SessionId, CreatedAt) 를 탄다.
     const res = await env.DB.prepare(
-      `SELECT CreatedAt FROM HeatmapEvents
+      `SELECT CreatedAt, Page, Referrer, UtmSource, UtmMedium, UtmCampaign
+       FROM HeatmapEvents
        WHERE SessionId = ? AND CreatedAt >= ? AND EventType = 'page_view'
        ORDER BY CreatedAt DESC
        LIMIT ${VISIT_ROW_LIMIT}`,
@@ -67,6 +109,7 @@ export async function fetchVisitStats(env, sessionId, nowMs = Date.now()) {
         nowMs,
       ),
       known: true,
+      visits: groupVisits(rows, nowMs),
     };
   } catch {
     return empty;

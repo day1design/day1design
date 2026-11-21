@@ -1355,6 +1355,65 @@ function briefText(r, fallback = "접수내용 없음") {
   return r.Detail || typeSize || r.Address || r.Campaign || fallback;
 }
 
+// 접수 목록은 한 건 = 한 줄이다(2026-10-17 회의 피드백 10번). 큰 카드(약 300px)로는
+// 한 화면에 3건 남짓이라 훑어볼 수 없었다. 줄에는 고객 · 상태 · 공간/일정/예산 ·
+// 지점 · 유입만 둔다. 줄을 누르면 예전 카드처럼 접수 상세가 열리고, 접수내용 ·
+// 연락처 · 예약 메모는 접수 상세에서 본다 (2026-10-17 사용자: 카드가 줄로 바뀌는 것뿐).
+const ESTIMATE_ROWS_HEAD = `
+    <div class="est-rows-head" aria-hidden="true">
+      <span class="est-rows-cols">
+        <span>고객</span>
+        <span>상태</span>
+        <span>공간 · 일정 · 예산</span>
+        <span>지점</span>
+        <span>유입</span>
+      </span>
+    </div>`;
+
+// 줄에는 예약 날짜만 짧게 단다. 오늘 누구를 만나는지는 펼치지 않고도 보여야 한다.
+// 전체 문구와 캘린더 링크는 접수 상세의 예약 띠에 있다.
+function rowBookingHtml(r) {
+  if (!r.ConsultAt) return "";
+  const cancelled = !!r.ConsultCancelledAt;
+  const full = fmtConsultAt(r.ConsultAt);
+  const label = `${full}${r.ConsultBranch ? ` · ${r.ConsultBranch}` : ""} ${cancelled ? "예약 취소됨" : "상담 예약"}`;
+  const [day, time = ""] = full.replace(/^\d{4}-/, "").split(" ");
+  return `<span class="est-row-booking${cancelled ? " is-cancelled" : ""}" title="${escapeHtml(label)}">📅 ${escapeHtml(day)}${time ? `<span class="est-row-booking-time"> ${escapeHtml(time)}</span>` : ""}</span>`;
+}
+
+function estimateRowHtml(r, sessionNo) {
+  const id = escapeHtml(r.id);
+  const contact = r.Phone || r.Email || "연락처 없음";
+  const typeSize =
+    [r.SpaceType, r.SpaceSize].filter(Boolean).join(" / ") || "공간 미입력";
+  const schedule = r.Schedule || "일정 미입력";
+  const budget = budgetCardHtml(r);
+  const planTitle = `${escapeHtml(typeSize)} · ${escapeHtml(schedule)} · ${budget
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim()}`;
+  const sources = `${sourceBadges(r)} ${sessionBadgeHtml(sessionNo)}`;
+  const cls = ["est-row"];
+  if (r.id === selectedId) cls.push("is-selected");
+  if (r.ConsultAt && !r.ConsultCancelledAt) cls.push("has-booking");
+  return `
+        <div class="${cls.join(" ")}" data-id="${id}">
+          <div class="est-row-line">
+            <button type="button" class="est-row-toggle" data-est-open title="누르면 접수 상세">
+              <span class="est-row-who">
+                <strong>${escapeHtml(r.Name || "이름 없음")}</strong>
+                <small>${escapeHtml(contact)}</small>
+              </span>
+              <span class="est-row-status">${statusBadge(r.Status)}${rowBookingHtml(r)}</span>
+              <span class="est-row-plan" title="${planTitle}">${escapeHtml(typeSize)} · ${escapeHtml(schedule)} · ${budget}</span>
+              <span class="est-row-branch">${branchBadge(r.Branch || "지점 미지정")}</span>
+              <span class="est-row-src">${sources}</span>
+            </button>
+            <button type="button" class="est-row-detail" data-est-open>상세</button>
+          </div>
+        </div>`;
+}
+
 function render() {
   const base = filtered();
   renderChannelStats(base);
@@ -1375,86 +1434,27 @@ function render() {
     }
     group.cards.push(r);
   }
-  body.innerHTML = groups
-    .map((group) => {
-      const cardsHtml = group.cards
-        .map((r) => {
-          const branch = r.Branch || "지점 미지정";
-          const summary = briefText(r);
-          const contact = r.Phone || r.Email || "연락처 없음";
-          const typeSize =
-            [r.SpaceType, r.SpaceSize].filter(Boolean).join(" / ") ||
-            "공간 미입력";
-          const schedule = r.Schedule || "일정 미입력";
-          const sessionNo = sessionMap[r.id] || 1;
-          return `
-    <button type="button" data-id="${r.id}" class="est-card ${r.id === selectedId ? "is-selected" : ""}">
-      <span class="est-card-head">
-        <span class="est-card-title">
-          <strong>${escapeHtml(r.Name || "이름 없음")}</strong>
-          <small>${escapeHtml(contact)}</small>
-        </span>
-        <span class="est-card-tags">
-          ${statusBadge(r.Status)}
-        </span>
-      </span>
-      <span class="est-card-info">
-        <span>
-          <b>공간</b>
-          <em>${escapeHtml(typeSize)}</em>
-        </span>
-        <span>
-          <b>일정</b>
-          <em>${escapeHtml(schedule)}</em>
-        </span>
-        <span>
-          <b>예산</b>
-          <em>${budgetCardHtml(r)}</em>
-        </span>
-        <span>
-          <b>지점</b>
-          <em>${branchBadge(branch)}</em>
-        </span>
-        <span>
-          <b>유입</b>
-          <em>${sourceBadges(r)} ${sessionBadgeHtml(sessionNo)}</em>
-        </span>
-        ${
-          r.Email
-            ? `
-        <span>
-          <b>이메일</b>
-          <em>${escapeHtml(r.Email)}</em>
-        </span>`
-            : ""
-        }
-        ${cardKeywordHtml(r)}
-      </span>
-      <span class="est-card-summary">
-        <b>접수내용</b>
-        <em>${escapeHtml(summary)}</em>
-      </span>
-      ${bookingNoteHtml(r)}
-      <span class="est-card-action">상세 보기</span>
-    </button>`;
-        })
-        .join("");
-      return `
+  body.innerHTML =
+    ESTIMATE_ROWS_HEAD +
+    groups
+      .map(
+        (group) => `
     <section class="est-date-group">
       <div class="est-date-head">
         <strong>${escapeHtml(group.date)}</strong>
         <span>${group.cards.length}건</span>
       </div>
-      <div class="est-date-cards">${cardsHtml}</div>
-    </section>`;
-    })
-    .join("");
-  body.querySelectorAll(".est-card").forEach((card) => {
-    card.addEventListener("click", (e) => {
-      // 카드 안의 링크('일정 확인' 등)는 링크대로 보낸다. 안 그러면 상세가
-      // 같이 열려 캘린더로 넘어가는 중에 화면이 겹친다.
-      if (e.target.closest("a")) return;
-      openDetail(card.dataset.id);
+      <div class="est-date-rows">${group.cards
+        .map((r) => estimateRowHtml(r, sessionMap[r.id] || 1))
+        .join("")}</div>
+    </section>`,
+      )
+      .join("");
+  // 줄 어디를 눌러도(줄 끝 '상세' 포함) 예전 카드처럼 접수 상세가 열린다
+  body.querySelectorAll(".est-row").forEach((row) => {
+    const id = row.dataset.id;
+    row.querySelectorAll("[data-est-open]").forEach((btn) => {
+      btn.addEventListener("click", () => openDetail(id));
     });
   });
 }
@@ -1801,6 +1801,51 @@ async function doCreateCustomer() {
   }
 }
 
+// 접수할 때 워커가 남긴 방문 정보(2026-11-02 이후 접수). 방문 횟수는 접수 시점 기준
+// 최근 30일 방문 수(접수한 방문 포함, 자체 트래커 방문자 ID 기준)이고, 기기는 User-Agent
+// 로 읽은 요약이다. 값이 없는 옛 접수·Meta 입력양식 리드는 줄을 그리지 않는다.
+function visitorMetaHtml(r) {
+  const count = Number(r?.VisitCount || 0);
+  const device = String(r?.DeviceInfo || "").trim();
+  if (!count && !device) return "";
+  const parts = [];
+  if (count > 0) {
+    const revisit = Number(r.IsRevisit || 0) === 1 || count >= 2;
+    let first = "";
+    const t = Date.parse(r.FirstVisitAt || "");
+    if (revisit && Number.isFinite(t)) {
+      const d = new Date(t + 9 * 3600 * 1000);
+      first = `, 첫 방문 ${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+    }
+    parts.push(
+      `<span class="nd-visit-item" style="display:inline-block;margin-right:12px" title="접수 시점 기준 최근 30일 방문 횟수(접수한 방문 포함)"><b>방문</b> ${count}회 (${revisit ? `재방문${first}` : "첫 방문"})</span>`,
+    );
+  }
+  if (device) parts.push(`<span class="nd-visit-item" style="display:inline-block"><b>기기</b> ${escapeHtml(device)}</span>`);
+  return `<div class="nd-meta nd-visitor" style="margin-top:3px">${parts.join("")}</div>`;
+}
+
+// Meta 광고 접수의 출처 — 플랫폼(Instagram·Facebook·Threads)·캠페인·소재. 워커 목록 API 가
+// 텔레그램 광고정보 블록과 같은 계산으로 AdSource 를 싣는다(랜딩 플랫폼은 접수 때 UA 로 읽는다).
+// Meta 접수가 아니면 AdSource 가 null 이라 줄을 그리지 않는다.
+function adSourceHtml(r) {
+  const ad = r?.AdSource;
+  if (!ad) return "";
+  const item = (label, value, title = "") =>
+    `<span class="nd-visit-item" style="display:inline-block;margin-right:12px"${title ? ` title="${escapeHtml(title)}"` : ""}><b>${label}</b> ${escapeHtml(value)}</span>`;
+  const platform = ad.platform || "Meta (플랫폼 확인 불가)";
+  const parts = [
+    item(
+      "광고",
+      ad.channel && ad.channel !== "랜딩" ? `${platform} · ${ad.channel}` : platform,
+      ad.platform ? "" : "인스타그램·페이스북 앱 밖의 브라우저로 접수해 플랫폼을 알 수 없습니다",
+    ),
+  ];
+  if (ad.campaign) parts.push(item("캠페인", ad.campaign));
+  if (ad.creative) parts.push(item("소재", ad.creative, "고객이 보고 들어온 광고 소재"));
+  return `<div class="nd-meta nd-adsource" style="margin-top:3px">${parts.join("")}</div>`;
+}
+
 async function openDetail(id) {
   const r = records.find((x) => x.id === id);
   if (!r) return;
@@ -1829,8 +1874,11 @@ async function openDetail(id) {
       : "") +
     inflowDetailRows(r) +
     (isMeta
-      ? `<dt>Meta 플랫폼</dt><dd>${escapeHtml(r.Platform || "—")}</dd>` +
-        `<dt>Meta 캠페인</dt><dd>${escapeHtml(r.Campaign || "—")}</dd>`
+      ? `<dt>Meta 플랫폼</dt><dd>${escapeHtml(r.AdSource?.platform || r.Platform || "—")}</dd>` +
+        `<dt>Meta 캠페인</dt><dd>${escapeHtml(r.AdSource?.campaign || r.Campaign || "—")}</dd>` +
+        (r.AdSource?.creative
+          ? `<dt>Meta 소재</dt><dd>${escapeHtml(r.AdSource.creative)}</dd>`
+          : "")
       : "");
   const inflowCount = (inflowRows.match(/<dt/g) || []).length;
   const spaceText = [r.SpaceType, r.SpaceSize].filter(Boolean).join(" · ");
@@ -1856,6 +1904,8 @@ async function openDetail(id) {
       <div class="nd-meta">
         ${fmtDateTime(r.SubmittedAt)} 접수 · IP ${escapeHtml(r.IP || "—")} · 희망 지점 ${escapeHtml(r.Branch || "미지정")}
       </div>
+      ${visitorMetaHtml(r)}
+      ${adSourceHtml(r)}
     </div>
 
     ${consultBandHtml(r)}
@@ -2012,7 +2062,7 @@ async function openDetail(id) {
           <summary>
             <span>
               <span class="lb">변경 이력 · 방문 히스토리</span>
-              <span class="nd-hint">상태 변경과 첫 진입 → 폼 제출 흐름</span>
+              <span class="nd-hint">상태 변경과 회차별 방문 경로</span>
             </span>
           </summary>
           <div class="in">
@@ -2121,7 +2171,7 @@ async function openDetail(id) {
     if (typeSelect) typeSelect.innerHTML = meetingTypeOptions(r.ConsultTypeId);
   });
   loadContractHistory(id);
-  loadVisitHistory(id);
+  loadVisitHistory(id, r.SubmittedAt);
 }
 
 function contractHistoryHtml(records) {
@@ -2163,50 +2213,131 @@ async function loadContractHistory(id, cursor = "") {
 
 const visitHistoryCache = {};
 
-function visitHistoryHtml(payload) {
+// 방문 히스토리 — 페이지 기록을 방문 회차(30분 공백)로 묶어 진입 경로·본 페이지를 한 줄씩 보여 준다
+// (2026-11-21 사용자 지시: 광고로 먼저 왔다가 다른 경로로 접수한 고객의 경로가 카드에 회차별로 남아야 한다).
+// 진입 판정·표기는 워커 알림(worker/src/routes/estimates.js visitEntryLabel)과 같다. 네이버만 서비스별로 더 자세히 쓴다.
+const VISIT_GAP_MS = 30 * 60 * 1000;
+const VISIT_PAGE_LABELS = {
+  "/": "홈",
+  "/index": "홈",
+  "/pages/about": "회사소개",
+  "/pages/portfolio": "포트폴리오",
+  "/pages/estimates": "견적문의",
+  "/pages/project-flow": "진행절차",
+  "/pages/community": "커뮤니티",
+  "/pages/community-detail": "커뮤니티 글",
+  "/lp/all": "통합 랜딩",
+  "/lp/gangnam": "서울 랜딩",
+  "/lp/bundang": "판교 랜딩",
+};
+const VISIT_LANDING_LABELS = { "lp-all": "통합", "lp-bd": "판교·수지·광교·동탄", "lp-gn": "서울" };
+
+function visitPageLabel(path) {
+  const p = String(path || "").replace(/\.html$/, "").replace(/(.)\/$/, "$1");
+  return VISIT_PAGE_LABELS[p] || p || "/";
+}
+
+function visitHost(ref) {
+  try {
+    return ref ? new URL(ref).hostname : "";
+  } catch {
+    return ref || "";
+  }
+}
+
+function visitEntryLabel(ev) {
+  const host = visitHost(ev.referrer);
+  const camp = String(ev.utmCampaign || "");
+  const raw = [ev.utmSource, ev.utmMedium, camp, host].join(" ").normalize("NFC").toLowerCase();
+  const withCamp = (label) => (camp ? `${label} (${camp})` : label);
+  if (/(instagram-official|인스타그램 오피셜)/.test(raw)) return withCamp("IG오피셜");
+  if (/(instagram-marketing|인스타그램 마케팅)/.test(raw)) return withCamp("IG마케팅");
+  if (/(facebook|instagram|meta|fbclid|fb\.|ig\.|threads|메타|페이스북|페북|인스타)/.test(raw)) {
+    if (/^(paid|cpc|ads?)$/i.test(ev.utmMedium || "")) {
+      if (/^lp-[a-z0-9-]+$/i.test(camp)) {
+        const name = VISIT_LANDING_LABELS[camp.toLowerCase()];
+        return `Meta 광고 · ${name ? `${name} 랜딩 (${camp})` : camp}`;
+      }
+      return withCamp("Meta 광고");
+    }
+    return camp ? `Meta (${camp})` : host ? `Meta (${host})` : "Meta";
+  }
+  if (!ev.utmSource && !host) return "직접 방문";
+  const key = /(youtube|youtu\.be|유튜브)/.test(raw)
+    ? "youtube"
+    : /(naver|nclid|네이버)/.test(raw)
+      ? "naver"
+      : /(google|gclid|doubleclick|adwords|구글)/.test(raw)
+        ? "google"
+        : /(kakao|daum|tistory|카카오|카톡|다음)/.test(raw)
+          ? "kakao"
+          : "";
+  const label = key ? sourceLabelDetailed(key, host) : host || ev.utmSource;
+  const detail = camp || (key ? host : "");
+  return detail ? `${label} (${detail})` : label;
+}
+
+function groupVisitEvents(events) {
+  const visits = [];
+  for (const ev of events) {
+    const t = Date.parse(ev.createdAt);
+    if (!Number.isFinite(t)) continue;
+    const cur = visits[visits.length - 1];
+    if (!cur || t - cur.lastT > VISIT_GAP_MS) visits.push({ startT: t, lastT: t, events: [ev] });
+    else {
+      cur.events.push(ev);
+      cur.lastT = t;
+    }
+  }
+  return visits;
+}
+
+function visitHistoryHtml(payload, submittedAt) {
   if (!payload || !payload.events || !payload.events.length) {
     return `<div class="visit-history-empty">방문 이력이 없습니다 (SessionId 미수집 또는 첫 page_view 이전 폼 제출)</div>`;
   }
-  const events = payload.events;
-  return `<ol class="visit-history-list">${events
-    .map((ev, i) => {
-      const t = Date.parse(ev.createdAt);
-      const time = isNaN(t) ? "" : fmtDateTime(ev.createdAt);
-      const isFirst = i === 0;
-      const refHost = (() => {
-        try {
-          return ev.referrer ? new URL(ev.referrer).hostname : "";
-        } catch {
-          return ev.referrer || "";
-        }
-      })();
-      const fromLabel = ev.utmSource
-        ? `utm: ${escapeHtml(ev.utmSource)}${ev.utmCampaign ? " · " + escapeHtml(ev.utmCampaign) : ""}`
-        : refHost
-          ? `referrer: ${escapeHtml(refHost)}`
-          : "직접 방문";
-      const loc = [ev.city, ev.country].filter(Boolean).join(" · ");
-      return `<li class="visit-history-item ${isFirst ? "is-first" : ""}">
-        <span class="visit-time">${escapeHtml(time)}</span>
-        <span class="visit-page">${escapeHtml(ev.page || "/")}</span>
-        <span class="visit-from">${fromLabel}</span>
-        <span class="visit-meta">${escapeHtml(ev.device || "")}${loc ? " · " + escapeHtml(loc) : ""}</span>
+  const submitT = Date.parse(submittedAt || "");
+  const visits = groupVisitEvents(payload.events);
+  return `<ol class="visit-history-list">${visits
+    .map((v, i) => {
+      const entry = v.events.find((ev) => ev.referrer || ev.utmSource) || v.events[0];
+      const pages = [];
+      for (const ev of v.events) {
+        const label = visitPageLabel(ev.page);
+        if (pages[pages.length - 1] !== label) pages.push(label);
+      }
+      // 페이지별 시각은 마우스를 올리면 보인다(예전 한 줄씩 목록의 정보)
+      const timeline = v.events.map((ev) => `${fmtDateTime(ev.createdAt)} ${visitPageLabel(ev.page)}`).join("\n");
+      let mark = "";
+      if (Number.isFinite(submitT)) {
+        if (submitT >= v.startT && submitT <= v.lastT + VISIT_GAP_MS) mark = " · <b>이 방문에서 접수</b>";
+        else if (v.startT > submitT) mark = " · 접수 후 방문";
+      }
+      const loc = [entry.city, entry.country].filter(Boolean).join(" · ");
+      // 카드 옆 패널이 좁아 진입 경로 · 본 페이지 · 기기를 한 칸에 세로로 쌓는다(낱말 중간 줄바꿈 없이)
+      return `<li class="visit-history-item ${i === 0 ? "is-first" : ""}" style="grid-template-columns:118px 1fr">
+        <span class="visit-time">${escapeHtml(fmtDateTime(entry.createdAt))}</span>
+        <div style="display:grid;gap:2px;min-width:0;word-break:keep-all">
+          <span class="visit-from" style="white-space:normal;color:var(--c-text)">${escapeHtml(visitEntryLabel(entry))}${mark}</span>
+          <span class="visit-page" style="white-space:normal;font-weight:400" title="${escapeHtml(timeline)}">${escapeHtml(pages.join(" → "))}</span>
+          <span class="visit-meta" style="white-space:normal">${escapeHtml(entry.device || "")}${loc ? " · " + escapeHtml(loc) : ""}</span>
+        </div>
       </li>`;
     })
     .join("")}</ol>`;
 }
 
-async function loadVisitHistory(id) {
+async function loadVisitHistory(id, submittedAt) {
   const slot = detail?.querySelector("#visitHistoryThread");
   if (!slot) return;
   try {
     if (visitHistoryCache[id]) {
-      slot.innerHTML = visitHistoryHtml(visitHistoryCache[id]);
+      slot.innerHTML = visitHistoryHtml(visitHistoryCache[id], submittedAt);
       return;
     }
     const data = await adminUtil.api(`/api/estimates/${id}/visit-history`);
     visitHistoryCache[id] = data;
-    slot.innerHTML = visitHistoryHtml(data);
+    slot.innerHTML = visitHistoryHtml(data, submittedAt);
   } catch (e) {
     slot.innerHTML = `<div class="visit-history-empty">불러오기 실패</div>`;
   }

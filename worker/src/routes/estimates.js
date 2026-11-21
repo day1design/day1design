@@ -577,12 +577,13 @@ async function getVisitHistory(env, id, services) {
               Country, City, CreatedAt
        FROM HeatmapEvents
        WHERE SessionId = ? AND EventType = 'page_view'
-       ORDER BY CreatedAt ASC
-       LIMIT 200`,
+       ORDER BY CreatedAt DESC
+       LIMIT 300`,
     )
       .bind(sessionId)
       .all();
-    const events = (res.results || []).map((r) => ({
+    // 최근 300건을 받아 오래된 순으로 보여 준다(방문이 많은 고객도 접수한 방문이 잘리지 않게)
+    const events = (res.results || []).reverse().map((r) => ({
       page: r.Page,
       device: r.Device,
       referrer: r.Referrer || "",
@@ -843,6 +844,74 @@ function isLandingSubmission(fields) {
 // 섹션·트리 모양이다. 지역 랜딩(/lp/*) 접수는 광고정보 블록을, 일반 견적 폼 접수는
 // 유입정보 블록을 싣고, 둘 다 마지막에 방문정보 블록을 붙인다. 홈페이지 접수도 랜딩과
 // 같은 모양으로 보낸다(2026-11-03 사용자 지시). parse_mode HTML, 빈 값은 줄 생략.
+// ─── 방문 경로(알림) ───────────────────────────────────
+// 30일 안에 두 번 이상 온 사람은 회차별 진입 경로와 본 페이지를 알림에 싣는다
+// (2026-11-21 사용자 지시: Meta 광고로 랜딩에 두 번 왔다가 인스타 프로필 링크로 접수한
+// 고객이 "IG마케팅"으로만 보여 광고로 처음 들어온 것을 알 수 없었다).
+const PAGE_LABELS = {
+  "/": "홈",
+  "/index": "홈",
+  "/pages/about": "회사소개",
+  "/pages/portfolio": "포트폴리오",
+  "/pages/estimates": "견적문의",
+  "/pages/project-flow": "진행절차",
+  "/pages/community": "커뮤니티",
+  "/pages/community-detail": "커뮤니티 글",
+  "/lp/all": "통합 랜딩",
+  "/lp/gangnam": "서울 랜딩",
+  "/lp/bundang": "판교 랜딩",
+};
+const JOURNEY_MAX_VISITS = 6;
+const JOURNEY_MAX_PAGES = 8;
+
+function pageLabel(path) {
+  const p = String(path || "").replace(/\.html$/, "").replace(/(.)\/$/, "$1");
+  return PAGE_LABELS[p] || p || "?";
+}
+
+function formatKstDateTime(iso) {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return "";
+  const k = new Date(t + 9 * 60 * 60 * 1000);
+  const hh = String(k.getUTCHours()).padStart(2, "0");
+  const mm = String(k.getUTCMinutes()).padStart(2, "0");
+  return `${k.getUTCMonth() + 1}/${k.getUTCDate()} ${hh}:${mm}`;
+}
+
+// 진입 단서 → "Meta 광고 · 서울 랜딩 (lp-gn)" / "IG마케팅 (ig-mkt-main)" / "Naver (m.blog.naver.com)" / "직접 방문"
+function visitEntryLabel(v) {
+  const { source } = normalizeEstimateAttribution({
+    utm_source: v.utmSource,
+    utm_medium: v.utmMedium,
+    campaign: v.utmCampaign,
+    source: v.referrer,
+  });
+  if (source === "meta" && /^(paid|cpc|ads?)$/i.test(v.utmMedium)) {
+    if (isLandingCampaign(v.utmCampaign))
+      return `Meta 광고 · ${landingCampaignLabel(v.utmCampaign)}`;
+    return v.utmCampaign ? `Meta 광고 (${v.utmCampaign})` : "Meta 광고";
+  }
+  if (source === "homepage" && !v.referrer) return "직접 방문";
+  const detail = v.utmCampaign || v.referrer;
+  const label = SOURCE_LABELS[source] || source;
+  return detail ? `${label} (${detail})` : label;
+}
+
+function formatVisitJourney(visits) {
+  if (!Array.isArray(visits) || visits.length < 2) return [];
+  const rows = visits.map((v, i) => {
+    let pages = v.pages.map(pageLabel);
+    if (pages.length > JOURNEY_MAX_PAGES)
+      pages = [...pages.slice(0, 3), `…${pages.length - 6}쪽`, ...pages.slice(-3)];
+    const when = formatKstDateTime(v.startAt);
+    const where = pages.length ? ` · ${pages.join(" → ")}` : "";
+    return `${i + 1}회차${v.current ? "(이번)" : ""} ${when} · ${visitEntryLabel(v)}${where}`;
+  });
+  if (rows.length <= JOURNEY_MAX_VISITS) return rows;
+  const tail = rows.slice(-(JOURNEY_MAX_VISITS - 2));
+  return [rows[0], `… ${rows.length - 1 - tail.length}회 생략`, ...tail];
+}
+
 function buildLeadAlertMessage({
   landing,
   fields,
@@ -850,6 +919,7 @@ function buildLeadAlertMessage({
   addressLine,
   platform,
   visitLine,
+  journey = [],
   ip,
   device,
   promoted,
@@ -914,6 +984,7 @@ function buildLeadAlertMessage({
     `IP: ${escapeHtml(ip || "확인 불가")}`,
     `기기: ${escapeHtml(device || "확인 불가")}`,
   ]);
+  pushBlock(out, `🛤 <b>방문 경로</b>`, journey.map((row) => escapeHtml(row)));
   return out.join("\n");
 }
 
@@ -1399,6 +1470,7 @@ async function submitEstimate(request, env, ctx, services) {
       ? metaPlatformFromUa(ua, safeInflowApp(fields.inflow_app), fields._fb_ad)
       : "",
     visitLine,
+    journey: visitStats.isRevisit ? formatVisitJourney(visitStats.visits) : [],
     ip,
     device: deviceInfo,
     promoted: Boolean(promoteId),

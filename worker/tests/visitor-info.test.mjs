@@ -8,6 +8,7 @@ import {
   describeDevice,
   fetchVisitStats,
   formatVisitLine,
+  groupVisits,
   metaPlatformFromUa,
   VISIT_WINDOW_MS,
 } from "../src/lib/visitor-info.js";
@@ -742,4 +743,84 @@ test("랜딩 접수 알림: 같은 소재 코드가 여러 광고에 있으면 �
   const lead = telegram.find((t) => t.includes("신규 상담 신청"));
   assert.ok(lead.includes("├ 캠페인: 261119_랜딩전환(신규)"), lead);
   assert.ok(lead.includes("└ 광고명: P-1"), lead);
+});
+
+// ─── 방문 경로(여러 번 온 접수자) ─────────────────────────
+// 2026-11-21 실제 접수 건의 방문 기록 모양: Meta 광고로 랜딩에 두 번 들어왔다가
+// 인스타 마케팅 계정 프로필 링크로 다시 와서 접수했다.
+
+test("방문 경로: 30분 공백으로 회차를 나누고 진입 단서·페이지 순서를 남긴다", () => {
+  const now = Date.parse("2026-11-21T04:22:54Z");
+  const visits = groupVisits(
+    [
+      { CreatedAt: "2026-11-21T04:20:36Z", Page: "/pages/estimates" },
+      { CreatedAt: "2026-11-21T04:19:27Z", Page: "/pages/about" },
+      { CreatedAt: "2026-11-21T04:19:25Z", Page: "/", UtmSource: "instagram-marketing", UtmMedium: "organic", UtmCampaign: "ig-mkt-main" },
+      { CreatedAt: "2026-11-10T04:24:34Z", Page: "/lp/all", Referrer: "m.facebook.com", UtmSource: "meta", UtmMedium: "paid", UtmCampaign: "lp-all" },
+      { CreatedAt: "2026-11-03T04:58:11Z", Page: "/lp/bundang", Referrer: "m.facebook.com", UtmSource: "meta", UtmMedium: "paid", UtmCampaign: "lp-bd" },
+      { CreatedAt: "2026-11-03T04:31:50Z", Page: "/lp/gangnam", Referrer: "instagram.com", UtmSource: "meta", UtmMedium: "paid", UtmCampaign: "lp-gn" },
+      { CreatedAt: "2026-11-03T04:31:45Z", Page: "/lp/gangnam", Referrer: "instagram.com", UtmSource: "meta", UtmMedium: "paid", UtmCampaign: "lp-gn" },
+      { CreatedAt: "2026-10-01T00:00:00Z", Page: "/" },
+    ],
+    now,
+  );
+  assert.equal(visits.length, 3, "30일 밖 방문은 빼고 세 회차로 묶는다");
+  assert.deepEqual(visits[0].pages, ["/lp/gangnam", "/lp/bundang"]);
+  assert.equal(visits[0].utmCampaign, "lp-gn", "진입 단서는 회차의 첫 출처 행이다");
+  assert.equal(visits[0].current, false);
+  assert.equal(visits[1].utmCampaign, "lp-all");
+  assert.equal(visits[2].utmSource, "instagram-marketing");
+  assert.deepEqual(visits[2].pages, ["/", "/pages/about", "/pages/estimates"]);
+  assert.equal(visits[2].current, true, "마지막 기록이 30분 안이면 이번 방문이다");
+});
+
+test("여러 번 온 접수자는 알림에 방문 경로(회차·진입·본 페이지)가 붙는다", async () => {
+  const now = Date.now();
+  const iso = (ms) => new Date(now - ms).toISOString();
+  const day = 24 * 60 * 60_000;
+  const ad = (campaign, referrer) => ({ Referrer: referrer, UtmSource: "meta", UtmMedium: "paid", UtmCampaign: campaign });
+  const { res, telegram } = await submit({
+    fields: {
+      ...BASE_FIELDS,
+      utm_source: "instagram-marketing",
+      utm_medium: "organic",
+      utm_campaign: "ig-mkt-main",
+    },
+    ua: IG_ANDROID_UA,
+    pageViews: [
+      { CreatedAt: iso(60_000), EventType: "page_view", Page: "/pages/estimates" },
+      { CreatedAt: iso(2 * 60_000), EventType: "page_view", Page: "/pages/about" },
+      { CreatedAt: iso(3 * 60_000), EventType: "page_view", Page: "/", UtmSource: "instagram-marketing", UtmMedium: "organic", UtmCampaign: "ig-mkt-main" },
+      { CreatedAt: iso(11 * day), EventType: "page_view", Page: "/lp/all", ...ad("lp-all", "m.facebook.com") },
+      { CreatedAt: iso(18 * day - 26 * 60_000), EventType: "page_view", Page: "/lp/bundang", ...ad("lp-bd", "m.facebook.com") },
+      { CreatedAt: iso(18 * day), EventType: "page_view", Page: "/lp/gangnam", ...ad("lp-gn", "instagram.com") },
+    ],
+  });
+  assert.equal(res.status, 200);
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
+  assert.ok(lead.includes("├ 방문횟수: 3회 (재방문 · 첫 방문"));
+  const block = lead.split("🛤 <b>방문 경로</b>\n")[1];
+  assert.ok(block, "방문 경로 블록이 없다");
+  const rows = block.split("\n");
+  assert.equal(rows.length, 3);
+  assert.match(rows[0], /^├ 1회차 \d+\/\d+ \d{2}:\d{2} · Meta 광고 · 서울 랜딩 \(lp-gn\) · 서울 랜딩 → 판교 랜딩$/);
+  assert.match(rows[1], /^├ 2회차 \d+\/\d+ \d{2}:\d{2} · Meta 광고 · 통합 랜딩 \(lp-all\) · 통합 랜딩$/);
+  assert.match(rows[2], /^└ 3회차\(이번\) \d+\/\d+ \d{2}:\d{2} · IG마케팅 \(ig-mkt-main\) · 홈 → 회사소개 → 견적문의$/);
+  assert.ok(lead.indexOf("🧭 <b>방문정보</b>") < lead.indexOf("🛤 <b>방문 경로</b>"), "방문정보 다음에 온다");
+});
+
+test("방문 경로: 페이지가 많으면 앞 3개·뒤 3개만, 회차가 많으면 첫 회차와 최근 회차만", async () => {
+  const now = Date.now();
+  const iso = (ms) => new Date(now - ms).toISOString();
+  const hour = 60 * 60_000;
+  const many = ["/", "/pages/about", "/pages/portfolio", "/pages/project-flow", "/pages/community", "/pages/about", "/pages/portfolio", "/pages/project-flow", "/pages/estimates"];
+  const current = many.map((Page, i) => ({ CreatedAt: iso((many.length - i) * 60_000), EventType: "page_view", Page }));
+  const earlier = Array.from({ length: 7 }, (_, i) => ({ CreatedAt: iso((i + 1) * 5 * hour), EventType: "page_view", Page: "/" }));
+  const { telegram } = await submit({ fields: { ...BASE_FIELDS }, ua: SAFARI_IOS_UA, pageViews: [...current, ...earlier] });
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
+  const rows = lead.split("🛤 <b>방문 경로</b>\n")[1].split("\n");
+  assert.equal(rows.length, 6, "첫 회차 + 생략 줄 + 최근 4회차");
+  assert.match(rows[0], /^├ 1회차 /);
+  assert.equal(rows[1], "├ … 3회 생략");
+  assert.match(rows[5], /^└ 8회차\(이번\) .* · 직접 방문 · 홈 → 회사소개 → 포트폴리오 → …3쪽 → 포트폴리오 → 진행절차 → 견적문의$/);
 });
