@@ -174,8 +174,24 @@ function withQuery(request, extra) {
 const OVERVIEW_FRESH_MS = 30 * 60 * 1000; // 이 안이면 즉시반환, 넘으면 stale+백그라운드갱신
 const OVERVIEW_CACHE_TTL_S = 24 * 60 * 60; // 물리 보관 24h (stale 서빙 위해 길게)
 
-function overviewCacheKey(range, sort, order) {
-  return `https://meta-overview.internal/v2/${encodeURIComponent(range.startDate)}/${encodeURIComponent(range.endDate)}/${encodeURIComponent(sort)}/${encodeURIComponent(order)}`;
+// 캐시 키에 마지막 동기화 완료 시각을 넣는다. D1 은 하루 한 번(04:00 KST) 갱신되는데, 그 전에
+// 계산해 둔 응답(예: 그날 새벽분만 담긴 「오늘」)이 24시간 보관되면서 다음 날 「어제」 요청에
+// 그대로 나갔다(2026-11-21 아침 보고가 11/20 지출을 $250.63 대신 $17.2 로 보냄).
+// 동기화가 끝나면 키가 바뀌므로 이전 계산은 쓰이지 않는다.
+function overviewCacheKey(range, sort, order, syncTag = "") {
+  return `https://meta-overview.internal/v3/${encodeURIComponent(syncTag || "nosync")}/${encodeURIComponent(range.startDate)}/${encodeURIComponent(range.endDate)}/${encodeURIComponent(sort)}/${encodeURIComponent(order)}`;
+}
+async function lastSuccessfulSyncTag(env) {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT CompletedAt FROM MetaSyncLog
+       WHERE Status = 'success'
+       ORDER BY CompletedAt DESC LIMIT 1`,
+    ).first();
+    return row?.CompletedAt || "";
+  } catch {
+    return "";
+  }
 }
 function overviewJsonResponse(body) {
   return new Response(body, {
@@ -204,7 +220,12 @@ async function getOverview(request, env, ctx) {
   // refresh=1 (cron prewarm) → 캐시 무시하고 동기 재계산+저장. 캐시 키엔 미반영.
   const forceRefresh = url.searchParams.get("refresh") === "1";
   const cache = caches.default;
-  const cacheKey = overviewCacheKey(range, sort, order);
+  const cacheKey = overviewCacheKey(
+    range,
+    sort,
+    order,
+    await lastSuccessfulSyncTag(env),
+  );
 
   if (forceRefresh) {
     try {
