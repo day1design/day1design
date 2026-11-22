@@ -23,10 +23,13 @@ const ALLOWED = new Set([
   "ValidationError",
   "SubmitError",
   "FormSuccess",
+  "FormProgress", // 랜딩 신청서 칸별 진행(site/js/lp-form-steps.js)
 ]);
 
 const s = (v, n) => String(v || "").slice(0, n);
 const SOURCE_TENANT_ID = "day1design";
+// 신청서 칸별 진행은 한 방문이 여러 줄을 남기므로 상호작용 집계에서 뺀다
+const NOT_PROGRESS = "event_name <> 'FormProgress'";
 
 export async function handlePixelEvents(request, env, ctx) {
   if (request.method !== "POST") return jsonError(405, "Method Not Allowed");
@@ -117,20 +120,20 @@ export async function handlePixelEventsAdmin(request, env) {
   const since = `strftime('%Y-%m-%dT%H:%M:%fZ','now','-${days} days')`;
 
   const byName = await env.DB.prepare(
-    `SELECT event_name, COUNT(*) c FROM pixel_events WHERE created_at >= ${since} GROUP BY event_name`,
+    `SELECT event_name, COUNT(*) c FROM pixel_events WHERE created_at >= ${since} AND ${NOT_PROGRESS} GROUP BY event_name`,
   ).all();
   const nameCount = {};
   for (const r of byName.results || []) nameCount[r.event_name] = r.c;
 
   const daily = await env.DB.prepare(
     `SELECT substr(created_at,1,10) d, event_name, COUNT(*) c
-       FROM pixel_events WHERE created_at >= ${since}
+       FROM pixel_events WHERE created_at >= ${since} AND ${NOT_PROGRESS}
        GROUP BY d, event_name ORDER BY d ASC LIMIT 4000`,
   ).all();
 
   const bySource = await env.DB.prepare(
     `SELECT COALESCE(NULLIF(source,''),'homepage') source, COUNT(*) c
-       FROM pixel_events WHERE created_at >= ${since}
+       FROM pixel_events WHERE created_at >= ${since} AND ${NOT_PROGRESS}
        GROUP BY source ORDER BY c DESC LIMIT 12`,
   ).all();
 
@@ -141,7 +144,7 @@ export async function handlePixelEventsAdmin(request, env) {
             COUNT(*) total,
             SUM(CASE WHEN event_name='Lead' THEN 1 ELSE 0 END) leads
        FROM pixel_events
-       WHERE created_at >= ${since} AND (ad_id <> '' OR ad <> '' OR campaign <> '')
+       WHERE created_at >= ${since} AND ${NOT_PROGRESS} AND (ad_id <> '' OR ad <> '' OR campaign <> '')
        GROUP BY label ORDER BY total DESC LIMIT 20`,
   ).all();
 
@@ -178,7 +181,7 @@ export async function handlePixelEventsAdmin(request, env) {
   const items = await env.DB.prepare(
     `SELECT created_at, event_name, channel, event_id, page_path, source, campaign, ad, ad_id,
             event_detail, estimate_id, capi_status
-       FROM pixel_events WHERE created_at >= ${since}
+       FROM pixel_events WHERE created_at >= ${since} AND ${NOT_PROGRESS}
        ORDER BY created_at DESC LIMIT 200`,
   ).all();
 

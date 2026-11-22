@@ -65,6 +65,29 @@ test("form funnel events retain diagnostic and inquiry linkage", async () => {
   assert.ok(stub.calls[0].values.includes("rec123"));
 });
 
+test("landing form progress is stored with its step detail", async () => {
+  const stub = envStub();
+  const response = await handlePixelEvents(
+    request({
+      event_name: "FormProgress",
+      ga4_name: "form_progress",
+      page_path: "/lp/all",
+      event_detail: "last=budget|done=name,phone|sheet=budget-|sec=12",
+    }),
+    stub.env,
+    {},
+  );
+
+  assert.deepEqual(await response.json(), { ok: true, received: true });
+  assert.equal(stub.calls.length, 1);
+  assert.ok(stub.calls[0].values.includes("FormProgress"));
+  assert.ok(
+    stub.calls[0].values.includes(
+      "last=budget|done=name,phone|sheet=budget-|sec=12",
+    ),
+  );
+});
+
 test("browser beacon cannot create Lead records", async () => {
   const stub = envStub();
   const response = await handlePixelEvents(
@@ -103,6 +126,10 @@ test("admin analytics connects form stages to consultation outcomes", async () =
       "email_format",
       "recOutcome000001",
     );
+  sqlite.exec(
+    `INSERT INTO pixel_events (id, created_at, event_name, channel, page_path, source, campaign, event_detail)
+     VALUES ('step-1', strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'FormProgress', 'pixel', '/lp/all', 'meta', 'lp-all', 'last=view|done=|sheet=|sec=1')`,
+  );
   sqlite
     .prepare(
       `INSERT INTO Estimates
@@ -136,6 +163,9 @@ test("admin analytics connects form stages to consultation outcomes", async () =
 
   assert.equal(response.status, 200);
   assert.equal(body.funnel.validation_error, 1);
+  assert.equal(body.kpi.total, 1);
+  assert.equal(body.daily[0].interaction, 1);
+  assert.ok(!JSON.stringify(body).includes("FormProgress"));
   assert.equal(body.outcome.inquiries, 1);
   assert.equal(body.outcome.contracted, 1);
   assert.equal(body.outcome.contractValue, 12000000);
