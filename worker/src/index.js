@@ -49,6 +49,7 @@ import { cors, preflight } from "./lib/cors.js";
 import { withPublicCache } from "./lib/public-cache.js";
 import { jsonError } from "./lib/response.js";
 import { notifyTelegram, notifyInfra } from "./lib/telegram.js";
+import { runNaverSaCron } from "./lib/naver-sa.js";
 import { createServices } from "./lib/services.js";
 import { accessDenied, authorizeRequest } from "./lib/access.js";
 import { queueAudit } from "./lib/audit-log.js";
@@ -364,6 +365,18 @@ export default {
         }
       })(),
     );
+    // 네이버 검색광고 통계: 매시간 회차에서만. KST 09시 = 최근 3일 재수집, 그 밖 = 과거분 7일씩 백필.
+    // 실패해도 다른 작업과 분리되도록 별도 waitUntil 로 둔다.
+    if (event.cron === "0 * * * *") {
+      ctx.waitUntil(
+        runNaverSaCron(env).catch((e) =>
+          notifyInfra(
+            env,
+            `[day1design/naver-sa] 검색광고 통계 수집 실패\n${(e?.message || "").slice(0, 200)}`,
+          ),
+        ),
+      );
+    }
     // 15분 회차는 리마인드만 담당한다 — 무거운 동기화를 15분마다 돌릴 이유가 없다
     if (isQuarter) return;
     ctx.waitUntil(
