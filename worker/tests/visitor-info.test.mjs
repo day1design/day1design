@@ -910,3 +910,96 @@ test("방문 경로: 바이럴 링크로 온 회차는 '바이럴 ○○ (gn-mag
   assert.match(rows[1], /^├ 2회차 \d+\/\d+ \d{2}:\d{2} · 바이럴 스레드 \(gn-mag\) · 매거진 랜딩$/);
   assert.match(rows[2], /^└ 3회차\(이번\) \d+\/\d+ \d{2}:\d{2} · 직접 방문 · 홈 → 견적문의$/);
 });
+
+// ─── 네이버 GFA 광고(통합 랜딩) ─────────────────────────
+// 2026-11-26: 네이버 성과형 디스플레이 광고는 /lp/all 로 보내고 utm_source 를 정확히 naver-gfa 로
+// 싣는다(utm_medium paid, utm_campaign gfa-conv). naver 가 들어 있어도 검색·블로그(naver)와
+// 합치지 않고 접수 Source·FirstSource 를 naver_gfa 로 남긴다.
+
+test("utm_source naver-gfa 는 리퍼러가 네이버여도 접수 출처가 네이버 GFA 다", async () => {
+  const { res, created, telegram } = await submit({
+    fields: {
+      ...BASE_FIELDS,
+      address: "",
+      form_type: "lp_all",
+      utm_source: "naver-gfa",
+      utm_medium: "paid",
+      utm_campaign: "gfa-conv",
+    },
+    ua: SAFARI_IOS_UA,
+    pageViews: [
+      {
+        CreatedAt: new Date(Date.now() - 60_000).toISOString(),
+        EventType: "page_view",
+        Page: "/lp/all",
+        Referrer: "m.naver.com",
+        UtmSource: "naver-gfa",
+        UtmMedium: "paid",
+        UtmCampaign: "gfa-conv",
+      },
+    ],
+  });
+  assert.equal(res.status, 200);
+  assert.equal(created[0].Source, "naver_gfa", "끝 출처");
+  assert.equal(created[0].Platform, "네이버 GFA");
+  assert.equal(created[0].Campaign, "gfa-conv");
+  assert.equal(created[0].FirstSource, "naver_gfa", "첫 출처");
+  assert.equal(created[0].FirstPlatform, "네이버 GFA");
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
+  assert.match(lead, /출처: 네이버 GFA/);
+  assert.match(lead, /캠페인: gfa-conv/);
+  assert.doesNotMatch(lead, /Meta 광고/);
+});
+
+test("utm_source 가 naver-gfa 와 정확히 같지 않거나 없으면 네이버 유입은 예전대로 Naver 다", async () => {
+  // 비슷해도 정확히 같지 않으면 네이버 GFA 가 아니다
+  for (const utmSource of ["naver", "naver-gfa-x"]) {
+    const { created } = await submit({
+      fields: { ...BASE_FIELDS, utm_source: utmSource, utm_medium: "paid", utm_campaign: "gfa-conv" },
+      ua: SAFARI_IOS_UA,
+      pageViews: [],
+    });
+    assert.equal(created[0].Source, "naver", utmSource);
+    assert.equal(created[0].Platform, "Naver", utmSource);
+  }
+  // utm_source 없이 네이버에서 넘어온 방문은 끝 출처 homepage · 첫 출처 naver 그대로다
+  const { created } = await submit({
+    fields: { ...BASE_FIELDS },
+    ua: SAFARI_IOS_UA,
+    pageViews: [
+      { CreatedAt: new Date(Date.now() - 60_000).toISOString(), EventType: "page_view", Page: "/lp/all", Referrer: "m.search.naver.com" },
+    ],
+  });
+  assert.equal(created[0].Source, "homepage");
+  assert.equal(created[0].FirstSource, "naver");
+});
+
+test("방문 경로: 네이버 GFA 광고로 온 회차는 '네이버 GFA (gfa-conv) · 통합 랜딩'으로 적는다", async () => {
+  const now = Date.now();
+  const iso = (ms) => new Date(now - ms).toISOString();
+  const day = 24 * 60 * 60_000;
+  const { telegram } = await submit({
+    fields: { ...BASE_FIELDS },
+    ua: SAFARI_IOS_UA,
+    pageViews: [
+      { CreatedAt: iso(60_000), EventType: "page_view", Page: "/pages/estimates" },
+      { CreatedAt: iso(2 * 60_000), EventType: "page_view", Page: "/" },
+      {
+        CreatedAt: iso(3 * day),
+        EventType: "page_view",
+        Page: "/lp/all",
+        Referrer: "m.naver.com",
+        UtmSource: "naver-gfa",
+        UtmMedium: "paid",
+        UtmCampaign: "gfa-conv",
+      },
+    ],
+  });
+  const lead = telegram.find((t) => t.includes("신규 상담 신청"));
+  const block = lead.split("🛤 <b>방문 경로</b>\n")[1];
+  assert.ok(block, "방문 경로 블록이 없다");
+  const rows = block.split("\n");
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /^├ 1회차 \d+\/\d+ \d{2}:\d{2} · 네이버 GFA \(gfa-conv\) · 통합 랜딩$/);
+  assert.match(rows[1], /^└ 2회차\(이번\) \d+\/\d+ \d{2}:\d{2} · 직접 방문 · 홈 → 견적문의$/);
+});

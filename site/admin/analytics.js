@@ -39,6 +39,7 @@ const SOURCE_LABELS = {
   meta: "Meta",
   google: "Google",
   naver: "Naver",
+  naver_gfa: "네이버 GFA",
   youtube: "YouTube",
   kakao: "Kakao",
   ai: "AI 검색",
@@ -74,6 +75,8 @@ const SOURCE_COLORS = {
   meta: "#7FB2F0",
   google: "#FF9800",
   naver: "#03C75A",
+  // 네이버 GFA 광고는 네이버 녹색 계열이되 검색·블로그(naver)와 갈리게 짙은 초록
+  naver_gfa: "#047857",
   youtube: "#E84545",
   kakao: "#FAE100",
   // AI 답변 엔진·커뮤니티·채용은 광고/검색과 성격이 달라 색도 갈라 둔다.
@@ -91,16 +94,19 @@ const SOURCE_COLORS = {
 
 // 유료 광고로 들어온 접수의 Source 키. Meta 리드폼과 Meta 광고 슬러그가 여기
 // 해당한다. google/naver 는 검색 유입도 같은 키라 광고로 볼 수 없어 뺀다.
+// naver_gfa 는 네이버 GFA 광고 링크(utm_source naver-gfa)에만 붙는 키라 광고로 센다.
 const PAID_SUBMISSION_SOURCES = new Set([
   "meta",
   "instagram_ad",
   "facebook_ad",
+  "naver_gfa",
 ]);
 
 const SUBMISSION_SOURCE_ORDER = [
   "homepage",
   "instagram_ad",
   "facebook_ad",
+  "naver_gfa",
   "instagram_official",
   "instagram_mkt",
   "viral_blog",

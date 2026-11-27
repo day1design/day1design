@@ -102,26 +102,32 @@ const SOURCE_LABELS = {
   meta: "Meta",
   google: "Google",
   naver: "Naver",
+  naver_gfa: "네이버 GFA",
   youtube: "YouTube",
   kakao: "Kakao",
   referral: "Referral",
   other: "Other",
 };
 
-// 바이럴 채널 링크(매거진 랜딩 /lp/mag, utm_campaign gn-mag)는 utm_source 를 정확히 이 값으로
-// 싣는다(2026-11-21 사용자 지시). 인스타·스레드·네이버 블로그 안에서 눌러 리퍼러가
-// instagram.com·threads.com·m.blog.naver.com 이어도 바이럴로 세야 해서, 아래 meta·naver
-// 판정보다 먼저 보고 정확히 일치할 때만 잡는다. 관리자 estimates.js(visitEntryLabel)와
-// analytics.js(classifyTrafficSource)에 같은 표가 있다.
-const VIRAL_UTM_SOURCES = new Map([
+// utm_source 가 정확히 이 표의 값이면 리퍼러나 다른 단서보다 먼저 출처를 정한다. 아래 meta·naver
+// 판정은 낱말이 들어 있기만 해도 잡으므로, 여기서 정확히 일치할 때만 먼저 잡는다(앞뒤 공백과
+// 대소문자는 봐준다). 관리자 estimates.js(visitEntryLabel)와 워커 analytics.js
+// (classifyTrafficSource)에 같은 표가 있다.
+// - viral-*: 바이럴 채널 링크(매거진 랜딩 /lp/mag, utm_campaign gn-mag, 2026-11-21 사용자 지시).
+//   인스타·스레드·네이버 블로그 안에서 눌러 리퍼러가 instagram.com·threads.com·m.blog.naver.com
+//   이어도 바이럴로 센다.
+// - naver-gfa: 네이버 성과형 디스플레이 광고(GFA, /lp/all, utm_campaign gfa-conv, 2026-11-26).
+//   naver 가 들어 있어 검색·블로그 유입과 같은 naver 로 합쳐지던 것을 광고 출처로 따로 센다.
+const EXACT_UTM_SOURCES = new Map([
   ["viral-blog", "viral_blog"],
   ["viral-insta", "viral_insta"],
   ["viral-thread", "viral_threads"],
+  ["naver-gfa", "naver_gfa"],
 ]);
 
-function viralSourceKey(utmSource) {
+function exactUtmSourceKey(utmSource) {
   return (
-    VIRAL_UTM_SOURCES.get(
+    EXACT_UTM_SOURCES.get(
       String(utmSource || "")
         .trim()
         .toLowerCase(),
@@ -137,11 +143,11 @@ function sanitizeText(value, max = 120) {
 }
 
 function normalizeEstimateAttribution(fields) {
-  const viral = viralSourceKey(fields.utm_source);
-  if (viral) {
+  const exact = exactUtmSourceKey(fields.utm_source);
+  if (exact) {
     return {
-      source: viral,
-      platform: SOURCE_LABELS[viral],
+      source: exact,
+      platform: SOURCE_LABELS[exact],
       campaign: sanitizeText(fields.campaign || fields.utm_campaign || "", 160),
     };
   }

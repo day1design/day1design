@@ -152,6 +152,7 @@ const SOURCE_LABEL_MAP = {
   meta: "Meta",
   google: "Google",
   naver: "Naver",
+  naver_gfa: "네이버 GFA",
   youtube: "YouTube",
   kakao: "Kakao",
   referral: "Referral",
@@ -1218,6 +1219,7 @@ const SOURCE_LABELS_EXPORT = {
   meta: "Meta 광고",
   google: "Google",
   naver: "Naver",
+  naver_gfa: "네이버 GFA",
   youtube: "YouTube",
   kakao: "Kakao",
   referral: "Referral",
@@ -2238,11 +2240,13 @@ const VISIT_PAGE_LABELS = {
   "/lp/mag": "매거진 랜딩",
 };
 const VISIT_LANDING_LABELS = { "lp-all": "통합", "lp-bd": "판교·수지·광교·동탄", "lp-gn": "서울" };
-// 바이럴 링크 utm_source → 출처 키. 워커 normalizeEstimateAttribution(VIRAL_UTM_SOURCES)과 같은 표다.
-const VISIT_VIRAL_SOURCES = new Map([
+// 정확히 일치할 때만 잡는 utm_source → 출처 키(바이럴 링크·네이버 GFA 광고).
+// 워커 normalizeEstimateAttribution(EXACT_UTM_SOURCES)과 같은 표다.
+const VISIT_EXACT_SOURCES = new Map([
   ["viral-blog", "viral_blog"],
   ["viral-insta", "viral_insta"],
   ["viral-thread", "viral_threads"],
+  ["naver-gfa", "naver_gfa"],
 ]);
 
 function visitPageLabel(path) {
@@ -2263,11 +2267,11 @@ function visitEntryLabel(ev) {
   const camp = String(ev.utmCampaign || "");
   const raw = [ev.utmSource, ev.utmMedium, camp, host].join(" ").normalize("NFC").toLowerCase();
   const withCamp = (label) => (camp ? `${label} (${camp})` : label);
-  // 바이럴 링크는 utm_source 가 정확히 일치하면 리퍼러(인스타·스레드·네이버 블로그)보다 먼저 잡는다
-  const viral = VISIT_VIRAL_SOURCES.get(String(ev.utmSource || "").trim().toLowerCase());
-  if (viral) {
+  // 바이럴 링크·네이버 GFA 광고는 utm_source 가 정확히 일치하면 리퍼러(인스타·스레드·네이버)보다 먼저 잡는다
+  const exact = VISIT_EXACT_SOURCES.get(String(ev.utmSource || "").trim().toLowerCase());
+  if (exact) {
     const detail = camp || host;
-    return detail ? `${SOURCE_LABEL_MAP[viral]} (${detail})` : SOURCE_LABEL_MAP[viral];
+    return detail ? `${SOURCE_LABEL_MAP[exact]} (${detail})` : SOURCE_LABEL_MAP[exact];
   }
   if (/(instagram-official|인스타그램 오피셜)/.test(raw)) return withCamp("IG오피셜");
   if (/(instagram-marketing|인스타그램 마케팅)/.test(raw)) return withCamp("IG마케팅");

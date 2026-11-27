@@ -175,3 +175,33 @@ test("[가드] 바이럴 utm_source 가 없거나 다르면 예전 판정 그대
   assert.equal(ch("viral-threads"), "threads");
   assert.equal(ch("viral-blog-naver"), "naver");
 });
+
+// 네이버 성과형 디스플레이 광고(GFA)는 /lp/all 로 보내고 utm_source 를 정확히 naver-gfa 로
+// 싣는다(2026-11-26, utm_medium paid, utm_campaign gfa-conv). naver 가 들어 있어 검색·블로그와
+// 같은 naver 로 합쳐지지 않도록 바이럴처럼 네이버 판정보다 먼저 본다.
+test("[가드] utm_source naver-gfa 는 정확히 일치하면 네이버 GFA 채널로 센다", () => {
+  const g = (source, medium, channelGroup) =>
+    classifyTrafficSource({ source, medium, channelGroup }).key;
+  assert.equal(ch("naver-gfa"), "naver_gfa");
+  assert.equal(ch("naver-gfa", "paid"), "naver_gfa");
+  assert.equal(ch(" Naver-GFA "), "naver_gfa", "대소문자·앞뒤 공백은 봐준다");
+  // GA4 가 채널 그룹을 붙여 보내도 네이버 GFA 가 이긴다
+  assert.equal(g("naver-gfa", "paid", "Paid Other"), "naver_gfa");
+  assert.equal(g("naver-gfa", "paid", "Referral"), "naver_gfa");
+  assert.equal(
+    classifyTrafficSource({ source: "naver-gfa", medium: "paid", channelGroup: "" }).name,
+    "네이버 GFA",
+  );
+});
+
+test("[가드] utm_source 가 naver-gfa 와 다르거나 없으면 예전 판정 그대로다", () => {
+  // 비슷해도 정확히 같지 않으면 네이버 GFA 가 아니다
+  assert.equal(ch("naver"), "naver");
+  assert.equal(ch("naver", "paid"), "naver");
+  assert.equal(ch("naver-gfa-x"), "naver");
+  assert.equal(ch("naver-gfa-x", "paid"), "naver");
+  // utm_source 없이 리퍼러만 있으면 네이버, 둘 다 없으면 직접 유입
+  assert.equal(ch("m.search.naver.com"), "naver");
+  assert.equal(ch("(direct)"), "direct");
+  assert.equal(ch(""), "direct");
+});
